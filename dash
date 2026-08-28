@@ -563,16 +563,27 @@ def _ensure_tor():
     return False
 
 
-def _onion_reachable(onion, tries=20):
-    """True once the .onion answers over host Tor (SOCKS 9050). Retries — HS publish + circuit
-    build can take 1–2 min after boot."""
-    for _ in range(tries):
-        code = (_sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 20 "
-                    f"--socks5-hostname 127.0.0.1:9050 -k https://{onion}/api/version", timeout=30).stdout or "").strip()
+def _onion_reachable(onion, tries=45):
+    """True once the .onion answers over host Tor (SOCKS 9050). A freshly-(re)started v3 hidden
+    service takes 2–5 min to establish intro points, upload its descriptor and become fetchable —
+    so retry generously (~6 min)."""
+    for i in range(tries):
+        code = (_sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 25 "
+                    f"--socks5-hostname 127.0.0.1:9050 -k https://{onion}/api/version", timeout=35).stdout or "").strip()
         if code in ("200", "301", "302", "401", "403"):
             return True
-        time.sleep(6)
+        if i and i % 6 == 0:
+            print(f"{GREY}  …still waiting for the onion descriptor to propagate ({i*8//60}m){OFF}")
+        time.sleep(8)
     return False
+
+
+def _kick_vm_tor():
+    """Restart the VM's tor to force a fresh HS-descriptor upload. After a cold boot the descriptor
+    can take minutes to reach the HSDirs; a restart reliably kicks it (verified: unreachable -> 200)."""
+    _sh("sshpass -p '' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=6 "
+        "-p 2222 root@localhost 'systemctl restart tor'", timeout=25)
+    time.sleep(3)
 
 
 def bring_up_backend(cat):
@@ -699,6 +710,9 @@ def cmd_here(args):
     # L1 + L2 FIRST — they use nix/QEMU (KVM). The VirtualBox backend must NOT be running while these
     # run: VirtualBox and KVM both grab Intel VT-x, and the contention guru-meditates the VBox VM
     # (VERR_VMX_INVALID_VMXON_PTR). So the VBox backend is brought up only AFTER the KVM tests finish.
+    if pf["vbox"] and _vm_running():
+        print(f"{GREY}powering off the VBox VM during the KVM tests (VT-x can't be shared)…{OFF}")
+        _power_off_hard()
     run_entry(entry_by_id(cat, "L1.onion-routing"))
     if args.fast:
         print(f"{GREY}skipping L2 (--fast){OFF}")
@@ -720,14 +734,21 @@ def cmd_here(args):
     # L3 — the real app over Tor, driven by the automated integration test, recorded.
     # Gate on the .onion actually being reachable, so we never launch the app into a refused loop.
     if onion and pf["flutter"] and pf["display"]:
-        print(f"{GREY}backend .onion: {onion} — checking it's reachable over Tor (up to ~2 min)…{OFF}")
+        print(f"{GREY}backend .onion: {onion} — checking it's reachable over Tor…{OFF}")
         if not pf["tor"]:
             print(f"{AMBER}skip L3{OFF} — host Tor (127.0.0.1:9050) isn't running, so the app can't reach the "
                   f"onion. Start it: {CYAN}sudo systemctl start tor{OFF}, then re-run.")
-        elif _onion_reachable(onion):
+            reachable = False
+        elif _onion_reachable(onion, tries=4):       # quick: already-warm onion answers fast
+            reachable = True
+        else:                                        # cold boot: kick the VM's tor, then wait generously
+            print(f"{GREY}onion not up yet — restarting the VM's tor to force a descriptor upload…{OFF}")
+            _kick_vm_tor()
+            reachable = _onion_reachable(onion)
+        if pf["tor"] and reachable:
             print(f"{GREEN}onion reachable — launching the automated app test.{OFF}")
             run_l3_flutter(onion, DEV_TOKEN, pf)
-        else:
+        elif pf["tor"]:
             print(f"{AMBER}skip L3{OFF} — the backend .onion never answered over Tor. The VM likely didn't "
                   f"stay up (check {CYAN}VBoxManage showvminfo {VM_NAME} | grep State{OFF}) or the Tor HS "
                   f"isn't published yet. Not launching the app (would just loop on 'connection refused').")
