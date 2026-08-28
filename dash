@@ -414,15 +414,34 @@ def _vm_exists():
     return _sh(f'VBoxManage showvminfo "{VM_NAME}"').returncode == 0
 
 
+def _vm_uuids():
+    """UUIDs of every registered machine named VM_NAME (VBox allows duplicate names)."""
+    out = _sh("VBoxManage list vms", timeout=30).stdout or ""
+    uuids = []
+    for line in out.splitlines():
+        if f'"{VM_NAME}"' in line and "{" in line:
+            uuids.append(line[line.rfind("{") + 1:line.rfind("}")])
+    return uuids
+
+
 def _destroy_vm():
-    """Fully remove the VM so a fresh `createvm --register` won't hit 'settings file already exists'
-    (VBox 7.x). Poweroff -> unregister --delete -> rm the leftover VM folder."""
-    _sh(f'VBoxManage controlvm "{VM_NAME}" poweroff', timeout=60)
-    time.sleep(2)
-    _sh(f'VBoxManage unregistervm "{VM_NAME}" --delete', timeout=180)
+    """Bulletproof teardown so a fresh install can't hit 'settings file exists' or 'already locked'
+    (VBox 7.x). Handles a wedged VM whose `poweroff` hangs, a stuck headless holding the session
+    lock, and multiple/inaccessible machines that share the name."""
+    # Bounded graceful poweroff — on a wedged VM this can hang, so cap it.
+    _sh(f'VBoxManage controlvm "{VM_NAME}" poweroff', timeout=20)
+    # Force-kill any lingering headless / hung controlvm still holding the session.
+    _sh(f"pkill -9 -f 'VBoxHeadless.*{VM_NAME}'")
+    _sh(f"pkill -9 -f 'controlvm {VM_NAME}'")
+    time.sleep(3)
+    # Unregister EVERY machine with this name, by UUID (covers duplicates + inaccessible).
+    for uuid in _vm_uuids():
+        _sh(f"VBoxManage unregistervm {uuid} --delete", timeout=120)   # may warn on inaccessible; fine
+    # Remove any leftover on-disk folder so createvm --register gets a clean slate.
     vmdir = os.path.join(os.path.expanduser("~"), "VirtualBox VMs", VM_NAME)
     if os.path.isdir(vmdir):
         shutil.rmtree(vmdir, ignore_errors=True)
+    time.sleep(2)
 
 
 def _get_onion(retries=12):
@@ -611,6 +630,13 @@ def cmd_here(args):
     print(f"\n{BOLD}dash here done.{OFF} View: ./dash serve" + ("" if args.no_publish else "  ·  pushed to the live board"))
 
 
+def cmd_vm_reset(args):
+    print(f"{BOLD}vm-reset{OFF} — killing stale VBox sessions and removing all copies of {VM_NAME}…")
+    _destroy_vm()
+    left = _vm_uuids()
+    print(f"{GREEN}clean.{OFF}" if not left else f"{AMBER}still present: {left}{OFF} (try again, or check VBox GUI)")
+
+
 def main():
     p = argparse.ArgumentParser(prog="dash", description="orchestrate + record SelfPrivacy dev/test runs")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -670,6 +696,7 @@ def main():
     h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
     h.set_defaults(fn=cmd_here)
 
+    sub.add_parser("vm-reset", help="kill stale VBox sessions + remove all copies of the SelfPrivacy VM").set_defaults(fn=cmd_vm_reset)
     sub.add_parser("demo").set_defaults(fn=cmd_demo)
     sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
 
