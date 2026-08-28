@@ -414,6 +414,17 @@ def _vm_exists():
     return _sh(f'VBoxManage showvminfo "{VM_NAME}"').returncode == 0
 
 
+def _destroy_vm():
+    """Fully remove the VM so a fresh `createvm --register` won't hit 'settings file already exists'
+    (VBox 7.x). Poweroff -> unregister --delete -> rm the leftover VM folder."""
+    _sh(f'VBoxManage controlvm "{VM_NAME}" poweroff', timeout=60)
+    time.sleep(2)
+    _sh(f'VBoxManage unregistervm "{VM_NAME}" --delete', timeout=180)
+    vmdir = os.path.join(os.path.expanduser("~"), "VirtualBox VMs", VM_NAME)
+    if os.path.isdir(vmdir):
+        shutil.rmtree(vmdir, ignore_errors=True)
+
+
 def _get_onion(retries=12):
     if not shutil.which("sshpass"):
         return ""
@@ -475,14 +486,20 @@ def preflight(do_sudo):
 
 
 def bring_up_backend(cat):
-    """Full backend bring-up via the Manager's build-and-run.sh (records the install time)."""
-    onion, _, _ = ensure_backend(install_ok=True)
-    if onion:
-        return onion
-    print(f"{GREY}no usable .onion yet — (re)installing the VM via build-and-run.sh…{OFF}")
+    """Full backend bring-up via the Manager's build-and-run.sh (records the install time).
+
+    A stale/broken VM is destroyed first — otherwise `createvm --register` fails on VBox 7.x with
+    'Machine settings file … already exists' (the reinstall doesn't remove the on-disk .vbox)."""
+    if _vm_running():                                # fast path: running VM that already has an onion
+        o = _get_onion(retries=8)
+        if o:
+            return o
+    if _vm_exists():
+        print(f"{GREY}removing the existing VM for a clean install (its settings file blocks createvm)…{OFF}")
+        _destroy_vm()
     inst = entry_by_id(cat, "install.vm-local")     # SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh
     if inst:
-        run_entry(inst)
+        run_entry(inst)                             # build-and-run.sh now hits a clean slate
     return _get_onion(retries=30)
 
 
@@ -552,6 +569,13 @@ def cmd_here(args):
 
     # Everything needing sudo is handled here, up front.
     pf = preflight(do_sudo=args.long)
+
+    # One-time app build deps (Flutter + Linux toolchain) via the Manager's own script.
+    if args.setup:
+        mgr = os.path.normpath(os.path.join(ROOT, "../Manager-Ubuntu-SelfPrivacy-Over-Tor"))
+        print(f"{BOLD}setup{OFF}: {mgr}/scripts/requirements.sh --app-linux (apt/sudo, one-time)")
+        subprocess.run("./scripts/requirements.sh --app-linux", shell=True, cwd=mgr)
+        pf = preflight(do_sudo=args.long)            # re-check after install
 
     # Backend
     onion = None
@@ -639,6 +663,8 @@ def main():
     h = sub.add_parser("here", help="run everything this host can (L1 + L2 + recorded L3), then publish")
     h.add_argument("--long", action="store_true",
                    help="full bring-up: sudo-start Tor + build the VM via build-and-run.sh, then run+record the app")
+    h.add_argument("--setup", action="store_true",
+                   help="one-time: run the Manager's requirements.sh --app-linux first (Flutter + Linux build deps)")
     h.add_argument("--fast", action="store_true", help="skip the long L2 nixosTests")
     h.add_argument("--no-install", action="store_true", help="(quick mode) don't start/create a VM")
     h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
