@@ -33,6 +33,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import threading
 import sys
 import time
 
@@ -661,6 +662,25 @@ def _kick_vm_tor():
 _VM_SSH = ("sshpass -p '' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=6 -p 2222 root@localhost")
 
 
+def _start_keepwarm(onion):
+    """Keep the Tor hidden-service circuit + descriptor HOT during the app run. The app caches its
+    SOCKS client and only recreates it on address change (never on failure), so if its very first
+    connection (fired a few seconds into a CPU-heavy boot, after the ~18s build let the circuit cool)
+    lands on a cold circuit and fails, the poisoned client is reused forever and Services never load —
+    even though curl/standalone probes connect fine. Hammering the onion here keeps a warm circuit +
+    cached descriptor so the app's first attempt succeeds fast. Returns a stop Event."""
+    stop = threading.Event()
+
+    def loop():
+        while not stop.is_set():
+            _sh(f"curl -s -o /dev/null --max-time 10 --socks5-hostname 127.0.0.1:9050 -k "
+                f"https://{onion}/api/version", timeout=15)
+            stop.wait(1.2)
+
+    threading.Thread(target=loop, daemon=True).start()
+    return stop
+
+
 def _ensure_api_nix_path():
     """Make sure `nix` is on the selfprivacy-api service PATH inside the backend VM.
 
@@ -786,6 +806,7 @@ def run_l3_flutter(onion, token, pf):
         # connection markers (e.g. the Services-data assertion on a clean connection) is a REAL bug
         # and is NOT retried — it stays red honestly.
         transient_markers = ("hostUnreachable", "TimeoutException", "SocketException", "Connection refused")
+        keepwarm = _start_keepwarm(onion) if pf.get("tor") else None
         for attempt in range(1, 4):
             rec = run_entry(entry, net="tor", method="vm-local", record=True, shots=True)
             if not rec or rec.get("status") == "pass":
@@ -803,6 +824,8 @@ def run_l3_flutter(onion, token, pf):
                 _onion_reachable(onion, tries=20)    # re-warm before the next launch
             else:
                 break                                # a real failure (or out of attempts) — keep it
+        if keepwarm:
+            keepwarm.set()
     finally:
         print(f"{GREY}restoring Manager repo (removing injected test, reverting pubspec)…{OFF}")
         try:
