@@ -29,6 +29,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -43,6 +45,7 @@ def scrub(text):
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data", "results.jsonl")
 LOGS = os.path.join(ROOT, "logs")
+MEDIA = os.path.join(ROOT, "media")
 CATALOG = os.path.join(ROOT, "catalog.json")
 
 GREEN, AMBER, RED, GREY, BOLD, OFF = "\033[32m", "\033[33m", "\033[31m", "\033[90m", "\033[1m", "\033[0m"
@@ -58,8 +61,12 @@ def load_catalog():
         return json.load(f)
 
 
+def all_entries(cat):
+    return list(cat.get("tests", [])) + list(cat.get("installs", []))
+
+
 def entry_by_id(cat, cid):
-    for e in cat["entries"]:
+    for e in all_entries(cat):
         if e["id"] == cid:
             return e
     return None
@@ -122,26 +129,81 @@ def classify(exit_code, duration, budget):
     return "fail"
 
 
-def run_entry(entry, config_label):
+def start_recording(run_id):
+    """Screen-record the client app while a test runs (X11 or Wayland). Local media only."""
+    x, way = os.environ.get("DISPLAY"), os.environ.get("WAYLAND_DISPLAY")
+    os.makedirs(MEDIA, exist_ok=True)
+    out = os.path.join(MEDIA, run_id + ".mp4")
+    try:
+        if way and shutil.which("wf-recorder"):
+            p = subprocess.Popen(["wf-recorder", "-f", out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif x and shutil.which("ffmpeg"):
+            p = subprocess.Popen(["ffmpeg", "-y", "-f", "x11grab", "-framerate", "15", "-i", x, out],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.PIPE)
+        else:
+            print(f"{GREY}(no display/recorder — the UI video is skipped; CLI + server logs still captured){OFF}")
+            return None
+        print(f"{GREY}(recording UI → {os.path.relpath(out, ROOT)}){OFF}")
+        return (p, out)
+    except Exception as ex:
+        print(f"{GREY}(recorder failed: {ex}){OFF}")
+        return None
+
+
+def stop_recording(rec):
+    if not rec:
+        return ""
+    p, out = rec
+    try:
+        p.send_signal(signal.SIGINT)   # lets ffmpeg/wf-recorder finalize the container
+        p.wait(timeout=15)
+    except Exception:
+        p.kill()
+    return os.path.relpath(out, ROOT) if os.path.exists(out) and os.path.getsize(out) > 0 else ""
+
+
+def pull_server_log(cmd, run_id):
+    """Best-effort fetch of backend logs (e.g. an ssh journalctl). Onions scrubbed."""
+    out = os.path.join(LOGS, run_id + ".server.log")
+    try:
+        with open(out, "w") as f:
+            subprocess.run(cmd, shell=True, stdout=f, stderr=subprocess.STDOUT, timeout=90)
+        open(out, "w").write(scrub(open(out, errors="replace").read()))
+        return os.path.relpath(out, ROOT)
+    except Exception:
+        return ""
+
+
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None):
     cmd = entry.get("cmd", "")
+    if entry.get("cmd_by_net"):
+        if not net:
+            print(f"{AMBER}skip{OFF}  {entry['id']} — needs --net ({'/'.join(entry['cmd_by_net'])})")
+            return None
+        cmd = entry["cmd_by_net"].get(net, "")
+        if not cmd:
+            print(f"{AMBER}skip{OFF}  {entry['id']} — no command for net={net}")
+            return None
+
+    nets = entry.get("networks") or []
+    net_tag = net or (nets[0] if len(nets) == 1 else "-")
+    method_tag = method or entry.get("method", "-")
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
     base = {
         "run_id": run_id, "ts": now_iso(), "env": "ci" if is_ci() else "local",
         "host": socket.gethostname(), "category": entry.get("category", "test"),
         "id": entry["id"], "name": entry.get("name", entry["id"]), "level": entry.get("level", ""),
-        "client": entry.get("client", "-"), "transport": entry.get("transport", "-"),
-        "backend": entry.get("backend", "-"), "method": entry.get("method", "-"),
+        "client": entry.get("client", "-"), "transport": net_tag,
+        "backend": entry.get("backend", "-"), "method": method_tag,
+        "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if gs["dirty"] else ""),
         **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
     }
 
     if cmd == "@todo":
-        rec = {**base, "status": "skip", "duration_s": 0, "exit_code": None,
-               "error": "not implemented yet", "log_path": ""}
-        append_record(rec)
-        print(f"{GREY}skip{OFF}  {entry['id']}  (test not implemented)")
-        return rec
+        print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
+        return None
     if cmd == "@manual":
         print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
         print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
@@ -150,10 +212,12 @@ def run_entry(entry, config_label):
     repo_dir = os.path.normpath(os.path.join(ROOT, entry["repo"])) if entry.get("repo") else ROOT
     log_path = os.path.join(LOGS, run_id + ".log")
     os.makedirs(LOGS, exist_ok=True)
-    print(f"{BOLD}▶ {entry['id']}{OFF}  {GREY}{cmd}{OFF}  (cwd {entry.get('repo','.')})")
+    tags = f"{GREY}[net={net_tag} on={method_tag}]{OFF}"
+    print(f"{BOLD}▶ {entry['id']}{OFF} {tags}  {GREY}{cmd}{OFF}")
+    rec_handle = start_recording(run_id) if record else None
     start = datetime.datetime.now()
     with open(log_path, "w") as log:
-        log.write(f"# {entry['id']}\n# {cmd}\n# cwd {repo_dir}\n# started {now_iso()}\n\n")
+        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {repo_dir}\n# started {now_iso()}\n\n")
         log.flush()
         try:
             proc = subprocess.Popen(cmd, shell=True, cwd=repo_dir, stdout=subprocess.PIPE,
@@ -170,11 +234,16 @@ def run_entry(entry, config_label):
             log.write(f"\n[dash] launch error: {ex}\n")
             code = 127
     duration = (datetime.datetime.now() - start).total_seconds()
+    video = stop_recording(rec_handle)
     trim_log(log_path)
+    slog_cmd = server_log or entry.get("server_log_cmd")
+    server_log_path = pull_server_log(slog_cmd, run_id) if slog_cmd else ""
     status = classify(code, duration, entry.get("budget_s"))
     err = "" if status == "pass" else summarize_error(log_path)
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
-           "error": err, "log_path": os.path.relpath(log_path, ROOT)}
+           "error": err, "log_path": os.path.relpath(log_path, ROOT),
+           "artifacts": {"client_log": os.path.relpath(log_path, ROOT),
+                         "server_log": server_log_path, "video": video}}
     append_record(rec)
     col = {"pass": GREEN, "slow": AMBER, "fail": RED}.get(status, GREY)
     print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
@@ -203,16 +272,18 @@ def fmt_dur(s):
 # ── Commands ─────────────────────────────────────────────────────────────────
 def cmd_list(args):
     cat = load_catalog()
-    for e in cat["entries"]:
-        tag = f"{e.get('client','-')}·{e.get('transport','-')}"
-        kind = "@todo" if e["cmd"] == "@todo" else ("@manual" if e["cmd"] == "@manual" else "")
-        print(f"  {e['id']:<32} {e['level']:<8} {tag:<18} {GREY}{kind}{OFF}")
-    print(f"\n{len(cat['entries'])} commands. Run: ./dash run <id>  |  ./dash run --all")
+    es = all_entries(cat)
+    for e in es:
+        nets = ",".join(e.get("networks") or []) or "-"
+        c = e.get("cmd", "")
+        kind = "@todo" if c == "@todo" else "@manual" if c == "@manual" else ""
+        print(f"  {e['id']:<26} {e['level']:<8} {e.get('client','-'):<8} net={nets:<16} {GREY}{kind}{OFF}")
+    print(f"\n{len(es)} commands. Run: ./dash run <id> [--net tor --on vm-local --record]  |  ./dash run --all")
 
 
 def select(args):
     cat = load_catalog()
-    es = cat["entries"]
+    es = all_entries(cat)
     if args.ids:
         picked = [entry_by_id(cat, i) for i in args.ids]
         missing = [i for i, p in zip(args.ids, picked) if p is None]
@@ -237,7 +308,8 @@ def select(args):
 def cmd_run(args):
     entries = select(args)
     print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
-    results = [run_entry(e, args.config) for e in entries]
+    results = [run_entry(e, args.config, net=args.net, method=args.on,
+                         record=args.record, server_log=args.server_log) for e in entries]
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
     print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → data/results.jsonl")
@@ -250,7 +322,7 @@ def cmd_wrap(args):
                                        "level": "adhoc", "repo": None, "budget_s": None}
     e = dict(e)
     e["cmd"] = " ".join(args.cmd)
-    run_entry(e, args.config)
+    run_entry(e, args.config, net=args.net, method=args.on, record=args.record, server_log=args.server_log)
 
 
 def cmd_report(args):
@@ -259,15 +331,18 @@ def cmd_report(args):
     if not e:
         sys.exit(f"unknown id: {args.id}")
     gs = git_state(e.get("repo"))
+    nets = e.get("networks") or []
     rec = {
         "run_id": gen_run_id(), "ts": now_iso(), "env": args.env or ("ci" if is_ci() else "local"),
         "host": args.host or socket.gethostname(), "category": e.get("category", "test"),
         "id": e["id"], "name": e.get("name", e["id"]), "level": e.get("level", ""),
-        "client": e.get("client", "-"), "transport": e.get("transport", "-"),
-        "backend": e.get("backend", "-"), "method": e.get("method", "-"),
+        "client": e.get("client", "-"), "transport": args.net or (nets[0] if len(nets) == 1 else "-"),
+        "backend": e.get("backend", "-"), "method": args.on or e.get("method", "-"),
+        "records_video": bool(e.get("records_video")),
         "config_label": args.config or "", "status": args.status,
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
+        "artifacts": {"client_log": "", "server_log": "", "video": ""},
         **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
     }
     append_record(rec)
@@ -319,11 +394,19 @@ def main():
     r.add_argument("--category")
     r.add_argument("--tag")
     r.add_argument("--config", help="label the current dirty working tree")
+    r.add_argument("--net", help="network/transport: tor|chutney|https|...")
+    r.add_argument("--on", help="install method the backend runs on: vm-local|native-ethernet|...")
+    r.add_argument("--record", action="store_true", help="screen-record the client UI (local media)")
+    r.add_argument("--server-log", help="shell cmd to fetch backend logs after the run (e.g. ssh ... journalctl)")
     r.set_defaults(fn=cmd_run)
 
     w = sub.add_parser("wrap")
     w.add_argument("id")
     w.add_argument("--config")
+    w.add_argument("--net")
+    w.add_argument("--on")
+    w.add_argument("--record", action="store_true")
+    w.add_argument("--server-log")
     w.add_argument("cmd", nargs=argparse.REMAINDER, help="-- then the command")
     w.set_defaults(fn=cmd_wrap)
 
@@ -333,6 +416,8 @@ def main():
     rp.add_argument("--duration", required=True, type=float)
     rp.add_argument("--error", default="")
     rp.add_argument("--config", default="")
+    rp.add_argument("--net")
+    rp.add_argument("--on")
     rp.add_argument("--env")
     rp.add_argument("--host")
     rp.set_defaults(fn=cmd_report)

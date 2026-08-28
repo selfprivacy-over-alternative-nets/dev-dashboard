@@ -14,19 +14,19 @@
     <span class="ctl"><label>env</label>
       <select id="f-env"><option value="all">all</option><option value="local">local</option><option value="ci">ci</option></select>
     </span>
+    <span class="ctl"><label>networks</label><span id="nettabs"></span></span>
     <span class="spacer"></span>
-    <span class="ctl"><label><input type="checkbox" id="f-demo" checked> show demo</label></span>
+    <span class="ctl"><label><input type="checkbox" id="f-demo"> demo</label></span>
     <button class="btn" id="reload">↻ reload</button>
   </div>
 
+  <div id="demobanner" class="demobanner">DEMO DATA — illustrative, not real runs. Untick “demo” for the real board.</div>
   <div class="summary" id="summary"></div>
 
-  <section id="matrix"></section>
-  <section id="installs"></section>
-
-  <div id="detail"></div>
-
-  <section id="errors"></section>
+  <section id="levels"></section>
+  <section id="unit"></section>
+  <section id="l2"></section>
+  <section id="appmatrix"></section>
 
   <div class="legend" id="legend"></div>
 

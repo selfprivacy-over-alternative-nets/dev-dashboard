@@ -1,97 +1,120 @@
 #!/usr/bin/env python3
-"""Generate catalog.json — the declarative list of every command the dashboard tracks.
+"""Generate catalog.json — the declarative source of truth for the dashboard.
 
-Edit this file (not catalog.json) to add/adjust commands, then run:  python3 tools/gen_catalog.py
-The catalog drives both the `dash` orchestrator and the matrix scaffold (so a test that has
-never run still shows up as a grey 'pending' cell — you always see the full picture).
+Three axes make up the matrix:
+  • test / flow        (rows)
+  • installation method (columns — WHERE/HOW the backend ran)
+  • network / transport (the 3rd dimension — tor, chutney, https, ...)
+
+'unit' is NOT a network — L1 unit tests are transport-agnostic and live in their own strip.
+Every test carries a `desc` (shown on hover) and a `level` (explained in the dashboard legend).
+Edit this file, then: python3 tools/gen_catalog.py
 """
 import json
 import os
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# Repos under test, relative to this dashboard repo (sibling checkouts).
 API = "../selfprivacy-api"
 TESTS = "../selfprivacy-tor-tests"
 MANAGER = "../Manager-Ubuntu-SelfPrivacy-Over-Tor"
-BACKEND = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend"
 
-# L3 usage flows — "walk the app like a user". These exercise the Flutter app.
-FLOWS = [
-    ("connect", "connect to server"),
-    ("login", "login / auth"),
-    ("services", "services list loads"),
-    ("nextcloud", "open Nextcloud"),
-    ("menus", "navigate menus"),
-    ("addremove", "add / remove service"),
-    ("logout", "logout"),
-]
-# Which transports each client supports for L3.
-CLIENT_TRANSPORTS = {
-    "desktop": ["tor", "chutney", "https"],
-    "android": ["tor", "https"],
+# Real connection mechanisms only (no 'unit').
+NETWORKS = ["tor", "chutney", "https", "yggdrasil", "hyphanet"]
+FUTURE = ["yggdrasil", "hyphanet"]
+
+LEVELS = {
+    "L1": "Unit — pure Python logic in the API (e.g. onion/URL routing). No VM, no network, no app. Runs in milliseconds.",
+    "L2": "Integration — a real NixOS backend boots in a VM and its routing is checked over a transport. No app involved.",
+    "L3": "App usage — the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded.",
 }
 
-entries = []
+# Installation methods = the columns. Each says where/how the backend runs.
+INSTALL_METHODS = [
+    {"id": "test-vm", "label": "auto test-VM", "backend": "vm", "group": "automated",
+     "desc": "The self-contained NixOS test VM the L2 nixosTests spin up. Not a manual install."},
+    {"id": "vm-local", "label": "VM · same device", "backend": "vm", "group": "VM on Ubuntu",
+     "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh)."},
+    {"id": "vm-remote", "label": "VM · other device", "backend": "vm", "group": "VM on Ubuntu",
+     "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network."},
+    {"id": "native-ethernet", "label": "native · ethernet", "backend": "native", "group": "NixOS native",
+     "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device."},
+    {"id": "native-usb-nvme", "label": "native · USB→NVMe", "backend": "native", "group": "NixOS native",
+     "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer."},
+    {"id": "native-boot-usb", "label": "native · bootable USB", "backend": "native", "group": "NixOS native",
+     "desc": "NixOS booted directly off a bootable USB drive."},
+]
 
-# ── CORE: L1 unit + L2 nixosTests ────────────────────────────────────────────
-entries.append({
-    "id": "L1.onion-routing", "name": "onion URL routing", "category": "test",
-    "level": "L1", "client": "-", "transport": "unit", "backend": "-",
-    "repo": API, "budget_s": 180,
+FLOWS = [
+    ("connect", "connect to server", "App connects to the backend over the selected network and reaches the API."),
+    ("login", "login / auth", "App authenticates with the API token and loads the authenticated session."),
+    ("services", "services list loads", "The Services tab loads the list of services from the backend."),
+    ("providers", "providers tab", "Open the app, switch Providers→Services and back, then close — the recorded smoke flow."),
+    ("nextcloud", "open Nextcloud", "Open the Nextcloud service detail from the app."),
+    ("menus", "navigate menus", "Walk the main tabs (Providers → Services → Users → More) and back."),
+    ("addremove", "add / remove service", "Enable then disable a service and confirm the backend applies it."),
+]
+CLIENT_NETS = {"desktop": ["tor", "chutney", "https"], "android": ["tor", "https"]}
+
+tests = []
+
+# L1 — unit (own strip; network-agnostic)
+tests.append({
+    "id": "L1.onion-routing", "name": "onion URL routing", "level": "L1", "client": "-",
+    "networks": [], "repo": API, "budget_s": 180,
+    "desc": "Unit-tests the API logic that rewrites service URLs for .onion path-routing (T1.1–T1.17).",
     "cmd": "nix run .#pytest-vm -- tests/test_onion_routing.py -q",
 })
-entries.append({
-    "id": "L2.tor-integration", "name": "backend up + routing", "category": "test",
-    "level": "L2", "client": "-", "transport": "tor", "backend": "native",
-    "repo": TESTS, "budget_s": 1800,
-    "cmd": "nix build .#checks.x86_64-linux.tor-integration --no-link -L",
-})
-entries.append({
-    "id": "L2.https-integration", "name": "backend up + routing", "category": "test",
-    "level": "L2", "client": "-", "transport": "https", "backend": "native",
-    "repo": TESTS, "budget_s": 1800,
-    "cmd": "nix build .#checks.x86_64-linux.https-integration --no-link -L",
+
+# L2 — backend integration, one test, transport-specific command
+tests.append({
+    "id": "L2.backend", "name": "backend up + routing", "level": "L2", "client": "-",
+    "networks": ["tor", "https"], "method": "test-vm", "repo": TESTS, "budget_s": 1800,
+    "desc": "Boots a NixOS backend in a VM and checks the API + nginx path routing are reachable over the transport (T2/T3).",
+    "cmd_by_net": {
+        "tor": "nix build .#checks.x86_64-linux.tor-integration --no-link -L",
+        "https": "nix build .#checks.x86_64-linux.https-integration --no-link -L",
+    },
+    # Pulled after the run (best-effort) and stored as the server-side log for inspection.
+    "server_log_cmd": "",
 })
 
-# ── L3: usage flows × client × transport ─────────────────────────────────────
-for client, transports in CLIENT_TRANSPORTS.items():
-    for t in transports:
-        for slug, name in FLOWS:
-            entries.append({
-                "id": f"L3.{slug}.{client}.{t}", "name": name, "category": "test",
-                "level": "L3", "client": client, "transport": t, "backend": "-",
-                "repo": MANAGER, "budget_s": 60,
-                # @todo = Flutter integration test not written yet -> shows as 'pending'.
-                "cmd": "@todo",
-            })
+# L3 — app usage flows × client (network + install-method are runtime tags, not in the id)
+for client, nets in CLIENT_NETS.items():
+    for slug, name, desc in FLOWS:
+        tests.append({
+            "id": f"L3.{slug}.{client}", "name": name, "level": "L3", "client": client,
+            "networks": nets, "repo": MANAGER, "budget_s": 90,
+            "desc": f"[{client}] {desc}",
+            # @todo until the Flutter integration_test + recorder is wired (see flutter-app/integration_test).
+            "cmd": "@todo",
+            "records_video": True,
+        })
 
-# ── Installations: separate section, tracked for time + method ───────────────
+# Installations — the manual/deploy procedures (their time is shown in the matrix's install row)
 installs = [
-    ("install.vm-ubuntu-here", "VM on Ubuntu — this device", "vm-local", "vm",
+    ("install.vm-local", "VM · same device", "vm-local",
      "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"),
-    ("install.vm-ubuntu-remote", "VM on Ubuntu — another device", "vm-remote", "vm", "@manual"),
-    ("install.native-ethernet", "NixOS native — ethernet", "native-ethernet", "native", "@manual"),
-    ("install.native-usb-nvme", "NixOS native — USB installer → NVMe", "usb-installer", "native", "@manual"),
-    ("install.native-boot-usb", "NixOS native — bootable USB", "bootable-usb", "native", "@manual"),
+    ("install.vm-remote", "VM · other device", "vm-remote", "@manual"),
+    ("install.native-ethernet", "native · ethernet", "native-ethernet", "@manual"),
+    ("install.native-usb-nvme", "native · USB→NVMe", "native-usb-nvme", "@manual"),
+    ("install.native-boot-usb", "native · bootable USB", "native-boot-usb", "@manual"),
 ]
-for iid, name, method, backend, cmd in installs:
-    entries.append({
-        "id": iid, "name": name, "category": "install", "level": "install",
-        "client": "-", "transport": "-", "backend": backend, "method": method,
-        "repo": BACKEND, "budget_s": 900, "cmd": cmd,
+install_entries = []
+for iid, name, method, cmd in installs:
+    m = next(x for x in INSTALL_METHODS if x["id"] == method)
+    install_entries.append({
+        "id": iid, "name": name, "level": "install", "category": "install", "client": "-",
+        "networks": [], "method": method, "backend": m["backend"],
+        "repo": MANAGER + "/backend", "budget_s": 900, "desc": m["desc"], "cmd": cmd,
     })
 
 catalog = {
-    "transports": ["unit", "tor", "chutney", "https", "yggdrasil", "hyphanet"],
-    "future_transports": ["yggdrasil", "hyphanet"],
-    "clients": ["desktop", "android"],
-    "flows": [f[0] for f in FLOWS],
-    "entries": entries,
+    "networks": NETWORKS, "future_networks": FUTURE, "levels": LEVELS,
+    "install_methods": INSTALL_METHODS, "flows": [f[0] for f in FLOWS],
+    "tests": tests, "installs": install_entries,
 }
-
 out = os.path.join(HERE, "catalog.json")
 with open(out, "w") as f:
     json.dump(catalog, f, indent=2)
     f.write("\n")
-print(f"wrote {out}: {len(entries)} entries")
+print(f"wrote {out}: {len(tests)} tests + {len(install_entries)} installs")

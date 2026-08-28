@@ -2,68 +2,83 @@
 
 A **full-width, CLI-style test matrix** that shows — per commit and per (even uncommitted) code
 config — **what works, what doesn't, and how fast**, across the SelfPrivacy-over-alternative-nets
-stack. Runs are recorded by one orchestrator script and published live to GitHub Pages.
+stack. One orchestrator script runs/times/records every command; the board publishes to GitHub Pages.
 
 - **Live:** `https://selfprivacy-over-alternative-nets.github.io/dev-dashboard/`
-  (enabled automatically by the Pages workflow on first push).
-- **Local:** `./dash serve` → http://localhost:8099/
+- **Local (with videos & raw logs):** `./dash serve` → http://localhost:8099/
 
-The matrix is **catalog-driven**: every planned test shows up even before it has run (as grey
-*pending*), so the board is a complete picture, not just "what happened to run."
+## The three axes
+
+The app-usage matrix is 3-dimensional, exactly as requested:
+
+- **rows** = the test / flow,
+- **columns** = the **installation method** — *where/how the backend runs* (VM same device, VM other
+  device, native ethernet, native USB→NVMe, native bootable USB),
+- **3rd dimension** = the **network** (tor · chutney · https · future ygg/hypha) shown as sub-columns
+  you toggle up top.
+
+A dedicated **installation** row shows how long each deploy took (network-independent), so install
+times and test times sit in the same matrix.
+
+### Levels (also explained in-page)
+
+- **L1 — unit:** pure Python logic in the API (onion/URL routing). No VM, no network. Milliseconds.
+- **L2 — integration:** a real NixOS backend boots in the automated test-VM; routing checked per
+  network. No app.
+- **L3 — app usage:** the SelfPrivacy app is driven like a user (open → Providers→Services→back →
+  add a service …) against a running backend, and **screen-recorded**.
+
+`unit` is deliberately **not** a network column.
 
 ## Iterate fast, let the board accumulate
 
 ```bash
-./dash run L1.onion-routing            # run one thing; it's timed + recorded
-./dash run --level L2                  # run a whole level
-./dash run --tag transport=https       # run everything on one transport
-./dash run --all                       # everything runnable
-./dash serve                           # look at the result immediately (localhost:8099)
-./dash publish                         # commit + push → the live Pages board updates
+./dash run L1.onion-routing                          # unit, ~30s
+./dash run L2.backend --net tor                       # or --net https
+./dash run L3.providers.desktop --net tor --on vm-local --record   # app flow, recorded
+./dash serve                                          # look now (localhost:8099)
+./dash publish                                        # commit + push → live board updates
 ```
 
-Every run appends to `data/results.jsonl`; nothing is overwritten. Run the same thing 5×
-and you get 5 timings **stacked newest-first** in its cell. Work on a dirty tree and label it:
+`--net` picks the transport, `--on` picks the install method the backend runs on, `--record` screen-
+records the client UI. Every run appends to `data/results.jsonl`; nothing is overwritten, so repeated
+runs **stack newest-first** in a cell. Label a dirty tree to compare WIP variants:
 
 ```bash
-./dash run L2.tor-integration --config "socks5 retry patch"
+./dash run L3.addremove.desktop --net tor --on vm-local --config "socks5 retry patch"
 ```
 
-That run is tagged with your commit **and** a hash of the uncommitted diff, so in the dashboard you
-pick the **commit** dropdown, then drill into its **config** dropdown to compare clean vs each WIP
-variant.
+Pick a **commit** in the top bar, then its **config** dropdown, to drill clean vs each uncommitted diff.
 
-## Commands (results that ran elsewhere)
+## Recording client-side tests (see it work)
 
-For installs done over USB / on another laptop / on a Pi — where the command can't run here — log
-the result (and its time) after the fact, or over SSH from the target:
+L3 runs capture three artifacts, inspectable by unfolding a cell:
+
+- **UI video** — screen recording of the app (ffmpeg/x11grab or wf-recorder via `--record`).
+- **client CLI log** — everything the launcher printed.
+- **server log** — pulled from the backend if you pass `--server-log 'ssh … journalctl -u selfprivacy-api -u nginx …'`.
+
+GitHub Pages can't serve video reliably, so on the live site these show as **placeholders**; run
+`./dash serve` locally to actually watch/inspect them. The Flutter flow itself lives in the app repo:
+`flutter-app/selfprivacy.org.app/integration_test/providers_flow_test.dart` (Providers→Services→back).
+Wire it into the catalog by replacing the `@todo` cmd for `L3.*` once you've run it once.
+
+## Results that ran elsewhere (USB / another machine)
+
+The USB/bootable-USB/other-laptop installs can't run from here — log them after the fact (or over
+SSH from the target), including the time:
 
 ```bash
 ./dash report install.native-usb-nvme --status pass --duration 1180 --config "v3 image"
 ssh pi@host 'cd dev-dashboard && ./dash report install.native-ethernet --status pass --duration 735'
 ```
 
-Time+record an ad-hoc command not in the catalog:
+## Reading the board
 
-```bash
-./dash wrap L2.tor-integration -- nix build .#checks.x86_64-linux.tor-integration -L
-```
-
-## What it tracks
-
-The catalog (`catalog.json`, generated by `tools/gen_catalog.py`) collapses the project's real test
-surface — see the scenario map in the Manager repo — onto two axes:
-
-- **Rows:** `L1` unit · `L2` nixosTests · `L3` app-usage flows (connect → login → services → open
-  Nextcloud → navigate menus → add/remove service → logout).
-- **Columns:** transport — `unit`, `tor`, `chutney`, `https`, and greyed **future** `yggdrasil` /
-  `hyphanet`. `L3` rows are split into **desktop** and **android** app sections.
-- **Installations** get their own section (method × backend × stacked times), because "how long did
-  it take to install, and which way" is a first-class question here.
-
-`L3.*` commands are `@todo` until the Flutter `integration_test` flows are written — they render as
-**pending** so the roadmap is visible. Wire a real command by editing `tools/gen_catalog.py`, then
-`python3 tools/gen_catalog.py`.
+🟢 pass · 🟠 slow (over the catalog time budget) · 🔴 fail · ○ **todo** (automated test not written
+yet) · — **no runs** (nothing recorded — *nothing runs in the background*; start one with `./dash
+run`) · ▶ has a recording · ᶜ = CI run. Hover a row for what it tests. Click a cell to **unfold** its
+runs, errors, logs and video — errors live per-test, not in one separate list.
 
 ## Data model
 
@@ -71,40 +86,37 @@ One JSON record per run in `data/results.jsonl`:
 
 ```
 run_id · ts · env(local|ci) · host
-repo · commit · subject · dirty · diff_hash · config_label   ← per-commit + dirty-config drilldown
-id · name · level · client · transport · backend · method
-status(pass|slow|fail|skip) · duration_s · exit_code · error · log_path
+repo · commit · subject · dirty · diff_hash · config_label     ← commit + dirty-config drilldown
+id · name · level · client · transport(network) · method(install) · backend
+status(pass|slow|fail) · duration_s · exit_code · error
+artifacts{ client_log, server_log, video }
 ```
 
-`status` is derived: exit 0 → **pass**, exit 0 but over the catalog `budget_s` → **slow**, else
-**fail**. `env` is `ci` when `$CI`/`$GITHUB_ACTIONS` is set.
-
-## Publishing & CI
-
-`.github/workflows/pages.yml` deploys the whole repo to GitHub Pages on every push to `main` (and
-auto-enables Pages on the first run via `actions/configure-pages`). Because results are committed to
-the repo, the live board simply reflects what's in `data/results.jsonl`.
+`status`: exit 0 → pass, exit 0 but over `budget_s` → slow, else fail. `env` is `ci` when
+`$CI`/`$GITHUB_ACTIONS` is set.
 
 ## Demo data
 
-`./dash demo` seeds clearly-labeled illustrative records (`demo:true`) so you can see the full
-visualization immediately; untick **show demo** in the top bar, or `./dash clear-demo`, to see only
-real runs.
+The board defaults to **real data only**. `./dash demo` adds clearly-labeled illustrative records
+(purple, `demo:true`) so you can see the full 3-axis layout; tick **demo** in the top bar to show
+them (a banner makes it obvious), or `./dash clear-demo` to remove. This is why install times you
+never ran only appear when demo is on.
 
-## Security
+## Publishing & security
 
-Raw run logs (`logs/*.log`) are **git-ignored** — they can contain live `.onion` addresses — so they
-stay local (the log link works under `./dash serve`, not on Pages). The one-line error summaries
-that *do* get published have `.onion` addresses scrubbed to `<onion>`.
+`.github/workflows/pages.yml` deploys on every push to `main` (auto-enables Pages on first run).
+Raw logs (`logs/*.log`, `*.server.log`) and videos (`media/`) are **git-ignored** — kept local, since
+they can contain live `.onion` addresses — so media links work under `./dash serve`, not on Pages.
+Published error summaries have `.onion` scrubbed to `<onion>`.
 
 ## Layout
 
 ```
-dash                     the orchestrator (run · wrap · report · serve · publish · demo)
-catalog.json             the tracked command matrix (generated)
-tools/gen_catalog.py     edit this to change what's tracked
+dash                     orchestrator: run · wrap · report · serve · publish · demo
+catalog.json             the tracked matrix (generated by tools/gen_catalog.py)
+tools/gen_catalog.py     edit to change what's tracked
 tools/gen_demo.py        illustrative demo data
 index.html app.js style.css   the static full-width matrix (no build step)
 data/results.jsonl       append-only results (published)
-logs/                    raw per-run logs (local only)
+logs/  media/            raw logs + recordings (local only)
 ```

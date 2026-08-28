@@ -1,549 +1,391 @@
 {
-  "transports": [
-    "unit",
+  "networks": [
     "tor",
     "chutney",
     "https",
     "yggdrasil",
     "hyphanet"
   ],
-  "future_transports": [
+  "future_networks": [
     "yggdrasil",
     "hyphanet"
   ],
-  "clients": [
-    "desktop",
-    "android"
+  "levels": {
+    "L1": "Unit \u2014 pure Python logic in the API (e.g. onion/URL routing). No VM, no network, no app. Runs in milliseconds.",
+    "L2": "Integration \u2014 a real NixOS backend boots in a VM and its routing is checked over a transport. No app involved.",
+    "L3": "App usage \u2014 the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded."
+  },
+  "install_methods": [
+    {
+      "id": "test-vm",
+      "label": "auto test-VM",
+      "backend": "vm",
+      "group": "automated",
+      "desc": "The self-contained NixOS test VM the L2 nixosTests spin up. Not a manual install."
+    },
+    {
+      "id": "vm-local",
+      "label": "VM \u00b7 same device",
+      "backend": "vm",
+      "group": "VM on Ubuntu",
+      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh)."
+    },
+    {
+      "id": "vm-remote",
+      "label": "VM \u00b7 other device",
+      "backend": "vm",
+      "group": "VM on Ubuntu",
+      "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network."
+    },
+    {
+      "id": "native-ethernet",
+      "label": "native \u00b7 ethernet",
+      "backend": "native",
+      "group": "NixOS native",
+      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device."
+    },
+    {
+      "id": "native-usb-nvme",
+      "label": "native \u00b7 USB\u2192NVMe",
+      "backend": "native",
+      "group": "NixOS native",
+      "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer."
+    },
+    {
+      "id": "native-boot-usb",
+      "label": "native \u00b7 bootable USB",
+      "backend": "native",
+      "group": "NixOS native",
+      "desc": "NixOS booted directly off a bootable USB drive."
+    }
   ],
   "flows": [
     "connect",
     "login",
     "services",
+    "providers",
     "nextcloud",
     "menus",
-    "addremove",
-    "logout"
+    "addremove"
   ],
-  "entries": [
+  "tests": [
     {
       "id": "L1.onion-routing",
       "name": "onion URL routing",
-      "category": "test",
       "level": "L1",
       "client": "-",
-      "transport": "unit",
-      "backend": "-",
+      "networks": [],
       "repo": "../selfprivacy-api",
       "budget_s": 180,
+      "desc": "Unit-tests the API logic that rewrites service URLs for .onion path-routing (T1.1\u2013T1.17).",
       "cmd": "nix run .#pytest-vm -- tests/test_onion_routing.py -q"
     },
     {
-      "id": "L2.tor-integration",
+      "id": "L2.backend",
       "name": "backend up + routing",
-      "category": "test",
       "level": "L2",
       "client": "-",
-      "transport": "tor",
-      "backend": "native",
+      "networks": [
+        "tor",
+        "https"
+      ],
+      "method": "test-vm",
       "repo": "../selfprivacy-tor-tests",
       "budget_s": 1800,
-      "cmd": "nix build .#checks.x86_64-linux.tor-integration --no-link -L"
+      "desc": "Boots a NixOS backend in a VM and checks the API + nginx path routing are reachable over the transport (T2/T3).",
+      "cmd_by_net": {
+        "tor": "nix build .#checks.x86_64-linux.tor-integration --no-link -L",
+        "https": "nix build .#checks.x86_64-linux.https-integration --no-link -L"
+      },
+      "server_log_cmd": ""
     },
     {
-      "id": "L2.https-integration",
-      "name": "backend up + routing",
-      "category": "test",
-      "level": "L2",
-      "client": "-",
-      "transport": "https",
-      "backend": "native",
-      "repo": "../selfprivacy-tor-tests",
-      "budget_s": 1800,
-      "cmd": "nix build .#checks.x86_64-linux.https-integration --no-link -L"
-    },
-    {
-      "id": "L3.connect.desktop.tor",
+      "id": "L3.connect.desktop",
       "name": "connect to server",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] App connects to the backend over the selected network and reaches the API.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.login.desktop.tor",
+      "id": "L3.login.desktop",
       "name": "login / auth",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] App authenticates with the API token and loads the authenticated session.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.services.desktop.tor",
+      "id": "L3.services.desktop",
       "name": "services list loads",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] The Services tab loads the list of services from the backend.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.nextcloud.desktop.tor",
+      "id": "L3.providers.desktop",
+      "name": "providers tab",
+      "level": "L3",
+      "client": "desktop",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
+      "budget_s": 90,
+      "desc": "[desktop] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
+      "cmd": "@todo",
+      "records_video": true
+    },
+    {
+      "id": "L3.nextcloud.desktop",
       "name": "open Nextcloud",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] Open the Nextcloud service detail from the app.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.menus.desktop.tor",
+      "id": "L3.menus.desktop",
       "name": "navigate menus",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.addremove.desktop.tor",
+      "id": "L3.addremove.desktop",
       "name": "add / remove service",
-      "category": "test",
       "level": "L3",
       "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[desktop] Enable then disable a service and confirm the backend applies it.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.logout.desktop.tor",
-      "name": "logout",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.connect.desktop.chutney",
+      "id": "L3.connect.android",
       "name": "connect to server",
-      "category": "test",
       "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[android] App connects to the backend over the selected network and reaches the API.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.login.desktop.chutney",
+      "id": "L3.login.android",
       "name": "login / auth",
-      "category": "test",
       "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[android] App authenticates with the API token and loads the authenticated session.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.services.desktop.chutney",
+      "id": "L3.services.android",
       "name": "services list loads",
-      "category": "test",
       "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[android] The Services tab loads the list of services from the backend.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.nextcloud.desktop.chutney",
+      "id": "L3.providers.android",
+      "name": "providers tab",
+      "level": "L3",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
+      "budget_s": 90,
+      "desc": "[android] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
+      "cmd": "@todo",
+      "records_video": true
+    },
+    {
+      "id": "L3.nextcloud.android",
       "name": "open Nextcloud",
-      "category": "test",
       "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[android] Open the Nextcloud service detail from the app.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.menus.desktop.chutney",
+      "id": "L3.menus.android",
       "name": "navigate menus",
-      "category": "test",
       "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
+      "budget_s": 90,
+      "desc": "[android] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "cmd": "@todo",
+      "records_video": true
     },
     {
-      "id": "L3.addremove.desktop.chutney",
+      "id": "L3.addremove.android",
       "name": "add / remove service",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.logout.desktop.chutney",
-      "name": "logout",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "chutney",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.connect.desktop.https",
-      "name": "connect to server",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.login.desktop.https",
-      "name": "login / auth",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.services.desktop.https",
-      "name": "services list loads",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.nextcloud.desktop.https",
-      "name": "open Nextcloud",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.menus.desktop.https",
-      "name": "navigate menus",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.addremove.desktop.https",
-      "name": "add / remove service",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.logout.desktop.https",
-      "name": "logout",
-      "category": "test",
-      "level": "L3",
-      "client": "desktop",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.connect.android.tor",
-      "name": "connect to server",
-      "category": "test",
       "level": "L3",
       "client": "android",
-      "transport": "tor",
-      "backend": "-",
+      "networks": [
+        "tor",
+        "https"
+      ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
+      "budget_s": 90,
+      "desc": "[android] Enable then disable a service and confirm the backend applies it.",
+      "cmd": "@todo",
+      "records_video": true
+    }
+  ],
+  "installs": [
     {
-      "id": "L3.login.android.tor",
-      "name": "login / auth",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.services.android.tor",
-      "name": "services list loads",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.nextcloud.android.tor",
-      "name": "open Nextcloud",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.menus.android.tor",
-      "name": "navigate menus",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.addremove.android.tor",
-      "name": "add / remove service",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.logout.android.tor",
-      "name": "logout",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "tor",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.connect.android.https",
-      "name": "connect to server",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.login.android.https",
-      "name": "login / auth",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.services.android.https",
-      "name": "services list loads",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.nextcloud.android.https",
-      "name": "open Nextcloud",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.menus.android.https",
-      "name": "navigate menus",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.addremove.android.https",
-      "name": "add / remove service",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "L3.logout.android.https",
-      "name": "logout",
-      "category": "test",
-      "level": "L3",
-      "client": "android",
-      "transport": "https",
-      "backend": "-",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
-      "budget_s": 60,
-      "cmd": "@todo"
-    },
-    {
-      "id": "install.vm-ubuntu-here",
-      "name": "VM on Ubuntu \u2014 this device",
-      "category": "install",
+      "id": "install.vm-local",
+      "name": "VM \u00b7 same device",
       "level": "install",
+      "category": "install",
       "client": "-",
-      "transport": "-",
-      "backend": "vm",
+      "networks": [],
       "method": "vm-local",
+      "backend": "vm",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
+      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
       "cmd": "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
     },
     {
-      "id": "install.vm-ubuntu-remote",
-      "name": "VM on Ubuntu \u2014 another device",
-      "category": "install",
+      "id": "install.vm-remote",
+      "name": "VM \u00b7 other device",
       "level": "install",
+      "category": "install",
       "client": "-",
-      "transport": "-",
-      "backend": "vm",
+      "networks": [],
       "method": "vm-remote",
+      "backend": "vm",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
+      "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network.",
       "cmd": "@manual"
     },
     {
       "id": "install.native-ethernet",
-      "name": "NixOS native \u2014 ethernet",
-      "category": "install",
+      "name": "native \u00b7 ethernet",
       "level": "install",
+      "category": "install",
       "client": "-",
-      "transport": "-",
-      "backend": "native",
+      "networks": [],
       "method": "native-ethernet",
+      "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
+      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device.",
       "cmd": "@manual"
     },
     {
       "id": "install.native-usb-nvme",
-      "name": "NixOS native \u2014 USB installer \u2192 NVMe",
-      "category": "install",
+      "name": "native \u00b7 USB\u2192NVMe",
       "level": "install",
+      "category": "install",
       "client": "-",
-      "transport": "-",
+      "networks": [],
+      "method": "native-usb-nvme",
       "backend": "native",
-      "method": "usb-installer",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
+      "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer.",
       "cmd": "@manual"
     },
     {
       "id": "install.native-boot-usb",
-      "name": "NixOS native \u2014 bootable USB",
-      "category": "install",
+      "name": "native \u00b7 bootable USB",
       "level": "install",
+      "category": "install",
       "client": "-",
-      "transport": "-",
+      "networks": [],
+      "method": "native-boot-usb",
       "backend": "native",
-      "method": "bootable-usb",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
+      "desc": "NixOS booted directly off a bootable USB drive.",
       "cmd": "@manual"
     }
   ]
