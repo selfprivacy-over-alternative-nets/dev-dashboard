@@ -1,0 +1,6 @@
+# Raw run logs are kept LOCAL only — they can contain live .onion addresses.
+# The dashboard's inline error summaries (scrubbed) live in data/results.jsonl and are published.
+logs/*.log
+__pycache__/
+*.pyc
+.DS_Store

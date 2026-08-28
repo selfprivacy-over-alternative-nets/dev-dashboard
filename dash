@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""dash — orchestrate, time, and record the SelfPrivacy dev/test commands.
+
+One script runs every tracked command, measures how long it took, captures pass/fail + the
+error, and appends a normalized JSON record to data/results.jsonl. The static dashboard
+(index.html) reads that file. Multiple runs of the same thing stack up — nothing is overwritten.
+
+Usage:
+  ./dash list                       # show the catalog
+  ./dash run <id> [<id> ...]        # run specific commands
+  ./dash run --all                  # run everything runnable
+  ./dash run --level L1|L2|L3|install
+  ./dash run --category test|install
+  ./dash run --tag transport=https  # filter by any tag (client/transport/backend/method)
+  ./dash run <id> --config "my WIP" # label the current dirty working tree (a 'code config')
+  ./dash wrap <id> -- <cmd...>      # time+record an arbitrary command under <id>
+  ./dash report <id> --status pass --duration 720 [--error ..] [--config ..] [--env ci]
+                                    # log a result that ran elsewhere (USB install, remote box)
+  ./dash serve [port]               # serve the dashboard locally (default 8099)
+  ./dash publish [-m msg]           # commit data/logs and push (updates GitHub Pages)
+  ./dash demo                       # add labeled DEMO data so you can see the full view
+  ./dash clear-demo                 # remove DEMO data
+
+Env: results are tagged env=ci when CI or GITHUB_ACTIONS is set, else env=local.
+"""
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+
+# Redact live .onion addresses so they never reach the published dashboard.
+_ONION_RE = re.compile(r"[a-z2-7]{16,56}\.onion")
+
+
+def scrub(text):
+    return _ONION_RE.sub("<onion>", text or "")
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+DATA = os.path.join(ROOT, "data", "results.jsonl")
+LOGS = os.path.join(ROOT, "logs")
+CATALOG = os.path.join(ROOT, "catalog.json")
+
+GREEN, AMBER, RED, GREY, BOLD, OFF = "\033[32m", "\033[33m", "\033[31m", "\033[90m", "\033[1m", "\033[0m"
+GLYPH = {"pass": "🟢", "slow": "🟠", "fail": "🔴", "skip": "⚪", "running": "…"}
+
+
+def now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def load_catalog():
+    with open(CATALOG) as f:
+        return json.load(f)
+
+
+def entry_by_id(cat, cid):
+    for e in cat["entries"]:
+        if e["id"] == cid:
+            return e
+    return None
+
+
+def is_ci():
+    return bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
+
+
+def git_state(repo_rel):
+    """Return {repo, commit, subject, dirty, diff_hash} for the repo a command targets."""
+    repo = os.path.normpath(os.path.join(ROOT, repo_rel)) if repo_rel else ROOT
+    name = os.path.basename(repo)
+
+    def g(args, default=""):
+        try:
+            return subprocess.check_output(["git", "-C", repo] + args, stderr=subprocess.DEVNULL).decode().strip()
+        except Exception:
+            return default
+
+    commit = g(["rev-parse", "--short", "HEAD"], "unknown")
+    subject = g(["log", "-1", "--format=%s"], "")
+    porcelain = g(["status", "--porcelain"])
+    diff = g(["diff", "HEAD"])
+    dirty = bool(porcelain)
+    diff_hash = hashlib.sha256((porcelain + diff).encode()).hexdigest()[:8] if dirty else ""
+    return {"repo": name, "commit": commit, "subject": subject, "dirty": dirty, "diff_hash": diff_hash}
+
+
+def gen_run_id():
+    stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    return f"{stamp}-{os.urandom(2).hex()}"
+
+
+def append_record(rec):
+    os.makedirs(os.path.dirname(DATA), exist_ok=True)
+    with open(DATA, "a") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def summarize_error(log_path):
+    """Pull a one-line error summary out of a log (best effort, generic across tools)."""
+    try:
+        lines = open(log_path, errors="replace").read().splitlines()
+    except Exception:
+        return ""
+    keys = ("error:", "Error", "Traceback", "assert", "AssertionError", "FAILED", "failed",
+            "Exception", "Timeout", "cannot", "not found", "refused")
+    hits = [l.strip() for l in lines if any(k in l for k in keys) and l.strip()]
+    # Prefer a pytest/nix summary-ish line if present.
+    for l in reversed(hits):
+        if " failed" in l or "FAILED" in l or "AssertionError" in l or "error:" in l:
+            return scrub(l[:240])
+    return scrub(hits[-1][:240] if hits else "")
+
+
+def classify(exit_code, duration, budget):
+    if exit_code == 0:
+        return "slow" if (budget and duration > budget) else "pass"
+    return "fail"
+
+
+def run_entry(entry, config_label):
+    cmd = entry.get("cmd", "")
+    gs = git_state(entry.get("repo"))
+    run_id = gen_run_id()
+    base = {
+        "run_id": run_id, "ts": now_iso(), "env": "ci" if is_ci() else "local",
+        "host": socket.gethostname(), "category": entry.get("category", "test"),
+        "id": entry["id"], "name": entry.get("name", entry["id"]), "level": entry.get("level", ""),
+        "client": entry.get("client", "-"), "transport": entry.get("transport", "-"),
+        "backend": entry.get("backend", "-"), "method": entry.get("method", "-"),
+        "config_label": config_label or ("dirty" if gs["dirty"] else ""),
+        **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
+    }
+
+    if cmd == "@todo":
+        rec = {**base, "status": "skip", "duration_s": 0, "exit_code": None,
+               "error": "not implemented yet", "log_path": ""}
+        append_record(rec)
+        print(f"{GREY}skip{OFF}  {entry['id']}  (test not implemented)")
+        return rec
+    if cmd == "@manual":
+        print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
+        print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
+        return None
+
+    repo_dir = os.path.normpath(os.path.join(ROOT, entry["repo"])) if entry.get("repo") else ROOT
+    log_path = os.path.join(LOGS, run_id + ".log")
+    os.makedirs(LOGS, exist_ok=True)
+    print(f"{BOLD}▶ {entry['id']}{OFF}  {GREY}{cmd}{OFF}  (cwd {entry.get('repo','.')})")
+    start = datetime.datetime.now()
+    with open(log_path, "w") as log:
+        log.write(f"# {entry['id']}\n# {cmd}\n# cwd {repo_dir}\n# started {now_iso()}\n\n")
+        log.flush()
+        try:
+            proc = subprocess.Popen(cmd, shell=True, cwd=repo_dir, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, bufsize=1)
+            for line in proc.stdout:
+                sys.stdout.write(line)
+                log.write(line)
+            proc.wait()
+            code = proc.returncode
+        except KeyboardInterrupt:
+            proc.terminate()
+            code = 130
+        except Exception as ex:
+            log.write(f"\n[dash] launch error: {ex}\n")
+            code = 127
+    duration = (datetime.datetime.now() - start).total_seconds()
+    trim_log(log_path)
+    status = classify(code, duration, entry.get("budget_s"))
+    err = "" if status == "pass" else summarize_error(log_path)
+    rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
+           "error": err, "log_path": os.path.relpath(log_path, ROOT)}
+    append_record(rec)
+    col = {"pass": GREEN, "slow": AMBER, "fail": RED}.get(status, GREY)
+    print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
+    return rec
+
+
+def trim_log(path, keep=600):
+    try:
+        lines = open(path, errors="replace").read().splitlines()
+        if len(lines) > keep:
+            head = lines[:6]
+            tail = lines[-keep:]
+            open(path, "w").write("\n".join(head + [f"... [{len(lines)-keep-6} lines trimmed] ..."] + tail) + "\n")
+    except Exception:
+        pass
+
+
+def fmt_dur(s):
+    s = float(s)
+    if s < 90:
+        return f"{s:.1f}s"
+    m, sec = divmod(int(s), 60)
+    return f"{m}m{sec:02d}s"
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+def cmd_list(args):
+    cat = load_catalog()
+    for e in cat["entries"]:
+        tag = f"{e.get('client','-')}·{e.get('transport','-')}"
+        kind = "@todo" if e["cmd"] == "@todo" else ("@manual" if e["cmd"] == "@manual" else "")
+        print(f"  {e['id']:<32} {e['level']:<8} {tag:<18} {GREY}{kind}{OFF}")
+    print(f"\n{len(cat['entries'])} commands. Run: ./dash run <id>  |  ./dash run --all")
+
+
+def select(args):
+    cat = load_catalog()
+    es = cat["entries"]
+    if args.ids:
+        picked = [entry_by_id(cat, i) for i in args.ids]
+        missing = [i for i, p in zip(args.ids, picked) if p is None]
+        if missing:
+            sys.exit(f"unknown id(s): {', '.join(missing)}")
+        return picked
+    if args.all:
+        return es
+    out = es
+    if args.level:
+        out = [e for e in out if e["level"] == args.level]
+    if args.category:
+        out = [e for e in out if e.get("category") == args.category]
+    if args.tag:
+        k, _, v = args.tag.partition("=")
+        out = [e for e in out if str(e.get(k, "")) == v]
+    if out is es:
+        sys.exit("nothing selected. use <id>, --all, --level, --category, or --tag")
+    return out
+
+
+def cmd_run(args):
+    entries = select(args)
+    print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
+    results = [run_entry(e, args.config) for e in entries]
+    results = [r for r in results if r]
+    ok = sum(1 for r in results if r["status"] == "pass")
+    print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → data/results.jsonl")
+    print("View:  ./dash serve   Publish:  ./dash publish")
+
+
+def cmd_wrap(args):
+    cat = load_catalog()
+    e = entry_by_id(cat, args.id) or {"id": args.id, "name": args.id, "category": "test",
+                                       "level": "adhoc", "repo": None, "budget_s": None}
+    e = dict(e)
+    e["cmd"] = " ".join(args.cmd)
+    run_entry(e, args.config)
+
+
+def cmd_report(args):
+    cat = load_catalog()
+    e = entry_by_id(cat, args.id)
+    if not e:
+        sys.exit(f"unknown id: {args.id}")
+    gs = git_state(e.get("repo"))
+    rec = {
+        "run_id": gen_run_id(), "ts": now_iso(), "env": args.env or ("ci" if is_ci() else "local"),
+        "host": args.host or socket.gethostname(), "category": e.get("category", "test"),
+        "id": e["id"], "name": e.get("name", e["id"]), "level": e.get("level", ""),
+        "client": e.get("client", "-"), "transport": e.get("transport", "-"),
+        "backend": e.get("backend", "-"), "method": e.get("method", "-"),
+        "config_label": args.config or "", "status": args.status,
+        "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
+        "error": scrub(args.error or ""), "log_path": "",
+        **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
+    }
+    append_record(rec)
+    print(f"recorded {args.status} for {args.id} ({fmt_dur(args.duration)})")
+
+
+def cmd_serve(args):
+    import http.server
+    os.chdir(ROOT)
+    port = args.port
+    handler = http.server.SimpleHTTPRequestHandler
+    print(f"Dashboard: http://localhost:{port}/   (Ctrl+C to stop)")
+    http.server.HTTPServer(("0.0.0.0", port), handler).serve_forever()
+
+
+def cmd_publish(args):
+    msg = args.message or f"data: results @ {now_iso()}"
+    subprocess.run(["git", "-C", ROOT, "add", "data", "logs", "catalog.json"], check=False)
+    r = subprocess.run(["git", "-C", ROOT, "commit", "-m", msg], capture_output=True, text=True)
+    print(r.stdout or r.stderr)
+    push = subprocess.run(["git", "-C", ROOT, "push"], capture_output=True, text=True)
+    print(push.stdout or push.stderr)
+
+
+def cmd_demo(args):
+    from tools.gen_demo import generate
+    generate(append_record, now_iso)
+    print("Added DEMO data. Toggle it off in the dashboard, or ./dash clear-demo")
+
+
+def cmd_clear_demo(args):
+    if not os.path.exists(DATA):
+        return
+    kept = [l for l in open(DATA) if l.strip() and not json.loads(l).get("demo")]
+    open(DATA, "w").write("".join(kept))
+    print(f"cleared demo data; {len(kept)} real records remain")
+
+
+def main():
+    p = argparse.ArgumentParser(prog="dash", description="orchestrate + record SelfPrivacy dev/test runs")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("list").set_defaults(fn=cmd_list)
+
+    r = sub.add_parser("run")
+    r.add_argument("ids", nargs="*")
+    r.add_argument("--all", action="store_true")
+    r.add_argument("--level")
+    r.add_argument("--category")
+    r.add_argument("--tag")
+    r.add_argument("--config", help="label the current dirty working tree")
+    r.set_defaults(fn=cmd_run)
+
+    w = sub.add_parser("wrap")
+    w.add_argument("id")
+    w.add_argument("--config")
+    w.add_argument("cmd", nargs=argparse.REMAINDER, help="-- then the command")
+    w.set_defaults(fn=cmd_wrap)
+
+    rp = sub.add_parser("report")
+    rp.add_argument("id")
+    rp.add_argument("--status", required=True, choices=["pass", "fail", "slow", "skip"])
+    rp.add_argument("--duration", required=True, type=float)
+    rp.add_argument("--error", default="")
+    rp.add_argument("--config", default="")
+    rp.add_argument("--env")
+    rp.add_argument("--host")
+    rp.set_defaults(fn=cmd_report)
+
+    s = sub.add_parser("serve")
+    s.add_argument("port", nargs="?", type=int, default=8099)
+    s.set_defaults(fn=cmd_serve)
+
+    pub = sub.add_parser("publish")
+    pub.add_argument("-m", "--message")
+    pub.set_defaults(fn=cmd_publish)
+
+    sub.add_parser("demo").set_defaults(fn=cmd_demo)
+    sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
+
+    # wrap uses REMAINDER; strip the leading '--' if present
+    argv = sys.argv[1:]
+    if len(argv) >= 2 and argv[0] == "wrap" and "--" in argv:
+        argv.remove("--")
+    args = p.parse_args(argv)
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SelfPrivacy — dev dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bar">
+    <h1><span class="dot">●</span> SelfPrivacy&nbsp;·&nbsp;test&nbsp;matrix</h1>
+    <span class="ctl"><label>commit</label><select id="f-commit"></select></span>
+    <span class="ctl"><label>config</label><select id="f-config"></select></span>
+    <span class="ctl"><label>env</label>
+      <select id="f-env"><option value="all">all</option><option value="local">local</option><option value="ci">ci</option></select>
+    </span>
+    <span class="spacer"></span>
+    <span class="ctl"><label><input type="checkbox" id="f-demo" checked> show demo</label></span>
+    <button class="btn" id="reload">↻ reload</button>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <section id="matrix"></section>
+  <section id="installs"></section>
+
+  <div id="detail"></div>
+
+  <section id="errors"></section>
+
+  <div class="legend" id="legend"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
