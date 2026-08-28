@@ -492,18 +492,13 @@ def preflight(do_sudo):
     vbox, flutter, ssh = chk("VBoxManage"), chk("flutter"), chk("sshpass")
     disp = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
     print(f"  {(GREEN + '✓' + OFF) if disp else (RED + '✗' + OFF)} display")
-    tor = _port_open("127.0.0.1", 9050)
-    if not tor and do_sudo:
-        print(f"  host Tor SOCKS :9050 is down — starting it now ({CYAN}sudo{OFF}, may prompt for your password)…")
-        subprocess.run("sudo systemctl start tor 2>/dev/null; sudo systemctl start tor@default 2>/dev/null", shell=True)
-        for _ in range(6):                          # tor's SOCKS port can take a few seconds to bind
-            time.sleep(2)
-            if _port_open("127.0.0.1", 9050):
-                tor = True
-                break
-    print(f"  {(GREEN + '✓' + OFF) if tor else (AMBER + '✗' + OFF)} host Tor SOCKS 127.0.0.1:9050")
+    if not _port_open("127.0.0.1", 9050):
+        print(f"  {GREY}host Tor SOCKS :9050 down — starting a user-level tor (no sudo)…{OFF}")
+    tor = _ensure_tor()
+    print(f"  {(GREEN + '✓' + OFF) if tor else (RED + '✗' + OFF)} host Tor SOCKS 127.0.0.1:9050")
     if not tor:
-        print(f"    {AMBER}→ start it: {CYAN}sudo systemctl start tor{OFF}{AMBER} (or tor@default){OFF}")
+        print(f"    {AMBER}→ tor not found/failed. Install it: {CYAN}sudo apt install tor{OFF}{AMBER}, "
+              f"or start manually: {CYAN}tor &{OFF}")
     if not flutter:
         print(f"    {AMBER}→ app build deps: {CYAN}(cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor && ./scripts/requirements.sh --app-linux){OFF}")
     return {"vbox": vbox, "flutter": flutter, "ssh": ssh, "display": disp, "tor": tor}
@@ -520,6 +515,27 @@ def _power_off_hard():
     _sh(f'VBoxManage controlvm "{VM_NAME}" poweroff', timeout=20)
     _sh(f"pkill -9 -f 'VBoxHeadless.*{VM_NAME}'")
     time.sleep(2)
+
+
+def _ensure_tor():
+    """Make sure SOCKS 9050 is up. Starts a USER-level tor (no sudo) if needed — a user tor binds
+    9050 fine, avoiding the flaky `sudo systemctl start tor` path."""
+    if _port_open("127.0.0.1", 9050):
+        return True
+    if not shutil.which("tor"):
+        return False
+    datadir = os.path.expanduser("~/.cache/dash-tor")
+    os.makedirs(datadir, exist_ok=True)
+    subprocess.Popen(
+        ["tor", "--SocksPort", "9050", "--DataDirectory", datadir,
+         "--Log", "notice file " + os.path.join(datadir, "tor.log")],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+        start_new_session=True)                    # detached: survives this dash run for the app to use
+    for _ in range(10):
+        time.sleep(2)
+        if _port_open("127.0.0.1", 9050):
+            return True
+    return False
 
 
 def _onion_reachable(onion, tries=20):
@@ -539,6 +555,11 @@ def bring_up_backend(cat):
 
     A stale/broken VM is destroyed first (VBox 7.x 'settings file already exists'); after install we
     force a stable 2D graphics controller and reboot, because VMSVGA 3D crashes this guest."""
+    if _vm_running():                                # reuse a healthy running VM (fast re-runs)
+        o = _get_onion(retries=8)
+        if o:
+            print(f"{GREY}reusing the running VM (already has an .onion).{OFF}")
+            return o
     if _vm_exists():
         print(f"{GREY}removing the existing VM for a clean install…{OFF}")
         _destroy_vm()
@@ -625,6 +646,20 @@ def cmd_here(args):
         print(f"{BOLD}setup{OFF}: {mgr}/scripts/requirements.sh --app-linux (apt/sudo, one-time)")
         subprocess.run("./scripts/requirements.sh --app-linux", shell=True, cwd=mgr)
         pf = preflight(do_sudo=args.long)            # re-check after install
+
+    # Fail fast: --long's whole point is the recorded app test (L3). If a hard prerequisite for it is
+    # missing, stop NOW — before the multi-minute VM build + tests — instead of discovering it at the end.
+    if args.long:
+        need = {"vbox": "VirtualBox", "flutter": "Flutter (run with --setup)",
+                "display": "a graphical display", "tor": "host Tor on 127.0.0.1:9050"}
+        missing = [need[k] for k in need if not pf[k]]
+        if missing:
+            print(f"\n{RED}Aborting before doing any heavy work.{OFF} --long runs the app test (L3), which needs:")
+            for m in missing:
+                print(f"  {RED}✗{OFF} {m}")
+            print(f"Fix the above and re-run. (For just the fast checks, use {CYAN}./dash here --fast{OFF} "
+                  f"or {CYAN}./dash run L1.onion-routing{OFF}.)")
+            sys.exit(1)
 
     # Backend
     onion = None
