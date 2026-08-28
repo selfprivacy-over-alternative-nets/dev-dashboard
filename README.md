@@ -30,12 +30,26 @@ times and test times sit in the same matrix.
 
 `unit` is deliberately **not** a network column.
 
-## Iterate fast, let the board accumulate
+## One command: run everything this host can
+
+```bash
+./dash here --long     # sudo-start Tor, build the VM via build-and-run.sh, run L1+L2, launch+record the app, publish
+./dash here            # quick: use a running backend if present, else tell you how; run L1+L2
+```
+
+`--long` does the full chain: a **preflight** first handles anything needing sudo (starts host Tor),
+then it builds/starts the backend VM through the Manager repo's own `build-and-run.sh` (no edits to
+that repo), runs L1 + L2, and finally launches the **real app over Tor and screen-records it**
+(close the app window to finish that step). Flags: `--fast` (skip L2), `--no-publish`, `--no-install`.
+
+> First time only, the app build needs its Linux deps:
+> `(cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor && ./scripts/requirements.sh --app-linux)`.
+
+## Or run individual pieces
 
 ```bash
 ./dash run L1.onion-routing                          # unit, ~30s
 ./dash run L2.backend --net tor                       # or --net https
-./dash run L3.providers.desktop --net tor --on vm-local --record   # app flow, recorded
 ./dash serve                                          # look now (localhost:8099)
 ./dash publish                                        # commit + push → live board updates
 ```

@@ -386,7 +386,15 @@ def cmd_clear_demo(args):
 # ── `here`: run everything this (Ubuntu) host can, end-to-end ─────────────────
 VM_NAME = "SelfPrivacy-Tor-Test"
 DEV_TOKEN = "test-token-for-tor-development"
-FLUTTER_DIR = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/flutter-app/selfprivacy.org.app"
+BACKEND_DIR = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend"
+
+
+def _port_open(host, port, timeout=2):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 def _sh(cmd, timeout=None):
@@ -439,58 +447,102 @@ def ensure_backend(install_ok):
     return o, DEV_TOKEN, ("" if o else "installed VM but .onion not ready")
 
 
+def preflight(do_sudo):
+    """Check prerequisites up front; with do_sudo, start host Tor now (interactive sudo)."""
+    print(f"{BOLD}preflight{OFF}")
+
+    def chk(tool):
+        p = bool(shutil.which(tool))
+        print(f"  {(GREEN + '✓' + OFF) if p else (RED + '✗' + OFF)} {tool}")
+        return p
+
+    vbox, flutter, ssh = chk("VBoxManage"), chk("flutter"), chk("sshpass")
+    disp = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    print(f"  {(GREEN + '✓' + OFF) if disp else (RED + '✗' + OFF)} display")
+    tor = _port_open("127.0.0.1", 9050)
+    if not tor and do_sudo:
+        print(f"  host Tor SOCKS :9050 is down — starting it now ({CYAN}sudo{OFF}, may prompt for your password)…")
+        subprocess.run("sudo systemctl start tor 2>/dev/null; sudo systemctl start tor@default 2>/dev/null", shell=True)
+        time.sleep(3)
+        tor = _port_open("127.0.0.1", 9050)
+    print(f"  {(GREEN + '✓' + OFF) if tor else (AMBER + '✗' + OFF)} host Tor SOCKS 127.0.0.1:9050")
+    if not tor:
+        print(f"    {AMBER}→ start it: {CYAN}sudo systemctl start tor{OFF}{AMBER} (or tor@default){OFF}")
+    if not flutter:
+        print(f"    {AMBER}→ app build deps: {CYAN}(cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor && ./scripts/requirements.sh --app-linux){OFF}")
+    return {"vbox": vbox, "flutter": flutter, "ssh": ssh, "display": disp, "tor": tor}
+
+
+def bring_up_backend(cat):
+    """Full backend bring-up via the Manager's build-and-run.sh (records the install time)."""
+    onion, _, _ = ensure_backend(install_ok=True)
+    if onion:
+        return onion
+    print(f"{GREY}no usable .onion yet — (re)installing the VM via build-and-run.sh…{OFF}")
+    inst = entry_by_id(cat, "install.vm-local")     # SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh
+    if inst:
+        run_entry(inst)
+    return _get_onion(retries=30)
+
+
+def run_l3_app(onion, pf):
+    """Launch the real app via the Manager's build-and-run.sh --app-linux, recorded (no repo edits)."""
+    if not pf["tor"]:
+        print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app can't reach the .onion; "
+              f"launch is still recorded. {CYAN}sudo systemctl start tor{OFF}")
+    print(f"{BOLD}Launching the app (recorded).{OFF} Watch it connect over Tor and click through the tabs — "
+          f"then {BOLD}close the app window{OFF} to finish this step.")
+    l3 = {
+        "id": "L3.connect.desktop", "name": "connect to server", "level": "L3",
+        "client": "desktop", "networks": ["tor"], "repo": BACKEND_DIR,
+        "budget_s": 900, "records_video": True,
+        "cmd": "./build-and-run.sh --app-linux",     # Manager's own script; builds+launches connected
+        "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
+                          "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
+    }
+    run_entry(l3, net="tor", method="vm-local", record=True)
+
+
 def cmd_here(args):
     cat = load_catalog()
-    print(f"{BOLD}dash here — running everything this host can{OFF}\n")
+    mode = "long (full backend bring-up)" if args.long else "quick (use a running backend if present)"
+    print(f"{BOLD}dash here — {mode}{OFF}\n")
 
-    # 1) L1 unit (fast, nix)
+    # Everything needing sudo is handled here, up front.
+    pf = preflight(do_sudo=args.long)
+
+    # Backend
+    onion = None
+    if not pf["vbox"]:
+        print(f"{AMBER}skip backend/L3{OFF} — VirtualBox not installed")
+    elif args.long:
+        onion = bring_up_backend(cat)
+    else:
+        onion, _, note = ensure_backend(install_ok=not args.no_install)
+        if not onion:
+            print(f"{AMBER}backend not ready{OFF} — {note}. Use {CYAN}./dash here --long{OFF} to build it + start Tor.")
+
+    # L1 unit (fast, nix)
     run_entry(entry_by_id(cat, "L1.onion-routing"))
 
-    # 2) L3 — needs a backend + flutter + a display; this is the emphasis
-    if not shutil.which("flutter"):
-        print(f"{AMBER}skip L3{OFF} — flutter not found (install: ./scripts/requirements.sh --app-linux)")
-    elif not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        print(f"{AMBER}skip L3{OFF} — no display to run/record the app")
-    else:
-        onion, token, note = ensure_backend(not args.no_install)
-        if not onion:
-            print(f"{AMBER}skip L3{OFF} — {note}.")
-            print(f"  {GREY}To bring the backend up for L3, from the Manager repo:{OFF}")
-            print(f"    cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && ./build-and-run.sh   # creates+starts the VM, Tor, onion")
-            print(f"    then start host Tor:  {CYAN}sudo systemctl start tor{OFF}  (needs your sudo)")
-            print(f"  {GREY}then re-run ./dash here{OFF}")
-        else:
-            print(f"{GREY}backend .onion: {onion}{OFF}")
-            reach = _sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 25 "
-                        f"--socks5-hostname 127.0.0.1:9050 https://{onion}/api/version").stdout
-            if reach.strip() not in ("200", "301", "302", "401", "403"):
-                print(f"{AMBER}note{OFF}: host Tor can't reach the .onion yet [{reach or 'no route'}]. "
-                      f"The app may sit on the connect screen (launch still recorded).")
-                print(f"  {GREY}Ensure host tor is running: {CYAN}sudo systemctl start tor{OFF}{GREY} "
-                      f"(SOCKS on 127.0.0.1:9050), then Tor needs ~1–2 min to build a circuit.{OFF}")
-            l3 = {
-                "id": "L3.providers.desktop", "name": "providers tab", "level": "L3",
-                "client": "desktop", "networks": ["tor"], "repo": FLUTTER_DIR,
-                "budget_s": 300, "records_video": True,
-                "cmd": "flutter config --enable-linux-desktop >/dev/null 2>&1; "
-                       "flutter pub get --no-example >/dev/null 2>&1; "
-                       "flutter test integration_test/providers_flow_test.dart -d linux "
-                       f"--dart-define=ONION_DOMAIN={onion} --dart-define=API_TOKEN={token}",
-                "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
-                                  "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
-            }
-            run_entry(l3, net="tor", method="vm-local", record=True)
-
-    # 3) L2 nixosTests (self-contained, long) — unless --fast
+    # L2 nixosTests (self-contained, long) — unless --fast
     if args.fast:
         print(f"{GREY}skipping L2 (--fast){OFF}")
     else:
         for net in ("tor", "https"):
             run_entry(entry_by_id(cat, "L2.backend"), net=net)
 
+    # L3 — the real app over Tor, recorded (interactive: you close the window to finish)
+    if onion and pf["flutter"] and pf["display"]:
+        print(f"{GREY}backend .onion: {onion}{OFF}")
+        run_l3_app(onion, pf)
+    else:
+        why = "no backend .onion" if not onion else ("flutter missing" if not pf["flutter"] else "no display")
+        print(f"{AMBER}skip L3{OFF} — {why}. (Run {CYAN}./dash here --long{OFF} once flutter deps are installed.)")
+
     if not args.no_publish:
         cmd_publish(argparse.Namespace(message=f"dash here @ {now_iso()}"))
-    print(f"\n{BOLD}dash here done.{OFF} View: ./dash serve   Live: git push already ran unless --no-publish")
+    print(f"\n{BOLD}dash here done.{OFF} View: ./dash serve" + ("" if args.no_publish else "  ·  pushed to the live board"))
 
 
 def main():
@@ -542,9 +594,11 @@ def main():
     pub.add_argument("-m", "--message")
     pub.set_defaults(fn=cmd_publish)
 
-    h = sub.add_parser("here", help="run everything this host can (L1 + L3 recorded + L2), then publish")
+    h = sub.add_parser("here", help="run everything this host can (L1 + L2 + recorded L3), then publish")
+    h.add_argument("--long", action="store_true",
+                   help="full bring-up: sudo-start Tor + build the VM via build-and-run.sh, then run+record the app")
     h.add_argument("--fast", action="store_true", help="skip the long L2 nixosTests")
-    h.add_argument("--no-install", action="store_true", help="don't create a VM if none is running")
+    h.add_argument("--no-install", action="store_true", help="(quick mode) don't start/create a VM")
     h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
     h.set_defaults(fn=cmd_here)
 
