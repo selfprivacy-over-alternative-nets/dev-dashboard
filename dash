@@ -387,6 +387,7 @@ def cmd_clear_demo(args):
 VM_NAME = "SelfPrivacy-Tor-Test"
 DEV_TOKEN = "test-token-for-tor-development"
 BACKEND_DIR = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend"
+FLUTTER_APP_DIR = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/flutter-app/selfprivacy.org.app"
 
 
 def _port_open(host, port, timeout=2):
@@ -485,22 +486,63 @@ def bring_up_backend(cat):
     return _get_onion(retries=30)
 
 
-def run_l3_app(onion, pf):
-    """Launch the real app via the Manager's build-and-run.sh --app-linux, recorded (no repo edits)."""
-    if not pf["tor"]:
-        print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app can't reach the .onion; "
-              f"launch is still recorded. {CYAN}sudo systemctl start tor{OFF}")
-    print(f"{BOLD}Launching the app (recorded).{OFF} Watch it connect over Tor and click through the tabs — "
-          f"then {BOLD}close the app window{OFF} to finish this step.")
-    l3 = {
-        "id": "L3.connect.desktop", "name": "connect to server", "level": "L3",
-        "client": "desktop", "networks": ["tor"], "repo": BACKEND_DIR,
-        "budget_s": 900, "records_video": True,
-        "cmd": "./build-and-run.sh --app-linux",     # Manager's own script; builds+launches connected
-        "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
-                          "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
-    }
-    run_entry(l3, net="tor", method="vm-local", record=True)
+def ensure_integration_dep(app_dir):
+    """Add integration_test to the app's dev_dependencies (in-place; caller restores afterwards)."""
+    p = os.path.join(app_dir, "pubspec.yaml")
+    src = open(p).read()
+    if "integration_test:" in src:
+        return
+    anchor = "  flutter_test:\n    sdk: flutter\n"
+    add = "  integration_test:\n    sdk: flutter\n"
+    src = src.replace(anchor, anchor + add, 1) if anchor in src else \
+        src.replace("dev_dependencies:\n", "dev_dependencies:\n" + add, 1)
+    open(p, "w").write(src)
+
+
+def run_l3_flutter(onion, token, pf):
+    """Run the AUTOMATED integration test, recorded. The test lives in the dashboard repo and is
+    injected into the app package for the run, then the Manager repo is restored byte-for-byte."""
+    app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
+    test_src = os.path.join(ROOT, "flutter", "providers_flow_test.dart")
+    if not os.path.exists(test_src):
+        print(f"{RED}missing {test_src}{OFF}")
+        return
+    if not pf.get("tor"):
+        print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the .onion; "
+              f"the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
+    itdir = os.path.join(app, "integration_test")
+    injected = os.path.join(itdir, "providers_flow_test.dart")
+    backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
+              if os.path.exists(os.path.join(app, f))}
+    created_dir = not os.path.isdir(itdir)
+    try:
+        print(f"{GREY}injecting automated test into the app (temporary — Manager repo restored after)…{OFF}")
+        ensure_integration_dep(app)
+        os.makedirs(itdir, exist_ok=True)
+        shutil.copy(test_src, injected)
+        print(f"{GREY}flutter pub get (resolving integration_test)…{OFF}")
+        _sh(f"cd '{app}' && flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get", timeout=600)
+        entry = {
+            "id": "L3.providers.desktop", "name": "providers tab", "level": "L3",
+            "client": "desktop", "networks": ["tor"], "repo": FLUTTER_APP_DIR,
+            "budget_s": 600, "records_video": True,
+            "cmd": "flutter test integration_test/providers_flow_test.dart -d linux "
+                   f"--dart-define=ONION_DOMAIN={onion} --dart-define=API_TOKEN={token}",
+            "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
+                              "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
+        }
+        run_entry(entry, net="tor", method="vm-local", record=True)
+    finally:
+        print(f"{GREY}restoring Manager repo (removing injected test, reverting pubspec)…{OFF}")
+        try:
+            if os.path.exists(injected):
+                os.remove(injected)
+            if created_dir and os.path.isdir(itdir) and not os.listdir(itdir):
+                os.rmdir(itdir)
+        except Exception:
+            pass
+        for f, content in backup.items():
+            open(os.path.join(app, f), "w").write(content)
 
 
 def cmd_here(args):
@@ -532,10 +574,10 @@ def cmd_here(args):
         for net in ("tor", "https"):
             run_entry(entry_by_id(cat, "L2.backend"), net=net)
 
-    # L3 — the real app over Tor, recorded (interactive: you close the window to finish)
+    # L3 — the real app over Tor, driven by the automated integration test, recorded
     if onion and pf["flutter"] and pf["display"]:
         print(f"{GREY}backend .onion: {onion}{OFF}")
-        run_l3_app(onion, pf)
+        run_l3_flutter(onion, DEV_TOKEN, pf)
     else:
         why = "no backend .onion" if not onion else ("flutter missing" if not pf["flutter"] else "no display")
         print(f"{AMBER}skip L3{OFF} — {why}. (Run {CYAN}./dash here --long{OFF} once flutter deps are installed.)")

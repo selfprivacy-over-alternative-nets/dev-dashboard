@@ -39,8 +39,13 @@ times and test times sit in the same matrix.
 
 `--long` does the full chain: a **preflight** first handles anything needing sudo (starts host Tor),
 then it builds/starts the backend VM through the Manager repo's own `build-and-run.sh` (no edits to
-that repo), runs L1 + L2, and finally launches the **real app over Tor and screen-records it**
-(close the app window to finish that step). Flags: `--fast` (skip L2), `--no-publish`, `--no-install`.
+that repo), runs L1 + L2, and finally runs the **automated** Flutter integration test over Tor and
+**screen-records it** (no manual clicking). Flags: `--fast` (skip L2), `--no-publish`, `--no-install`.
+
+The automated app test lives in **this** repo (`flutter/providers_flow_test.dart`). At run time `dash`
+injects it into the app package + adds the `integration_test` dev-dependency, runs
+`flutter test integration_test/… -d linux`, then **restores the Manager repo byte-for-byte** — so the
+test is fully automated yet the Manager submodule is never left modified.
 
 > First time only, the app build needs its Linux deps:
 > `(cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor && ./scripts/requirements.sh --app-linux)`.
