@@ -465,7 +465,9 @@ def ensure_backend(install_ok):
         o = _get_onion()
         return o, DEV_TOKEN, ("" if o else "VM running but .onion not published yet")
     if _vm_exists():
-        print(f"{GREY}starting existing VM {VM_NAME} (waiting up to ~2.5 min for boot + Tor HS)…{OFF}")
+        print(f"{GREY}starting existing VM {VM_NAME} with stable 2D graphics (waiting ~2.5 min for boot + Tor HS)…{OFF}")
+        _power_off_hard()
+        _apply_stable_graphics()                  # avoid the VMSVGA 3D guru-meditation crash
         _sh(f'VBoxManage startvm "{VM_NAME}" --type headless', timeout=120)
         o = _get_onion(retries=25)
         return o, DEV_TOKEN, ("" if o else "VM started but .onion not ready (boot slow, or Tor HS not up)")
@@ -494,8 +496,11 @@ def preflight(do_sudo):
     if not tor and do_sudo:
         print(f"  host Tor SOCKS :9050 is down — starting it now ({CYAN}sudo{OFF}, may prompt for your password)…")
         subprocess.run("sudo systemctl start tor 2>/dev/null; sudo systemctl start tor@default 2>/dev/null", shell=True)
-        time.sleep(3)
-        tor = _port_open("127.0.0.1", 9050)
+        for _ in range(6):                          # tor's SOCKS port can take a few seconds to bind
+            time.sleep(2)
+            if _port_open("127.0.0.1", 9050):
+                tor = True
+                break
     print(f"  {(GREEN + '✓' + OFF) if tor else (AMBER + '✗' + OFF)} host Tor SOCKS 127.0.0.1:9050")
     if not tor:
         print(f"    {AMBER}→ start it: {CYAN}sudo systemctl start tor{OFF}{AMBER} (or tor@default){OFF}")
@@ -504,21 +509,46 @@ def preflight(do_sudo):
     return {"vbox": vbox, "flutter": flutter, "ssh": ssh, "display": disp, "tor": tor}
 
 
+def _apply_stable_graphics():
+    """VBox 7.x's VMSVGA 3D emulation guru-meditates this guest (crash dump is all VMSVGA 3D).
+    The backend is a headless server — no GPU needed — so force a plain 2D controller. VM must be off."""
+    _sh(f'VBoxManage modifyvm "{VM_NAME}" --graphicscontroller vboxvga', timeout=30)
+    _sh(f'VBoxManage modifyvm "{VM_NAME}" --accelerate3d off', timeout=30)
+
+
+def _power_off_hard():
+    _sh(f'VBoxManage controlvm "{VM_NAME}" poweroff', timeout=20)
+    _sh(f"pkill -9 -f 'VBoxHeadless.*{VM_NAME}'")
+    time.sleep(2)
+
+
+def _onion_reachable(onion, tries=20):
+    """True once the .onion answers over host Tor (SOCKS 9050). Retries — HS publish + circuit
+    build can take 1–2 min after boot."""
+    for _ in range(tries):
+        code = (_sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 20 "
+                    f"--socks5-hostname 127.0.0.1:9050 -k https://{onion}/api/version", timeout=30).stdout or "").strip()
+        if code in ("200", "301", "302", "401", "403"):
+            return True
+        time.sleep(6)
+    return False
+
+
 def bring_up_backend(cat):
     """Full backend bring-up via the Manager's build-and-run.sh (records the install time).
 
-    A stale/broken VM is destroyed first — otherwise `createvm --register` fails on VBox 7.x with
-    'Machine settings file … already exists' (the reinstall doesn't remove the on-disk .vbox)."""
-    if _vm_running():                                # fast path: running VM that already has an onion
-        o = _get_onion(retries=8)
-        if o:
-            return o
+    A stale/broken VM is destroyed first (VBox 7.x 'settings file already exists'); after install we
+    force a stable 2D graphics controller and reboot, because VMSVGA 3D crashes this guest."""
     if _vm_exists():
-        print(f"{GREY}removing the existing VM for a clean install (its settings file blocks createvm)…{OFF}")
+        print(f"{GREY}removing the existing VM for a clean install…{OFF}")
         _destroy_vm()
     inst = entry_by_id(cat, "install.vm-local")     # SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh
     if inst:
-        run_entry(inst)                             # build-and-run.sh now hits a clean slate
+        run_entry(inst)                             # build-and-run.sh hits a clean slate
+    print(f"{GREY}applying stable 2D graphics (VBox 7.x VMSVGA 3D crashes the guest) and rebooting…{OFF}")
+    _power_off_hard()
+    _apply_stable_graphics()
+    _sh(f'VBoxManage startvm "{VM_NAME}" --type headless', timeout=120)
     return _get_onion(retries=30)
 
 
@@ -617,10 +647,20 @@ def cmd_here(args):
         for net in ("tor", "https"):
             run_entry(entry_by_id(cat, "L2.backend"), net=net)
 
-    # L3 — the real app over Tor, driven by the automated integration test, recorded
+    # L3 — the real app over Tor, driven by the automated integration test, recorded.
+    # Gate on the .onion actually being reachable, so we never launch the app into a refused loop.
     if onion and pf["flutter"] and pf["display"]:
-        print(f"{GREY}backend .onion: {onion}{OFF}")
-        run_l3_flutter(onion, DEV_TOKEN, pf)
+        print(f"{GREY}backend .onion: {onion} — checking it's reachable over Tor (up to ~2 min)…{OFF}")
+        if not pf["tor"]:
+            print(f"{AMBER}skip L3{OFF} — host Tor (127.0.0.1:9050) isn't running, so the app can't reach the "
+                  f"onion. Start it: {CYAN}sudo systemctl start tor{OFF}, then re-run.")
+        elif _onion_reachable(onion):
+            print(f"{GREEN}onion reachable — launching the automated app test.{OFF}")
+            run_l3_flutter(onion, DEV_TOKEN, pf)
+        else:
+            print(f"{AMBER}skip L3{OFF} — the backend .onion never answered over Tor. The VM likely didn't "
+                  f"stay up (check {CYAN}VBoxManage showvminfo {VM_NAME} | grep State{OFF}) or the Tor HS "
+                  f"isn't published yet. Not launching the app (would just loop on 'connection refused').")
     else:
         why = "no backend .onion" if not onion else ("flutter missing" if not pf["flutter"] else "no display")
         print(f"{AMBER}skip L3{OFF} — {why}. (Run {CYAN}./dash here --long{OFF} once flutter deps are installed.)")
