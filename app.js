@@ -253,10 +253,19 @@ function runDetail(r) {
   const media = (label, p) => !p ? "" : (IS_PAGES ? `<span class="local">${label} (local only)</span>` : `<a href="${esc(p)}" target="_blank">${label}</a>`);
   const a = r.artifacts || {};
   let arts = "";
-  if (r.level === "L3" || a.client_log || a.server_log || a.video) {
+  if (r.level === "L3" || a.client_log || a.server_log || a.video || (a.screenshots && a.screenshots.length)) {
     const vid = a.video ? (IS_PAGES ? `<span class="video">▶ video — run locally to view</span>` : `<a class="video" href="${esc(a.video)}" target="_blank">▶ play recording</a>`)
       : (r.records_video ? `<span class="local">▶ video pending</span>` : "");
     arts = `<div class="arts">${media("client CLI log", a.client_log)}${media("server log", a.server_log)}${vid}</div>`;
+    const shots = a.screenshots || [];
+    if (shots.length) {
+      arts += IS_PAGES
+        ? `<div class="shots"><span class="local">📷 ${shots.length} step screenshot(s) — run locally to view</span></div>`
+        : `<div class="shots">` + shots.map((p) => {
+            const step = (p.split("/").pop() || "").replace(/\.png$/, "").replace(/^\d+-/, "");
+            return `<a class="shot" href="${esc(p)}" target="_blank" title="${esc(step)}"><img loading="lazy" src="${esc(p)}" alt="${esc(step)}"><span>${esc(step)}</span></a>`;
+          }).join("") + `</div>`;
+    }
   }
   return `<div class="runline"><span class="head">${GLYPH[r.status] || "⚪"} ${esc(r.status)}${r.duration_s ? " · " + fmtDur(r.duration_s) : ""}</span> ` +
     `<span class="meta">· ${esc(r.ts)} · ${esc(r.env)} · ${esc(r.repo)}@${esc(r.commit)}${r.dirty ? " (dirty " + esc(r.diff_hash) + ")" : ""}` +

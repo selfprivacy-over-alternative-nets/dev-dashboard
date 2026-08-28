@@ -167,6 +167,47 @@ def start_recording(run_id):
         return None
 
 
+def trim_black(path, pad=0.3):
+    """Drop the leading/trailing all-black stretch from a recording. `flutter test -d linux` spends
+    the first ~20s BUILDING the app (no window on the display yet → black), then the UI shows for the
+    last few seconds; without this the mp4 is 'mostly black'. Uses ffmpeg blackdetect to find the
+    content window and re-encodes just that span. Best-effort: leaves the file untouched on any doubt."""
+    try:
+        r = subprocess.run(["ffmpeg", "-i", path, "-vf",
+                            "blackdetect=d=0.2:pic_th=0.98:pix_th=0.10", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=120)
+        dur = None
+        d = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                            "-of", "default=nw=1:nk=1", path], capture_output=True, text=True, timeout=30)
+        try:
+            dur = float(d.stdout.strip())
+        except ValueError:
+            return   # can't reason about the tail without a duration
+        spans = re.findall(r"black_start:([\d.]+) black_end:([\d.]+)", r.stderr)
+        start, end = 0.0, dur
+        for bs, be in spans:
+            bs, be = float(bs), float(be)
+            if bs <= 0.2 and be > start:              # leading black (the build)
+                start = be
+            if be >= dur - 0.2 and bs < end:          # trailing black (teardown)
+                end = bs
+        start = max(0.0, start - pad)
+        end = min(dur, end + pad)
+        if end - start < 1.0 or (start <= 0.2 and end >= dur - 0.2):
+            return   # nothing worth trimming, or it'd leave < 1s — keep the original
+        tmp = path + ".trim.mp4"
+        t = subprocess.run(["ffmpeg", "-y", "-i", path, "-ss", f"{start:.2f}", "-to", f"{end:.2f}",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", tmp],
+                           capture_output=True, text=True, timeout=180)
+        if t.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 1000:
+            os.replace(tmp, path)
+            print(f"{GREY}(trimmed recording to the {end - start:.1f}s where the UI is visible){OFF}")
+        elif os.path.exists(tmp):
+            os.remove(tmp)
+    except Exception as ex:
+        print(f"{GREY}(video trim skipped: {ex}){OFF}")
+
+
 def stop_recording(rec):
     if not rec:
         return ""
@@ -180,7 +221,10 @@ def stop_recording(rec):
             except Exception:
                 pass
     out = rec["out"]
-    return os.path.relpath(out, ROOT) if os.path.exists(out) and os.path.getsize(out) > 1000 else ""
+    if os.path.exists(out) and os.path.getsize(out) > 1000:
+        trim_black(out)
+        return os.path.relpath(out, ROOT)
+    return ""
 
 
 def pull_server_log(cmd, run_id):
@@ -195,7 +239,16 @@ def pull_server_log(cmd, run_id):
         return ""
 
 
-def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None):
+def collect_screenshots(shot_dir):
+    """Gather per-step PNGs the test wrote into shot_dir, sorted by their NN- prefix."""
+    if not shot_dir or not os.path.isdir(shot_dir):
+        return []
+    pngs = sorted(f for f in os.listdir(shot_dir) if f.endswith(".png")
+                  and os.path.getsize(os.path.join(shot_dir, f)) > 1000)
+    return [os.path.relpath(os.path.join(shot_dir, f), ROOT) for f in pngs]
+
+
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False):
     cmd = entry.get("cmd", "")
     if entry.get("cmd_by_net"):
         if not net:
@@ -239,6 +292,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     run_env = {**os.environ}
     if rec_handle and rec_handle.get("env"):
         run_env.update(rec_handle["env"])       # run the app on the recorder's display (e.g. Xvfb :99)
+    shot_dir = ""
+    if shots:                                    # the test grabs its own $DISPLAY into SHOT_DIR per step
+        shot_dir = os.path.join(MEDIA, run_id + ".shots")
+        os.makedirs(shot_dir, exist_ok=True)
+        run_env["SHOT_DIR"] = shot_dir
+        run_env["SHOT_SIZE"] = "1280x800"
     start = datetime.datetime.now()
     with open(log_path, "w") as log:
         log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {repo_dir}\n# started {now_iso()}\n\n")
@@ -264,10 +323,14 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     server_log_path = pull_server_log(slog_cmd, run_id) if slog_cmd else ""
     status = classify(code, duration, entry.get("budget_s"))
     err = "" if status == "pass" else summarize_error(log_path)
+    screenshots = collect_screenshots(shot_dir)
+    if shots:
+        print(f"{GREY}captured {len(screenshots)} step screenshot(s){OFF}")
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
            "error": err, "log_path": os.path.relpath(log_path, ROOT),
            "artifacts": {"client_log": os.path.relpath(log_path, ROOT),
-                         "server_log": server_log_path, "video": video}}
+                         "server_log": server_log_path, "video": video,
+                         "screenshots": screenshots}}
     append_record(rec)
     col = {"pass": GREEN, "slow": AMBER, "fail": RED}.get(status, GREY)
     print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
@@ -662,7 +725,7 @@ def run_l3_flutter(onion, token, pf):
             "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
                               "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
         }
-        run_entry(entry, net="tor", method="vm-local", record=True)
+        run_entry(entry, net="tor", method="vm-local", record=True, shots=True)
     finally:
         print(f"{GREY}restoring Manager repo (removing injected test, reverting pubspec)…{OFF}")
         try:

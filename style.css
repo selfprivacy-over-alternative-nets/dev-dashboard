@@ -101,6 +101,13 @@ tr.details > td { background: #0c1119; border-top: none; }
 .detail .video { display:inline-block; margin-top:4px; padding:2px 8px; border:1px dashed var(--blue);
   color: var(--blue); border-radius:3px; }
 .detail .demoflag { color: var(--violet); }
+.detail .shots { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.detail .shots .shot { display:flex; flex-direction:column; align-items:center; text-decoration:none;
+  color: var(--dim); font-size:11px; margin:0; }
+.detail .shots .shot img { width:150px; height:auto; border:1px solid var(--border); border-radius:3px;
+  background:#000; display:block; }
+.detail .shots .shot:hover img { border-color: var(--blue); }
+.detail .shots .shot span { margin-top:2px; }
 
 .empty { color: var(--dim); padding: 24px 16px; }
 .legend { color: var(--dim); padding: 12px 16px 30px; border-top: 1px solid var(--border); margin-top: 14px; line-height: 1.7; }
