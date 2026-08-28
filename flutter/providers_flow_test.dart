@@ -47,9 +47,16 @@ Future<bool> pumpUntil(
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  // Present every frame the app schedules to the real display, so the Xvfb recording + the
-  // per-step screenshots capture the actual animating UI instead of a black framebuffer.
-  binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  // Frame-policy tradeoff (hard-won): fullyLive presents EVERY frame the app schedules → a smooth
+  // recording, but on this headless software-GL display it pegs the CPU and STARVES the app's async
+  // socket I/O to Tor. The app then can't connect (getApiVersion → hostUnreachable) and
+  // integration_test dies on the first uncaught async error before the app's own 10s retry loop can
+  // recover. Default (pump-driven live) frames keep the Tor connection healthy: the recording is
+  // choppier (frames land only on pump) but never black, and the per-step ffmpeg screenshots are
+  // always crisp. Opt into the smooth-but-fragile mode with FRAME_POLICY_LIVE=1.
+  if (Platform.environment['FRAME_POLICY_LIVE'] == '1') {
+    binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  }
 
   final ErrorWidgetBuilder defaultErrorBuilder = ErrorWidget.builder;
 
@@ -101,7 +108,22 @@ void main() {
       await tester.tap(find.text('Services').first);
       expect(await pumpUntil(tester, find.byType(ServicesPage)), isTrue,
           reason: 'Services screen did not appear after tapping the Services tab');
+
+      // Wait for REAL service data — not just the page. The Services page renders 7 skeleton
+      // placeholder cards while loading, so reaching the page proves nothing; we must see an
+      // actual service load. The AllServices query shells out to `nix` on the backend and runs
+      // over Tor, so it can take ~30s (query ~14s + the app's 10s poll cycle). If it never
+      // appears, the backend query is failing (e.g. `nix` missing from the API service PATH) —
+      // and this test SHOULD go red rather than falsely pass on an empty, still-loading screen.
+      final servicesLoaded = await pumpUntil(
+          tester,
+          find.textContaining(RegExp(r'Nextcloud|Matrix|Jitsi|Prometheus|Forgejo|Mail Server')),
+          timeout: const Duration(seconds: 90));
       await shot(tester, 'services');
+      expect(servicesLoaded, isTrue,
+          reason: 'Services list never populated with real data over Tor within 90s. The backend '
+              'AllServices query likely failed — check that `nix` is on the selfprivacy-api '
+              'service PATH in the VM (systemctl show selfprivacy-api -p Environment).');
 
       // Services -> back to Providers
       await tester.tap(find.text('Providers').first);

@@ -109,6 +109,15 @@ def append_record(rec):
         f.write(json.dumps(rec) + "\n")
 
 
+def drop_record(run_id):
+    """Remove a previously-appended record by run_id (used to discard a transient retry attempt so
+    the board isn't polluted with flaky-Tor failures we immediately retried past)."""
+    if not run_id or not os.path.exists(DATA):
+        return
+    kept = [l for l in open(DATA) if l.strip() and json.loads(l).get("run_id") != run_id]
+    open(DATA, "w").write("".join(kept))
+
+
 def summarize_error(log_path):
     """Pull a one-line error summary out of a log (best effort, generic across tools)."""
     try:
@@ -649,6 +658,41 @@ def _kick_vm_tor():
     time.sleep(3)
 
 
+_VM_SSH = ("sshpass -p '' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=6 -p 2222 root@localhost")
+
+
+def _ensure_api_nix_path():
+    """Make sure `nix` is on the selfprivacy-api service PATH inside the backend VM.
+
+    The backend's systemd unit (Manager repo's selfprivacy-tor-core.nix) omits nix from the API
+    service PATH, so `services.allServices` — which shells out to `nix` to enumerate services —
+    fails with "[Errno 2] No such file or directory: 'nix'" and the app's Services list NEVER
+    loads (it sits on skeleton placeholders forever). The proper fix is one line in that Manager
+    module (add `config.nix.package.out` to `path`), but we must not modify the Manager repo, so we
+    inject the fix TRANSIENTLY at runtime via a /run systemd drop-in (tmpfs; /etc is read-only on
+    NixOS; the drop-in evaporates on VM reboot). Idempotent + best-effort."""
+    if not shutil.which("sshpass"):
+        return
+    have = _sh(f"{_VM_SSH} 'systemctl show selfprivacy-api -p Environment --value'", timeout=20).stdout or ""
+    if "/run/current-system/sw/bin" in have or "nix-2" in have:
+        return                                       # already patched (or a rebuilt VM that has it)
+    print(f"{GREY}patching backend: adding nix to the API service PATH (so Services can load over Tor)…{OFF}")
+    remote = (
+        "EXIST=$(systemctl show selfprivacy-api -p Environment --value | tr ' ' '\\n' | "
+        "grep '^PATH=' | cut -d= -f2-); "
+        "mkdir -p /run/systemd/system/selfprivacy-api.service.d && "
+        "printf '[Service]\\nEnvironment=PATH=/run/current-system/sw/bin:%s\\n' \"$EXIST\" "
+        "> /run/systemd/system/selfprivacy-api.service.d/nixpath.conf && "
+        "systemctl daemon-reload && systemctl restart selfprivacy-api"
+    )
+    r = _sh(f'{_VM_SSH} "{remote}"', timeout=40)
+    if r.returncode == 0:
+        time.sleep(4)                                # let the API come back up before the app polls
+        print(f"{GREY}  API restarted with nix on PATH.{OFF}")
+    else:
+        print(f"{AMBER}  couldn't patch API PATH (Services may stay empty): {r.stderr.strip()[:120]}{OFF}")
+
+
 def bring_up_backend(cat):
     """Full backend bring-up via the Manager's build-and-run.sh (records the install time).
 
@@ -704,6 +748,16 @@ def run_l3_flutter(onion, token, pf):
     if not pf.get("tor"):
         print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the .onion; "
               f"the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
+    _ensure_api_nix_path()      # so the app's Services list can actually load over Tor (see helper)
+    # Gate on the onion answering over Tor RIGHT BEFORE launch. The app's init() calls getApiVersion()
+    # immediately; on a cold circuit the first SOCKS request can throw `hostUnreachable`, and an
+    # integration test fails on any unhandled async exception. Confirming 200 first (and kicking the
+    # VM's tor if not) makes the launch land on a warm circuit — mirrors the gate in cmd_here.
+    if pf.get("tor"):
+        if not _onion_reachable(onion, tries=6):
+            print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
+            _kick_vm_tor()
+            _onion_reachable(onion, tries=30)
     itdir = os.path.join(app, "integration_test")
     injected = os.path.join(itdir, "providers_flow_test.dart")
     backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
@@ -725,7 +779,30 @@ def run_l3_flutter(onion, token, pf):
             "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
                               "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
         }
-        run_entry(entry, net="tor", method="vm-local", record=True, shots=True)
+        # Retry on TRANSIENT Tor failures only. The app's reload() timer throws uncaught on a
+        # cold-circuit `hostUnreachable`, and integration_test fails on ANY uncaught async error
+        # (the real app just logs it and retries on its next 10s tick). A fresh launch on a warm
+        # circuit connects — so we retry, kicking the VM's tor between attempts. A failure with NO
+        # connection markers (e.g. the Services-data assertion on a clean connection) is a REAL bug
+        # and is NOT retried — it stays red honestly.
+        transient_markers = ("hostUnreachable", "TimeoutException", "SocketException", "Connection refused")
+        for attempt in range(1, 4):
+            rec = run_entry(entry, net="tor", method="vm-local", record=True, shots=True)
+            if not rec or rec.get("status") == "pass":
+                break
+            log_txt = ""
+            cl = (rec.get("artifacts") or {}).get("client_log")
+            if cl and os.path.exists(os.path.join(ROOT, cl)):
+                log_txt = open(os.path.join(ROOT, cl), errors="replace").read()
+            is_transient = any(m in log_txt for m in transient_markers)
+            if is_transient and attempt < 3:
+                print(f"{AMBER}transient Tor connection failure{OFF} — kicking the VM's tor and retrying "
+                      f"(attempt {attempt + 1}/3)…")
+                drop_record(rec["run_id"])           # don't leave a flaky-fail on the board
+                _kick_vm_tor()
+                _onion_reachable(onion, tries=20)    # re-warm before the next launch
+            else:
+                break                                # a real failure (or out of attempts) — keep it
     finally:
         print(f"{GREY}restoring Manager repo (removing injected test, reverting pubspec)…{OFF}")
         try:

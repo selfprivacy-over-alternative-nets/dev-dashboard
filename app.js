@@ -236,7 +236,7 @@ function cellHtml(runs, entry) {
 function runChip(r) {
   const st = r.status || "skip";
   const vid = r.artifacts && r.artifacts.video ? ` <span class="vidmark" title="screen recording">▶</span>` : "";
-  const when = (r.ts || "").replace("T", " ").replace("Z", " UTC");
+  const when = fmtWhen(r.ts);
   const where = `${r.repo || ""}@${r.commit || ""}${r.dirty ? ` (dirty ${r.diff_hash})` : ""}`;
   const cfg = r.config_label ? ` · cfg: ${r.config_label}` : "";
   const title = `${st} · ${fmtDur(r.duration_s)} · ${when} · ${where}${cfg}${r.error ? ` · ${r.error}` : ""}`;
@@ -268,7 +268,7 @@ function runDetail(r) {
     }
   }
   return `<div class="runline"><span class="head">${GLYPH[r.status] || "⚪"} ${esc(r.status)}${r.duration_s ? " · " + fmtDur(r.duration_s) : ""}</span> ` +
-    `<span class="meta">· ${esc(r.ts)} · ${esc(r.env)} · ${esc(r.repo)}@${esc(r.commit)}${r.dirty ? " (dirty " + esc(r.diff_hash) + ")" : ""}` +
+    `<span class="meta">· ${esc(fmtWhen(r.ts))} · ${esc(r.env)} · ${esc(r.repo)}@${esc(r.commit)}${r.dirty ? " (dirty " + esc(r.diff_hash) + ")" : ""}` +
     `${r.config_label ? " · " + esc(r.config_label) : ""}${r.method && r.method !== "-" ? " · " + esc(r.method) : ""}${r.transport && r.transport !== "-" ? " · " + esc(r.transport) : ""}</span>` +
     (r.error ? `<div class="err">${esc(r.error)}</div>` : "") + arts +
     (r.demo ? `<div class="demoflag">— illustrative DEMO record —</div>` : "") + `</div>`;
@@ -308,6 +308,22 @@ function fmtDur(s) {
   if (s < 90) return Math.round(s) + "s";
   const m = Math.floor(s / 60), sec = Math.round(s % 60);
   return `${m}m${String(sec).padStart(2, "0")}s`;
+}
+// Records store UTC (ISO + 'Z'); render in the viewer's LOCAL timezone plus a relative "ago", so a
+// run made 15 min ago doesn't read as 2h old just because the viewer is in UTC+2.
+function relTime(secs) {
+  const s = Math.max(0, Math.round(secs));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60), mm = m % 60; if (h < 24) return `${h}h${mm ? ` ${mm}m` : ""} ago`;
+  const days = Math.round(h / 24); return `${days}d ago`;
+}
+function fmtWhen(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  const local = d.toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return `${local} (${relTime((Date.now() - d.getTime()) / 1000)})`;
 }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function trunc(s, n) { s = String(s || ""); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
