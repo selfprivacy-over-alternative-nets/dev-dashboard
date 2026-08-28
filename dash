@@ -527,10 +527,13 @@ def preflight(do_sudo):
 
 
 def _apply_stable_graphics():
-    """VBox 7.x's VMSVGA 3D emulation guru-meditates this guest (crash dump is all VMSVGA 3D).
-    The backend is a headless server — no GPU needed — so force a plain 2D controller. VM must be off."""
+    """Stabilize the VBox guest on this host (VM must be off). Two known crashers on VBox 7.2.6:
+    - VMSVGA 3D emulation guru-meditates (crash dump all VMSVGA 3D) -> use a plain 2D controller;
+    - the 2nd vCPU hits VERR_VMX_INVALID_VMXON_PTR under VT-x contention -> run a single vCPU.
+    Headless server, so neither costs anything meaningful."""
     _sh(f'VBoxManage modifyvm "{VM_NAME}" --graphicscontroller vboxvga', timeout=30)
     _sh(f'VBoxManage modifyvm "{VM_NAME}" --accelerate3d off', timeout=30)
+    _sh(f'VBoxManage modifyvm "{VM_NAME}" --cpus 1', timeout=30)
 
 
 def _power_off_hard():
