@@ -112,6 +112,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] App connects to the backend over the selected network and reaches the API.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -128,6 +129,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] App authenticates with the API token and loads the authenticated session.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -144,6 +146,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] The Services tab loads the list of services from the backend.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -160,7 +163,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -176,6 +180,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Open the Nextcloud service detail from the app.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -192,6 +197,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -208,6 +214,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Enable then disable a service and confirm the backend applies it.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -223,6 +230,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] App connects to the backend over the selected network and reaches the API.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -238,6 +246,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] App authenticates with the API token and loads the authenticated session.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -253,6 +262,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] The Services tab loads the list of services from the backend.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -268,6 +278,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -283,6 +294,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] Open the Nextcloud service detail from the app.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -298,6 +310,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     },
@@ -313,6 +326,7 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[android] Enable then disable a service and confirm the backend applies it.",
+      "implemented": false,
       "cmd": "@todo",
       "records_video": true
     }

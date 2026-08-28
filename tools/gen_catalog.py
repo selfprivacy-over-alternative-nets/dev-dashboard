@@ -78,15 +78,20 @@ tests.append({
     "server_log_cmd": "",
 })
 
+# Which (flow, client) pairs actually have an automated test written (dashboard/flutter/*.dart,
+# injected by `dash here --long`). Everything else is genuinely "not implemented" yet.
+IMPLEMENTED = {("providers", "desktop")}
+
 # L3 — app usage flows × client (network + install-method are runtime tags, not in the id)
 for client, nets in CLIENT_NETS.items():
     for slug, name, desc in FLOWS:
+        impl = (slug, client) in IMPLEMENTED
         tests.append({
             "id": f"L3.{slug}.{client}", "name": name, "level": "L3", "client": client,
             "networks": nets, "repo": MANAGER, "budget_s": 90,
             "desc": f"[{client}] {desc}",
-            # @todo until the Flutter integration_test + recorder is wired (see flutter-app/integration_test).
-            "cmd": "@todo",
+            "implemented": impl,        # false => cell shows 'not implemented'; true+no run => 'not run'
+            "cmd": "@flutter" if impl else "@todo",
             "records_video": True,
         })
 

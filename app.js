@@ -148,8 +148,8 @@ function renderL2(idx, states) {
     let tds = `<td class="rowname" title="${esc(t.desc)}"><span class="lvl">L2 · </span>${esc(t.name)}</td>`;
     let details = "";
     for (const n of nets) {
-      if (!t.networks.includes(n) && !fut(n)) { tds += naPair(); continue; }
-      if (fut(n)) { tds += `<td class="cell future">∙</td><td class="cell future">∙</td>`; continue; }
+      if (fut(n)) { tds += npPair("future transport — not wired yet"); continue; }
+      if (!t.networks.includes(n)) { tds += npPair("L2 runs on " + t.networks.join(" / ") + " only"); continue; }
       for (const env of ENVS) {
         const runs = runsFor(idx, t.id, n, t.method || "test-vm", env);
         states.push(runs.length ? runs[0].status : "norun");
@@ -182,9 +182,9 @@ function renderAppMatrix(idx, states) {
     for (const m of methods) {
       const inst = CATALOG.installs.find((i) => i.method === m.id) || { id: m.id, level: "install", cmd: "@manual" };
       for (const n of nets) {
-        if (fut(n)) { tds += `<td class="cell future">∙</td><td class="cell future">∙</td>`; continue; }
+        if (fut(n)) { tds += npPair("future transport — not wired yet"); continue; }
         for (const env of ENVS) {
-          if (env === "ci") { tds += `<td class="cell cina" title="installs can't run on CI">✕</td>`; continue; }
+          if (env === "ci") { tds += npCell("installs can't run on CI (need real VirtualBox/hardware)"); continue; }
           const runs = runsFor(idx, inst.id, undefined, undefined, env);
           states.push(runs.length ? runs[0].status : "norun");
           const cid = `${inst.id}|install|${n}|${env}`;
@@ -201,12 +201,12 @@ function renderAppMatrix(idx, states) {
     let details = "";
     for (const m of methods) {
       for (const n of nets) {
-        if (fut(n)) { tds += `<td class="cell future">∙</td><td class="cell future">∙</td>`; continue; }
-        if (!t.networks.includes(n)) { tds += naPair(); continue; }
+        if (fut(n)) { tds += npPair("future transport — not wired yet"); continue; }
+        if (!t.networks.includes(n)) { tds += npPair("not applicable for the " + client + " app"); continue; }
         for (const env of ENVS) {
-          if (env === "ci" && !canRunCI(t.level, m.id)) { tds += `<td class="cell cina" title="app tests can't run on CI (VirtualBox/hardware/Tor)">✕</td>`; continue; }
+          if (env === "ci" && !canRunCI(t.level, m.id)) { tds += npCell("app tests can't run on CI — need VirtualBox / real hardware / Tor"); continue; }
           const runs = runsFor(idx, t.id, n, m.id, env);
-          states.push(runs.length ? runs[0].status : "todo");
+          states.push(runs.length ? runs[0].status : (t.implemented === false ? "todo" : "norun"));
           const cid = `${t.id}|${m.id}|${n}|${env}`;
           tds += `<td class="cell ${OPEN.has(cid) ? "open" : ""}" data-cell="${esc(cid)}">${cellHtml(runs, t)}</td>`;
           details += detailRow(cid, runs, t, total);
@@ -229,13 +229,18 @@ function renderAppMatrix(idx, states) {
 // ── cells & details ─────────────────────────────────────────────────────────
 function cellHtml(runs, entry) {
   if (runs.length) return runs.map(runChip).join("");
-  if (entry && entry.cmd === "@todo") return `<span class="todo" title="Automated test not written yet — nothing runs in the background; it fills in once you run it.">○</span>`;
-  return `<span class="norun" title="No runs recorded for this commit / config / network / env. Nothing runs in the background — start one with ./dash run / ./dash here.">—</span>`;
+  if (entry && entry.implemented === false)
+    return `<span class="ni" title="not implemented — no automated test is written for this flow yet">○</span>`;
+  return `<span class="norun" title="not run — this test exists and the combination is valid, but no run is recorded for the selected commit / config / network / env. Start one with ./dash here or ./dash run.">·</span>`;
 }
 function runChip(r) {
   const st = r.status || "skip";
   const vid = r.artifacts && r.artifacts.video ? ` <span class="vidmark" title="screen recording">▶</span>` : "";
-  return `<span class="run st-${st} ${r.demo ? "demo" : ""}" title="${esc(r.error || r.name)}">` +
+  const when = (r.ts || "").replace("T", " ").replace("Z", " UTC");
+  const where = `${r.repo || ""}@${r.commit || ""}${r.dirty ? ` (dirty ${r.diff_hash})` : ""}`;
+  const cfg = r.config_label ? ` · cfg: ${r.config_label}` : "";
+  const title = `${st} · ${fmtDur(r.duration_s)} · ${when} · ${where}${cfg}${r.error ? ` · ${r.error}` : ""}`;
+  return `<span class="run st-${st} ${r.demo ? "demo" : ""}" title="${esc(title)}">` +
     `<span class="g">${GLYPH[st] || "⚪"}</span><span class="d">${st === "skip" ? "—" : fmtDur(r.duration_s)}</span>${vid}</span>`;
 }
 function detailRow(cid, runs, entry, total) {
@@ -268,14 +273,15 @@ function renderSummary(states, recs) {
   $("summary").innerHTML =
     `<span><b>${pct}%</b> of run cells pass</span>` +
     `<span class="k-pass">🟢 ${c.pass}</span><span class="k-slow">🟠 ${c.slow}</span><span class="k-fail">🔴 ${c.fail}</span>` +
-    `<span class="k-skip">○ ${c.todo} todo · ${c.norun} not run</span>` +
+    `<span class="k-skip">○ ${c.todo} not implemented · · ${c.norun} not run</span>` +
     `<span>· ${recs.length} runs recorded</span>` +
     (slow ? `<span>· slowest <b>${esc(slow.name)}</b> ${fmtDur(slow.duration_s)}</span>` : "");
 }
 function renderLegend() {
   $("legend").innerHTML =
-    `🟢 pass · 🟠 slow · 🔴 fail · ○ todo (test not written) · — no runs (nothing recorded; nothing runs in the background) · ✕ can't run on CI · ∙ future transport · ▶ recording.<br>` +
-    `Every network shows two columns — <b>local</b> and <b>ci</b>. CI can run L1 + L2 (nix VMs) but <b>not</b> the app/install methods (they need VirtualBox / real hardware / Tor), so those CI cells are ✕. Toggle networks up top.<br>` +
+    `<b>🟢 pass</b> · <b>🟠 slow</b> · <b>🔴 fail</b> — each shows its duration; <b>hover a run</b> for when · commit · dirty-config, or <b>click</b> to unfold error, logs &amp; video. Multiple runs stack newest-first.<br>` +
+    `<b>○ not implemented</b> — no automated test written for this flow yet. &nbsp; <b>· not run</b> — test exists &amp; the combo is valid, but no run recorded for this commit/config/network/env. &nbsp; <b>✕ not possible</b> — this combo can't run (hover for why: CI can't do app/install methods; future transports; or N/A for the client). &nbsp; <b>▶</b> recording · <b>ᶜ</b> CI run.<br>` +
+    `Every network shows two columns — <b>local</b> and <b>ci</b>. CI runs L1 + L2 (nix VMs) but not the app/install methods, so those CI cells are ✕. Toggle networks up top.<br>` +
     `Multiple runs <b>stack newest-first</b>. Click a cell to <b>unfold</b> runs, errors, CLI log, server log, video. Pick a <b>commit</b> then a <b>config</b> to compare clean vs dirty. Videos/logs are local-only (<code>./dash serve</code>); on Pages they're placeholders.`;
 }
 function bindCells() {
@@ -284,7 +290,9 @@ function bindCells() {
 }
 
 // ── utils ────────────────────────────────────────────────────────────────
-const naPair = () => `<td class="cell na">·</td><td class="cell na">·</td>`;
+// "not possible" — this combination can't run (CI / future transport / N/A). One clear glyph, ✕.
+const npCell = (reason) => `<td class="cell np" title="not possible — ${esc(reason)}">✕</td>`;
+const npPair = (reason) => npCell(reason) + npCell(reason);
 function fmtDur(s) {
   s = Number(s) || 0;
   if (s < 10) return s.toFixed(1) + "s";
