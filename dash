@@ -693,7 +693,17 @@ def cmd_here(args):
                   f"or {CYAN}./dash run L1.onion-routing{OFF}.)")
             sys.exit(1)
 
-    # Backend
+    # L1 + L2 FIRST — they use nix/QEMU (KVM). The VirtualBox backend must NOT be running while these
+    # run: VirtualBox and KVM both grab Intel VT-x, and the contention guru-meditates the VBox VM
+    # (VERR_VMX_INVALID_VMXON_PTR). So the VBox backend is brought up only AFTER the KVM tests finish.
+    run_entry(entry_by_id(cat, "L1.onion-routing"))
+    if args.fast:
+        print(f"{GREY}skipping L2 (--fast){OFF}")
+    else:
+        for net in ("tor", "https"):
+            run_entry(entry_by_id(cat, "L2.backend"), net=net)
+
+    # Backend (VirtualBox) — AFTER the KVM tests, so nothing else is holding VT-x.
     onion = None
     if not pf["vbox"]:
         print(f"{AMBER}skip backend/L3{OFF} — VirtualBox not installed")
@@ -703,16 +713,6 @@ def cmd_here(args):
         onion, _, note = ensure_backend(install_ok=not args.no_install)
         if not onion:
             print(f"{AMBER}backend not ready{OFF} — {note}. Use {CYAN}./dash here --long{OFF} to build it + start Tor.")
-
-    # L1 unit (fast, nix)
-    run_entry(entry_by_id(cat, "L1.onion-routing"))
-
-    # L2 nixosTests (self-contained, long) — unless --fast
-    if args.fast:
-        print(f"{GREY}skipping L2 (--fast){OFF}")
-    else:
-        for net in ("tor", "https"):
-            run_entry(entry_by_id(cat, "L2.backend"), net=net)
 
     # L3 — the real app over Tor, driven by the automated integration test, recorded.
     # Gate on the .onion actually being reachable, so we never launch the app into a refused loop.
