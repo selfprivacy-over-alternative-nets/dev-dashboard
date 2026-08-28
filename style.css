@@ -71,7 +71,10 @@ tr.group td { background: var(--panel2); color: var(--dim);
   font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
 
 .cell { min-height: 20px; cursor: pointer; }
-.cell.na { background: repeating-linear-gradient(45deg,#0d1017,#0d1017 6px,#0f141c 6px,#0f141c 12px); cursor: default; }
+.cell.na { background: repeating-linear-gradient(45deg,#0d1017,#0d1017 6px,#0f141c 6px,#0f141c 12px); cursor: default; color: var(--dim2); text-align:center; }
+.cell.future { background: repeating-linear-gradient(45deg,#0d1017,#0d1017 6px,#12111c 6px,#12111c 12px); cursor: default; color: var(--dim2); text-align:center; }
+.cell.cina { background: #16100f; color: #7a4a45; text-align:center; cursor: help; }
+th.env { text-align:center; font-size:9px; color: var(--dim2); font-weight:400; text-transform:uppercase; letter-spacing:0; padding:2px 3px; }
 .cell.open { outline: 1px solid var(--blue); }
 .run { display: block; padding: 1px 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run .g { display: inline-block; width: 1.2em; }

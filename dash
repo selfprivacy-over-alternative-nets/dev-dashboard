@@ -34,6 +34,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 
 # Redact live .onion addresses so they never reach the published dashboard.
 _ONION_RE = re.compile(r"[a-z2-7]{16,56}\.onion")
@@ -49,6 +50,7 @@ MEDIA = os.path.join(ROOT, "media")
 CATALOG = os.path.join(ROOT, "catalog.json")
 
 GREEN, AMBER, RED, GREY, BOLD, OFF = "\033[32m", "\033[33m", "\033[31m", "\033[90m", "\033[1m", "\033[0m"
+CYAN = "\033[36m"
 GLYPH = {"pass": "🟢", "slow": "🟠", "fail": "🔴", "skip": "⚪", "running": "…"}
 
 
@@ -381,6 +383,116 @@ def cmd_clear_demo(args):
     print(f"cleared demo data; {len(kept)} real records remain")
 
 
+# ── `here`: run everything this (Ubuntu) host can, end-to-end ─────────────────
+VM_NAME = "SelfPrivacy-Tor-Test"
+DEV_TOKEN = "test-token-for-tor-development"
+FLUTTER_DIR = "../Manager-Ubuntu-SelfPrivacy-Over-Tor/flutter-app/selfprivacy.org.app"
+
+
+def _sh(cmd, timeout=None):
+    try:
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+    except Exception as ex:
+        r = subprocess.CompletedProcess(cmd, 1, "", str(ex))
+        return r
+
+
+def _vm_running():
+    return VM_NAME in (_sh("VBoxManage list runningvms").stdout or "")
+
+
+def _vm_exists():
+    return _sh(f'VBoxManage showvminfo "{VM_NAME}"').returncode == 0
+
+
+def _get_onion(retries=12):
+    if not shutil.which("sshpass"):
+        return ""
+    for _ in range(retries):
+        r = _sh("sshpass -p '' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "
+                "-p 2222 root@localhost cat /var/lib/tor/hidden_service/hostname")
+        h = (r.stdout or "").strip()
+        if h.endswith(".onion"):
+            return h
+        time.sleep(6)
+    return ""
+
+
+def ensure_backend(install_ok):
+    """Return (onion, token, note). Bring up the VirtualBox VM if needed (non-destructive)."""
+    if not shutil.which("VBoxManage"):
+        return "", "", "VirtualBox not installed"
+    if _vm_running():
+        o = _get_onion()
+        return o, DEV_TOKEN, ("" if o else "VM running but .onion not published yet")
+    if _vm_exists():
+        print(f"{GREY}starting existing VM {VM_NAME} (waiting up to ~2.5 min for boot + Tor HS)…{OFF}")
+        _sh(f'VBoxManage startvm "{VM_NAME}" --type headless', timeout=120)
+        o = _get_onion(retries=25)
+        return o, DEV_TOKEN, ("" if o else "VM started but .onion not ready (boot slow, or Tor HS not up)")
+    if not install_ok:
+        return "", "", "no backend VM (omit --no-install to create one)"
+    inst = entry_by_id(load_catalog(), "install.vm-local")
+    if inst:
+        run_entry(inst)                       # download image, create VM, start Tor
+    o = _get_onion(retries=25)
+    return o, DEV_TOKEN, ("" if o else "installed VM but .onion not ready")
+
+
+def cmd_here(args):
+    cat = load_catalog()
+    print(f"{BOLD}dash here — running everything this host can{OFF}\n")
+
+    # 1) L1 unit (fast, nix)
+    run_entry(entry_by_id(cat, "L1.onion-routing"))
+
+    # 2) L3 — needs a backend + flutter + a display; this is the emphasis
+    if not shutil.which("flutter"):
+        print(f"{AMBER}skip L3{OFF} — flutter not found (install: ./scripts/requirements.sh --app-linux)")
+    elif not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        print(f"{AMBER}skip L3{OFF} — no display to run/record the app")
+    else:
+        onion, token, note = ensure_backend(not args.no_install)
+        if not onion:
+            print(f"{AMBER}skip L3{OFF} — {note}.")
+            print(f"  {GREY}To bring the backend up for L3, from the Manager repo:{OFF}")
+            print(f"    cd ../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && ./build-and-run.sh   # creates+starts the VM, Tor, onion")
+            print(f"    then start host Tor:  {CYAN}sudo systemctl start tor{OFF}  (needs your sudo)")
+            print(f"  {GREY}then re-run ./dash here{OFF}")
+        else:
+            print(f"{GREY}backend .onion: {onion}{OFF}")
+            reach = _sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 25 "
+                        f"--socks5-hostname 127.0.0.1:9050 https://{onion}/api/version").stdout
+            if reach.strip() not in ("200", "301", "302", "401", "403"):
+                print(f"{AMBER}note{OFF}: host Tor can't reach the .onion yet [{reach or 'no route'}]. "
+                      f"The app may sit on the connect screen (launch still recorded).")
+                print(f"  {GREY}Ensure host tor is running: {CYAN}sudo systemctl start tor{OFF}{GREY} "
+                      f"(SOCKS on 127.0.0.1:9050), then Tor needs ~1–2 min to build a circuit.{OFF}")
+            l3 = {
+                "id": "L3.providers.desktop", "name": "providers tab", "level": "L3",
+                "client": "desktop", "networks": ["tor"], "repo": FLUTTER_DIR,
+                "budget_s": 300, "records_video": True,
+                "cmd": "flutter config --enable-linux-desktop >/dev/null 2>&1; "
+                       "flutter pub get --no-example >/dev/null 2>&1; "
+                       "flutter test integration_test/providers_flow_test.dart -d linux "
+                       f"--dart-define=ONION_DOMAIN={onion} --dart-define=API_TOKEN={token}",
+                "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
+                                  "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
+            }
+            run_entry(l3, net="tor", method="vm-local", record=True)
+
+    # 3) L2 nixosTests (self-contained, long) — unless --fast
+    if args.fast:
+        print(f"{GREY}skipping L2 (--fast){OFF}")
+    else:
+        for net in ("tor", "https"):
+            run_entry(entry_by_id(cat, "L2.backend"), net=net)
+
+    if not args.no_publish:
+        cmd_publish(argparse.Namespace(message=f"dash here @ {now_iso()}"))
+    print(f"\n{BOLD}dash here done.{OFF} View: ./dash serve   Live: git push already ran unless --no-publish")
+
+
 def main():
     p = argparse.ArgumentParser(prog="dash", description="orchestrate + record SelfPrivacy dev/test runs")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -429,6 +541,12 @@ def main():
     pub = sub.add_parser("publish")
     pub.add_argument("-m", "--message")
     pub.set_defaults(fn=cmd_publish)
+
+    h = sub.add_parser("here", help="run everything this host can (L1 + L3 recorded + L2), then publish")
+    h.add_argument("--fast", action="store_true", help="skip the long L2 nixosTests")
+    h.add_argument("--no-install", action="store_true", help="don't create a VM if none is running")
+    h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
+    h.set_defaults(fn=cmd_here)
 
     sub.add_parser("demo").set_defaults(fn=cmd_demo)
     sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
