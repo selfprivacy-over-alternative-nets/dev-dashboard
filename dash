@@ -777,6 +777,70 @@ def _ensure_https_tunnel():
     return HTTPS_TUNNEL_DOMAIN
 
 
+CHUTNEY_DIR = os.path.normpath(os.path.join(ROOT, "..", "chutney"))
+CHUTNEY_SOCKS = 9009           # the hs-v3 flavor's client SOCKS port
+SPHS_DIR = "/tmp/sp-hs-tor"    # host-side tor: joins chutney, HS -> the https tunnel (VM nginx)
+_TOR_BIN = "/usr/sbin/tor"
+
+
+def _ensure_chutney():
+    """Bring up an L3-over-CHUTNEY backing WITHOUT touching real Tor (9050) or the VM: a private
+    chutney Tor network + a host-side tor Hidden Service that reverse-proxies to the VM's nginx via
+    the same https SSH tunnel. So the app dials a chutney .onion (over the chutney client's SOCKS)
+    that resolves to the real SelfPrivacy backend. Returns (chutney_onion, socks_port) or (None,None).
+    Idempotent. Needs the chutney tool cloned at ../chutney (pip: tomli_w tomli paramiko rpyc)."""
+    if not os.path.isdir(CHUTNEY_DIR):
+        print(f"{AMBER}chutney not cloned at {CHUTNEY_DIR} — skipping chutney L3.{OFF}")
+        return None, None
+    up = lambda: _sh(f"ss -tlnp 2>/dev/null | grep -q '127.0.0.1:{CHUTNEY_SOCKS}'").returncode == 0
+    if not up():
+        print(f"{GREY}starting the private chutney Tor network (keep-alive)…{OFF}")
+        _sh(f"cd '{CHUTNEY_DIR}' && CHUTNEY_TOR={_TOR_BIN} nohup ./tools/test-network.sh --flavor hs-v3 "
+            f"--tor {_TOR_BIN} --stop-time -1 >/tmp/chutney_up.log 2>&1 &")
+        for _ in range(60):
+            if up():
+                break
+            time.sleep(3)
+        if not up():
+            print(f"{AMBER}chutney network didn't come up (see /tmp/chutney_up.log){OFF}")
+            return None, None
+    _ensure_https_tunnel()                          # the HS forwards 443 -> this tunnel -> VM nginx
+    das = _sh(f"grep -hE '^DirAuthority ' '{CHUTNEY_DIR}'/net/nodes/009c/torrc").stdout or ""
+    das = "\n".join(l for l in das.splitlines() if l.startswith("DirAuthority"))
+    if not das:
+        print(f"{AMBER}couldn't read chutney DirAuthority lines{OFF}")
+        return None, None
+    os.makedirs(os.path.join(SPHS_DIR, "hs"), exist_ok=True)
+    os.chmod(os.path.join(SPHS_DIR, "hs"), 0o700)   # tor requires the HS dir be 0700
+    open(os.path.join(SPHS_DIR, "torrc"), "w").write(
+        f"TestingTorNetwork 1\nDataDirectory {SPHS_DIR}\nSocksPort 0\n"
+        f"Log notice file {SPHS_DIR}/notice.log\nSandbox 0\n"
+        f"HiddenServiceDir {SPHS_DIR}/hs\nHiddenServicePort 443 127.0.0.1:{HTTPS_TUNNEL_PORT}\n{das}\n")
+    _sh(f"pkill -f 'tor -f {SPHS_DIR}/torrc'")       # restart with the CURRENT chutney authorities
+    time.sleep(1)
+    _sh(f"nohup {_TOR_BIN} -f {SPHS_DIR}/torrc >/tmp/sp-hs-start.log 2>&1 &")
+    hostname = os.path.join(SPHS_DIR, "hs", "hostname")
+    for _ in range(25):
+        if os.path.exists(hostname):
+            break
+        time.sleep(2)
+    onion = open(hostname).read().strip() if os.path.exists(hostname) else None
+    if not onion:
+        print(f"{AMBER}host-side chutney HS didn't publish (see {SPHS_DIR}/notice.log){OFF}")
+        return None, None
+    if not _onion_reachable(onion, tries=15, socks_port=CHUTNEY_SOCKS):
+        print(f"{AMBER}chutney onion not answering yet; the run may need a retry.{OFF}")
+    print(f"{GREY}chutney backend ready: {onion[:16]}… via SOCKS {CHUTNEY_SOCKS}{OFF}")
+    return onion, CHUTNEY_SOCKS
+
+
+def _stop_chutney():
+    """Tear down the chutney network + host-side HS (real tor/VM untouched)."""
+    _sh(f"pkill -f 'tor -f {SPHS_DIR}/torrc'")
+    _sh(f"cd '{CHUTNEY_DIR}' && CHUTNEY_TOR={_TOR_BIN} ./chutney stop >/dev/null 2>&1")
+    _sh("pkill -f 'chutney/net/nodes'")
+
+
 def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
     """Run the AUTOMATED providers-tab integration test, recorded, over transport `net`
     (tor | chutney | https). The test lives in the dashboard repo and is injected into the app for
