@@ -757,27 +757,53 @@ def ensure_integration_dep(app_dir):
     open(p, "w").write(src)
 
 
-def run_l3_flutter(onion, token, pf):
-    """Run the AUTOMATED integration test, recorded. The test lives in the dashboard repo and is
-    injected into the app package for the run, then the Manager repo is restored byte-for-byte."""
+HTTPS_TUNNEL_PORT = 8443
+# nip.io resolves *.127.0.0.1.nip.io -> 127.0.0.1, so the app reaches the tunnel via a real hostname
+# (needed for the app's `api.<domain>` clearnet URL + TLS SNI) WITHOUT touching /etc/hosts (no sudo).
+HTTPS_TUNNEL_DOMAIN = f"127.0.0.1.nip.io:{HTTPS_TUNNEL_PORT}"
+
+
+def _ensure_https_tunnel():
+    """SSH-forward host 127.0.0.1:8443 -> the VM's nginx :443 so the app can reach the SAME backend
+    over CLEARNET HTTPS (no Tor). The Tor VM's nginx serves /graphql on its only 443 server (default
+    server, any Host), so `https://api.<domain>/graphql` routes fine. Returns the address the app
+    should use as HTTPS_DOMAIN. Idempotent + best-effort."""
+    listening = _sh(f"ss -tlnp 2>/dev/null | grep -q '127.0.0.1:{HTTPS_TUNNEL_PORT}'").returncode == 0
+    if not listening:
+        print(f"{GREY}opening SSH tunnel host:{HTTPS_TUNNEL_PORT} -> VM:443 for clearnet HTTPS…{OFF}")
+        _sh(f"sshpass -p '' ssh -f -N -o StrictHostKeyChecking=no -o ExitOnForwardFailure=yes "
+            f"-L 127.0.0.1:{HTTPS_TUNNEL_PORT}:127.0.0.1:443 -p 2222 root@localhost", timeout=20)
+        time.sleep(2)
+    return HTTPS_TUNNEL_DOMAIN
+
+
+def run_l3_flutter(address, token, pf, net="tor"):
+    """Run the AUTOMATED providers-tab integration test, recorded, over transport `net`
+    (tor | chutney | https). The test lives in the dashboard repo and is injected into the app for
+    the run, then the Manager repo is restored byte-for-byte. For tor/chutney the app dials an
+    .onion over SOCKS; for https it dials the same backend over clearnet HTTPS via an SSH tunnel."""
     app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
     test_src = os.path.join(ROOT, "flutter", "providers_flow_test.dart")
     if not os.path.exists(test_src):
         print(f"{RED}missing {test_src}{OFF}")
         return
-    if not pf.get("tor"):
-        print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the .onion; "
-              f"the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
-    _ensure_api_nix_path()      # so the app's Services list can actually load over Tor (see helper)
-    # Gate on the onion answering over Tor RIGHT BEFORE launch. The app's init() calls getApiVersion()
-    # immediately; on a cold circuit the first SOCKS request can throw `hostUnreachable`, and an
-    # integration test fails on any unhandled async exception. Confirming 200 first (and kicking the
-    # VM's tor if not) makes the launch land on a warm circuit — mirrors the gate in cmd_here.
-    if pf.get("tor"):
-        if not _onion_reachable(onion, tries=6):
-            print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
-            _kick_vm_tor()
-            _onion_reachable(onion, tries=30)
+    is_tor = net in ("tor", "chutney")     # onion transports (SOCKS + Tor flakiness/retry)
+    _ensure_api_nix_path()                 # backend needs nix for Services on ANY transport
+    if net == "https":
+        address = _ensure_https_tunnel()   # app connects over clearnet; address = tunnel domain
+        dart_defines = f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token}"
+    else:
+        if not pf.get("tor"):
+            print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the "
+                  f".onion; the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
+        # Gate on the onion answering over Tor RIGHT BEFORE launch (cold circuits throw
+        # hostUnreachable, which integration_test treats as a fatal uncaught error).
+        if pf.get("tor"):
+            if not _onion_reachable(address, tries=6):
+                print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
+                _kick_vm_tor()
+                _onion_reachable(address, tries=30)
+        dart_defines = f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token}"
     itdir = os.path.join(app, "integration_test")
     injected = os.path.join(itdir, "providers_flow_test.dart")
     backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
@@ -792,23 +818,22 @@ def run_l3_flutter(onion, token, pf):
         _sh(f"cd '{app}' && flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get", timeout=600)
         entry = {
             "id": "L3.providers.desktop", "name": "providers tab", "level": "L3",
-            "client": "desktop", "networks": ["tor"], "repo": FLUTTER_APP_DIR,
+            "client": "desktop", "networks": [net], "repo": FLUTTER_APP_DIR,
             "budget_s": 600, "records_video": True,
-            "cmd": "flutter test integration_test/providers_flow_test.dart -d linux "
-                   f"--dart-define=ONION_DOMAIN={onion} --dart-define=API_TOKEN={token}",
+            "cmd": "flutter test integration_test/providers_flow_test.dart -d linux " + dart_defines,
             "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
                               "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
         }
         # Retry on TRANSIENT Tor failures only. The app's reload() timer throws uncaught on a
         # cold-circuit `hostUnreachable`, and integration_test fails on ANY uncaught async error
         # (the real app just logs it and retries on its next 10s tick). A fresh launch on a warm
-        # circuit connects — so we retry, kicking the VM's tor between attempts. A failure with NO
-        # connection markers (e.g. the Services-data assertion on a clean connection) is a REAL bug
-        # and is NOT retried — it stays red honestly.
+        # circuit connects — so we retry, kicking the VM's tor between attempts. Clearnet HTTPS is
+        # reliable, so https gets a single attempt; a failure there is real and stays red.
         transient_markers = ("hostUnreachable", "TimeoutException", "SocketException", "Connection refused")
-        keepwarm = _start_keepwarm(onion) if pf.get("tor") else None
-        for attempt in range(1, 4):
-            rec = run_entry(entry, net="tor", method="vm-local", record=True, shots=True)
+        keepwarm = _start_keepwarm(address) if (is_tor and pf.get("tor")) else None
+        max_attempts = 3 if is_tor else 1
+        for attempt in range(1, max_attempts + 1):
+            rec = run_entry(entry, net=net, method="vm-local", record=True, shots=True)
             if not rec or rec.get("status") == "pass":
                 break
             log_txt = ""
@@ -816,12 +841,12 @@ def run_l3_flutter(onion, token, pf):
             if cl and os.path.exists(os.path.join(ROOT, cl)):
                 log_txt = open(os.path.join(ROOT, cl), errors="replace").read()
             is_transient = any(m in log_txt for m in transient_markers)
-            if is_transient and attempt < 3:
+            if is_tor and is_transient and attempt < max_attempts:
                 print(f"{AMBER}transient Tor connection failure{OFF} — kicking the VM's tor and retrying "
-                      f"(attempt {attempt + 1}/3)…")
+                      f"(attempt {attempt + 1}/{max_attempts})…")
                 drop_record(rec["run_id"])           # don't leave a flaky-fail on the board
                 _kick_vm_tor()
-                _onion_reachable(onion, tries=20)    # re-warm before the next launch
+                _onion_reachable(address, tries=20)  # re-warm before the next launch
             else:
                 break                                # a real failure (or out of attempts) — keep it
         if keepwarm:
