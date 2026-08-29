@@ -841,13 +841,15 @@ def _stop_chutney():
     _sh("pkill -f 'chutney/net/nodes'")
 
 
-def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
-    """Run the AUTOMATED providers-tab integration test, recorded, over transport `net`
-    (tor | chutney | https). The test lives in the dashboard repo and is injected into the app for
-    the run, then the Manager repo is restored byte-for-byte. For tor/chutney the app dials an
-    .onion over SOCKS; for https it dials the same backend over clearnet HTTPS via an SSH tunnel."""
+def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="providers", retries=None):
+    """Run an AUTOMATED L3 desktop flow test, recorded, over transport `net`
+    (tor | chutney | https). `flow` selects which dashboard-owned test to run
+    (flutter/<flow>_flow_test.dart — providers/connect/login/services/nextcloud/menus/addremove).
+    The test lives in the dashboard repo and is injected into the app for the run, then the Manager
+    repo is restored byte-for-byte. For tor/chutney the app dials an .onion over SOCKS; for https it
+    dials the same backend over clearnet HTTPS via an SSH tunnel."""
     app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
-    test_src = os.path.join(ROOT, "flutter", "providers_flow_test.dart")
+    test_src = os.path.join(ROOT, "flutter", f"{flow}_flow_test.dart")
     if not os.path.exists(test_src):
         print(f"{RED}missing {test_src}{OFF}")
         return
@@ -873,7 +875,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
         dart_defines = (f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=SOCKS_PORT={socks_port}")
     itdir = os.path.join(app, "integration_test")
-    injected = os.path.join(itdir, "providers_flow_test.dart")
+    injected = os.path.join(itdir, f"{flow}_flow_test.dart")
     backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
               if os.path.exists(os.path.join(app, f))}
     created_dir = not os.path.isdir(itdir)
@@ -885,10 +887,10 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
         print(f"{GREY}flutter pub get (resolving integration_test)…{OFF}")
         _sh(f"cd '{app}' && flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get", timeout=600)
         entry = {
-            "id": "L3.providers.desktop", "name": "providers tab", "level": "L3",
+            "id": f"L3.{flow}.desktop", "name": flow, "level": "L3",
             "client": "desktop", "networks": [net], "repo": FLUTTER_APP_DIR,
             "budget_s": 600, "records_video": True,
-            "cmd": "flutter test integration_test/providers_flow_test.dart -d linux " + dart_defines,
+            "cmd": f"flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
             "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
                               "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
         }
@@ -900,7 +902,10 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
         transient_markers = ("hostUnreachable", "TimeoutException", "SocketException", "Connection refused")
         keepwarm = _start_keepwarm(address, socks_port=socks_port) if (
             is_tor and (net == "chutney" or pf.get("tor"))) else None
-        max_attempts = 3 if is_tor else 1
+        # Onion transports retry transient Tor flakiness; clearnet https gets one shot. A caller can
+        # force a specific attempt count (e.g. retries=1 for MUTATING flows like addremove, where a
+        # blind re-run would re-trigger the backend mutation and confuse the service state).
+        max_attempts = retries if retries else (3 if is_tor else 1)
         for attempt in range(1, max_attempts + 1):
             rec = run_entry(entry, net=net, method="vm-local", record=True, shots=True)
             if not rec or rec.get("status") == "pass":
@@ -932,6 +937,32 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
             pass
         for f, content in backup.items():
             open(os.path.join(app, f), "w").write(content)
+        # addremove MUTATES the shared backend (disables a service in userdata). Re-enable it over the
+        # always-available real Tor onion so the backend is left clean for the other flows.
+        if flow == "addremove":
+            _reenable_service("jitsi-meet")
+
+
+def _reenable_service(service_id):
+    """Re-enable a service via the enableService mutation over the real Tor onion (SOCKS 9050),
+    which is always up regardless of the transport under test. Best-effort backstop for addremove."""
+    try:
+        onion = ""
+        if os.path.exists("/tmp/onion.txt"):
+            onion = open("/tmp/onion.txt").read().strip()
+        if not onion:
+            print(f"{AMBER}addremove backstop: no tor onion known, skipping re-enable{OFF}")
+            return
+        q = ('{"query":"mutation{ services{ enableService(serviceId:\\"%s\\")'
+             '{ success message } } }"}' % service_id)
+        out = subprocess.run(
+            ["curl", "-s", "--socks5-hostname", "127.0.0.1:9050", "-k",
+             "-H", f"Authorization: Bearer {DEV_TOKEN}", "-H", "Content-Type: application/json",
+             "-d", q, f"https://{onion}/graphql"],
+            capture_output=True, text=True, timeout=90).stdout
+        print(f"{GREY}addremove backstop: re-enabled {service_id} → {out[:160]}{OFF}")
+    except Exception as e:
+        print(f"{AMBER}addremove backstop failed for {service_id}: {e}{OFF}")
 
 
 def cmd_here(args):

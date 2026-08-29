@@ -80,7 +80,15 @@ tests.append({
 
 # Which (flow, client) pairs actually have an automated test written (dashboard/flutter/*.dart,
 # injected by `dash here --long`). Everything else is genuinely "not implemented" yet.
-IMPLEMENTED = {("providers", "desktop")}
+IMPLEMENTED = {
+    ("connect", "desktop"),
+    ("login", "desktop"),
+    ("services", "desktop"),
+    ("providers", "desktop"),
+    ("nextcloud", "desktop"),
+    ("menus", "desktop"),
+    ("addremove", "desktop"),
+}
 
 # L3 — app usage flows × client (network + install-method are runtime tags, not in the id)
 for client, nets in CLIENT_NETS.items():

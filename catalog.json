@@ -112,8 +112,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] App connects to the backend over the selected network and reaches the API.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -129,8 +129,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] App authenticates with the API token and loads the authenticated session.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -146,8 +146,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] The Services tab loads the list of services from the backend.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -180,8 +180,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Open the Nextcloud service detail from the app.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -197,8 +197,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
@@ -214,8 +214,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
       "desc": "[desktop] Enable then disable a service and confirm the backend applies it.",
-      "implemented": false,
-      "cmd": "@todo",
+      "implemented": true,
+      "cmd": "@flutter",
       "records_video": true
     },
     {
