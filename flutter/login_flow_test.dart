@@ -1,10 +1,11 @@
 // Automated L3 flow (dashboard-owned) — LOGIN / AUTH.
 // Injected by dash.run_l3_flutter(flow='login'), then the Manager repo is restored byte-for-byte.
 //
-// Flow: launch → the app auto-authenticates with the API token from the --dart-define → it loads
-//       the AUTHENTICATED session (RootPage, NOT the onboarding flow) and pulls REAL backend data.
-//       We assert RootPage is present, OnboardingPage is absent, and real data loads — proving the
-//       token was accepted end-to-end.
+// Flow: launch → the app auto-authenticates with the API token → assert we're in the AUTHENTICATED
+//       shell (RootPage, NOT onboarding) → open More → Devices and wait for the real API-token /
+//       device list to load ("Initial device"). The Devices list is an AUTH-GATED endpoint (it lists
+//       the server's API tokens), so loading it is honest proof the token was accepted — distinct
+//       from `services`/`connect` (which read public-ish server/service data).
 //
 // See providers_flow_test.dart for the hard-won notes (no pumpAndSettle; default frame policy;
 // restore ErrorWidget.builder; ffmpeg x11grab screenshots).
@@ -18,8 +19,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:selfprivacy/main.dart' as app;
 import 'package:selfprivacy/ui/pages/root_route.dart';
 import 'package:selfprivacy/ui/pages/providers/providers.dart';
-import 'package:selfprivacy/ui/pages/services/services.dart';
 import 'package:selfprivacy/ui/pages/onboarding/onboarding.dart';
+import 'package:selfprivacy/ui/pages/more/more.dart';
+import 'package:selfprivacy/ui/pages/devices/devices.dart';
 
 Future<bool> pumpUntil(
   WidgetTester tester,
@@ -88,20 +90,24 @@ void main() {
       expect(find.byType(OnboardingPage), findsNothing,
           reason: 'App is stuck on the onboarding screen — it is NOT authenticated.');
 
-      // Honest proof the authenticated session actually talks to the API: real data loads. The
-      // Providers page cards render with defaults even offline, so we go to the Services tab and
-      // wait for a REAL service tile fetched with the token.
-      expect(find.text('Services'), findsWidgets, reason: 'no Services tab in the nav bar');
-      await tester.tap(find.text('Services').first);
-      expect(await pumpUntil(tester, find.byType(ServicesPage)), isTrue,
-          reason: 'Services screen did not appear after tapping the Services tab');
-      final dataLoaded = await pumpUntil(
-          tester,
-          find.textContaining(RegExp(r'Nextcloud|Matrix|Jitsi|Prometheus|Forgejo|Mail Server')),
+      // Open More -> Devices: the API-token/device list is AUTH-GATED, so loading it proves the token.
+      expect(find.text('More'), findsWidgets, reason: 'no More tab in the nav bar');
+      await tester.tap(find.text('More').first);
+      expect(await pumpUntil(tester, find.byType(MorePage)), isTrue,
+          reason: 'More screen did not appear');
+      expect(find.text('Devices'), findsWidgets, reason: 'no Devices entry on the More page');
+      await tester.tap(find.text('Devices').first);
+      expect(await pumpUntil(tester, find.byType(DevicesPage), timeout: const Duration(seconds: 30)),
+          isTrue,
+          reason: 'Devices page did not open');
+
+      // The current token's device ("Initial device") must load from the auth-gated tokens endpoint.
+      final devicesLoaded = await pumpUntil(tester, find.text('Initial device'),
           timeout: const Duration(seconds: 90));
-      await shot(tester, 'session-data');
-      expect(dataLoaded, isTrue,
-          reason: 'Authenticated but never loaded real backend data within 90s.');
+      await shot(tester, 'devices');
+      expect(devicesLoaded, isTrue,
+          reason: 'The authenticated device list never loaded ("Initial device" absent) within 90s — '
+              'the API token was not accepted over the transport.');
     } finally {
       ErrorWidget.builder = defaultErrorBuilder;
     }

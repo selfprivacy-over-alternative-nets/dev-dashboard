@@ -45,13 +45,14 @@ INSTALL_METHODS = [
 ]
 
 FLOWS = [
-    ("connect", "connect to server", "App connects to the backend over the selected network and reaches the API."),
-    ("login", "login / auth", "App authenticates with the API token and loads the authenticated session."),
+    ("connect", "connect to server", "Open the Server details page and load real server information from the backend over the transport."),
+    ("login", "login / auth", "Open More→Devices and load the auth-gated API-token/device list — proving the token was accepted."),
     ("services", "services list loads", "The Services tab loads the list of services from the backend."),
     ("providers", "providers tab", "Open the app, switch Providers→Services and back, then close — the recorded smoke flow."),
     ("nextcloud", "open Nextcloud", "Open the Nextcloud service detail from the app."),
+    ("users", "users list loads", "The Users tab loads the real user account list from the backend."),
     ("menus", "navigate menus", "Walk the main tabs (Providers → Services → Users → More) and back."),
-    ("addremove", "add / remove service", "Enable then disable a service and confirm the backend applies it."),
+    ("addremove", "add / remove service", "Disable a service via the Jobs panel and confirm the backend applies the mutation."),
 ]
 CLIENT_NETS = {"desktop": ["tor", "chutney", "https"], "android": ["tor", "https"]}
 
@@ -86,6 +87,7 @@ IMPLEMENTED = {
     ("services", "desktop"),
     ("providers", "desktop"),
     ("nextcloud", "desktop"),
+    ("users", "desktop"),
     ("menus", "desktop"),
     ("addremove", "desktop"),
 }

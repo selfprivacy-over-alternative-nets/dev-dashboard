@@ -65,6 +65,7 @@
     "services",
     "providers",
     "nextcloud",
+    "users",
     "menus",
     "addremove"
   ],
@@ -111,7 +112,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] App connects to the backend over the selected network and reaches the API.",
+      "desc": "[desktop] Open the Server details page and load real server information from the backend over the transport.",
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true
@@ -128,7 +129,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] App authenticates with the API token and loads the authenticated session.",
+      "desc": "[desktop] Open More\u2192Devices and load the auth-gated API-token/device list \u2014 proving the token was accepted.",
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true
@@ -185,6 +186,23 @@
       "records_video": true
     },
     {
+      "id": "L3.users.desktop",
+      "name": "users list loads",
+      "level": "L3",
+      "client": "desktop",
+      "networks": [
+        "tor",
+        "chutney",
+        "https"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
+      "budget_s": 90,
+      "desc": "[desktop] The Users tab loads the real user account list from the backend.",
+      "implemented": true,
+      "cmd": "@flutter",
+      "records_video": true
+    },
+    {
       "id": "L3.menus.desktop",
       "name": "navigate menus",
       "level": "L3",
@@ -213,7 +231,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] Enable then disable a service and confirm the backend applies it.",
+      "desc": "[desktop] Disable a service via the Jobs panel and confirm the backend applies the mutation.",
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true
@@ -229,7 +247,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] App connects to the backend over the selected network and reaches the API.",
+      "desc": "[android] Open the Server details page and load real server information from the backend over the transport.",
       "implemented": false,
       "cmd": "@todo",
       "records_video": true
@@ -245,7 +263,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] App authenticates with the API token and loads the authenticated session.",
+      "desc": "[android] Open More\u2192Devices and load the auth-gated API-token/device list \u2014 proving the token was accepted.",
       "implemented": false,
       "cmd": "@todo",
       "records_video": true
@@ -299,6 +317,22 @@
       "records_video": true
     },
     {
+      "id": "L3.users.android",
+      "name": "users list loads",
+      "level": "L3",
+      "client": "android",
+      "networks": [
+        "tor",
+        "https"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
+      "budget_s": 90,
+      "desc": "[android] The Users tab loads the real user account list from the backend.",
+      "implemented": false,
+      "cmd": "@todo",
+      "records_video": true
+    },
+    {
       "id": "L3.menus.android",
       "name": "navigate menus",
       "level": "L3",
@@ -325,7 +359,7 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] Enable then disable a service and confirm the backend applies it.",
+      "desc": "[android] Disable a service via the Jobs panel and confirm the backend applies the mutation.",
       "implemented": false,
       "cmd": "@todo",
       "records_video": true

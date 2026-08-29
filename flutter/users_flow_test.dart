@@ -1,12 +1,9 @@
-// Automated L3 flow (dashboard-owned) — CONNECT TO SERVER.
-// Injected by dash.run_l3_flutter(flow='connect'), then the Manager repo is restored byte-for-byte.
+// Automated L3 flow (dashboard-owned) — USERS LIST LOADS.
+// Injected by dash.run_l3_flutter(flow='users'), then the Manager repo is restored byte-for-byte.
 //
-// Flow: launch → the app auto-configures the server+token from the --dart-defines → it connects over
-//       the transport → open the SERVER DETAILS page and wait for real SERVER information to load
-//       (the ServerTextDetailsCard shows "General information" once the backend answered; it shows
-//       "No data" if the app never reached the server). This exercises the server/system endpoints —
-//       distinct from the `services` flow (which loads the service list) — so a green here is honest
-//       proof the app connected to the *server* over the transport.
+// Flow: launch → connect and reach Providers → Users tab → wait for a REAL user to load from the
+//       backend over the transport (the page shows 7 skeleton rows while loading, so reaching the
+//       page proves nothing — we wait for the real 'admin' account).
 //
 // See providers_flow_test.dart for the hard-won notes (no pumpAndSettle; default frame policy;
 // restore ErrorWidget.builder; ffmpeg x11grab screenshots).
@@ -19,7 +16,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:selfprivacy/main.dart' as app;
 import 'package:selfprivacy/ui/pages/providers/providers.dart';
-import 'package:selfprivacy/ui/pages/server/server_details.dart';
+import 'package:selfprivacy/ui/pages/users/users.dart';
 
 Future<bool> pumpUntil(
   WidgetTester tester,
@@ -70,34 +67,31 @@ void main() {
     }
   }
 
-  testWidgets('Connect to server over the transport (automated)', (tester) async {
+  testWidgets('Users list loads real data (automated)', (tester) async {
     try {
       app.main();
-      await tester.pump(const Duration(seconds: 3)); // boot; do NOT settle (animates while connecting)
+      await tester.pump(const Duration(seconds: 3)); // boot; do NOT settle
       await shot(tester, 'launch');
 
       final onProviders = await pumpUntil(tester, find.byType(ProvidersPage),
           timeout: const Duration(seconds: 180));
       await shot(tester, 'providers');
       expect(onProviders, isTrue,
-          reason: 'App never reached the Providers screen — it could not connect to the backend '
-              'over the transport within 180s.');
+          reason: 'App never reached the Providers screen — it likely could not connect within 180s.');
 
-      // Open the Server details page (tap the "Server" card on Providers).
-      expect(find.text('Server'), findsWidgets, reason: 'no Server card on the Providers page');
-      await tester.tap(find.text('Server').first);
-      expect(await pumpUntil(tester, find.byType(ServerDetailsPage), timeout: const Duration(seconds: 30)),
-          isTrue,
-          reason: 'Server details page did not open');
+      // Providers -> Users
+      expect(find.text('Users'), findsWidgets, reason: 'no Users tab in the nav bar');
+      await tester.tap(find.text('Users').first);
+      expect(await pumpUntil(tester, find.byType(UsersPage)), isTrue,
+          reason: 'Users screen did not appear after tapping the Users tab');
 
-      // Honest proof of connection to the SERVER: real server information loads over the transport.
-      // ServerTextDetailsCard shows "General information" once server details arrive (else "No data").
-      final serverInfo = await pumpUntil(tester, find.text('General information'),
+      // REAL data (not the 7 skeleton rows): the seeded 'admin' account must load over the transport.
+      final usersLoaded = await pumpUntil(tester, find.text('admin'),
           timeout: const Duration(seconds: 90));
-      await shot(tester, 'server-details');
-      expect(serverInfo, isTrue,
-          reason: 'Server details never loaded ("General information" absent) within 90s — the app '
-              'reached the UI but did not actually connect to the server over the transport.');
+      await shot(tester, 'users');
+      expect(usersLoaded, isTrue,
+          reason: 'Users list never populated with the real "admin" account within 90s — the backend '
+              'getUsers query likely failed over the transport.');
     } finally {
       ErrorWidget.builder = defaultErrorBuilder;
     }
