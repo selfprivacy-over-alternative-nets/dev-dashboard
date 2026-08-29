@@ -1,0 +1,46 @@
+name: L3 https (weersurf.nl · self-hosted)
+
+# The `https` L3 flows drive the REAL Flutter app against the local SelfPrivacy VM over
+# https://theory7.weersurf.nl — Caddy terminates a browser-trusted mkcert cert and reverse-proxies
+# through an SSH tunnel to the VM's nginx, and the app VALIDATES that cert. That backend and trusted
+# domain only exist on the dev machine, and the flow needs a display (Xvfb) + Flutter — so this can
+# ONLY run on a SELF-HOSTED runner on that machine. GitHub's cloud runners cannot reach any of it.
+on:
+  workflow_dispatch:
+    inputs:
+      flows:
+        description: 'Comma-separated https flows to run (blank = all 8)'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'flutter/**'
+      - 'dash'
+      - 'tools/ci_l3_https.py'
+      - '.github/workflows/l3-https.yml'
+
+# One L3 run at a time — they share the VM, the X display and the app repo working tree.
+concurrency:
+  group: l3-https
+  cancel-in-progress: false
+
+jobs:
+  l3-https:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 40
+    steps:
+      - name: Run L3 https flows over theory7.weersurf.nl
+        env:
+          CI_FLOWS: ${{ github.event.inputs.flows }}
+        run: |
+          set -euo pipefail
+          # Machine-bound integration test: run in the canonical working tree, where the sibling
+          # SelfPrivacy app repo, the VBox VM, the SSH tunnel and Caddy all live. Sync the tracked
+          # test/orchestration files to the pushed commit so CI tests exactly what was pushed.
+          cd /home/a/git/personal/selfprivacy/dev-dashboard
+          git fetch --quiet origin "${GITHUB_SHA}" 2>/dev/null || git fetch --quiet origin main || true
+          git checkout --quiet "${GITHUB_SHA}" -- dash flutter tools .github 2>/dev/null \
+            || git checkout --quiet origin/main -- dash flutter tools .github 2>/dev/null || true
+          [ -n "${CI_FLOWS:-}" ] || unset CI_FLOWS
+          python3 tools/ci_l3_https.py

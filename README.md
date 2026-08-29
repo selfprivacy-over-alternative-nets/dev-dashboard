@@ -128,6 +128,42 @@ Raw logs (`logs/*.log`, `*.server.log`) and videos (`media/`) are **git-ignored*
 they can contain live `.onion` addresses — so media links work under `./dash serve`, not on Pages.
 Published error summaries have `.onion` scrubbed to `<onion>`.
 
+## Safety checks (before running on untrusted / café wifi)
+
+`dash serve` binds **`0.0.0.0:8099`** (see `cmd_serve`) and serves this whole dir — `logs/`, `media/`,
+`data/results.jsonl` — which can contain live `.onion`s and tokens. The chutney test-net binds
+`0.0.0.0:7100–7108`. So on a shared network these are reachable by anyone **unless** a firewall blocks
+them. Check first:
+
+```bash
+# 1. What is reachable from the LAN? (anything NOT on 127.x / ::1)
+ss -ltn | awk 'NR>1 && $4 !~ /^127\.|^\[::1\]/ {print $4}'
+
+# 2. Is the firewall actually on? (want: "Status: active", default deny incoming)
+sudo ufw status verbose
+```
+
+Harden — pick **A** (firewall) or **B** (bind to loopback):
+
+```bash
+# A) turn the firewall on (default-deny inbound; safe here — no host service needs inbound)
+sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw enable
+
+# B) bind services to loopback instead
+#   dash:  cmd_serve → HTTPServer(("127.0.0.1", port), …)   # currently ("0.0.0.0", port)
+#   VM ssh forward → loopback (tunnel still works via localhost):
+VBoxManage controlvm "SelfPrivacy-Tor-Test" natpf1 delete ssh
+VBoxManage controlvm "SelfPrivacy-Tor-Test" natpf1 "ssh,tcp,127.0.0.1,2222,,22"
+#   chutney: only run on a trusted network (relays bind 0.0.0.0:7100-7108)
+```
+
+**Don't run `dash serve` or the chutney net on public wifi without A or B.** After hardening, re-check with
+command 1 — it should print nothing outside `127.x`.
+
+> `setup-theory7-https.sh` installs a local **mkcert** root CA (system + Firefox) — browser-trusted HTTPS for
+> the VM (`https://theory7.weersurf.nl`). Guard `~/.local/share/mkcert/rootCA-key.pem` (never copy/sync it);
+> `mkcert -uninstall` to revoke. See `../handover2.md`.
+
 ## Layout
 
 ```

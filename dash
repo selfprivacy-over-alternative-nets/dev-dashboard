@@ -450,9 +450,10 @@ def cmd_serve(args):
     import http.server
     os.chdir(ROOT)
     port = args.port
+    host = os.environ.get("DASH_HOST", "127.0.0.1")  # loopback by default; serves logs/media so don't expose on untrusted wifi. Set DASH_HOST=0.0.0.0 to share intentionally.
     handler = http.server.SimpleHTTPRequestHandler
-    print(f"Dashboard: http://localhost:{port}/   (Ctrl+C to stop)")
-    http.server.HTTPServer(("0.0.0.0", port), handler).serve_forever()
+    print(f"Dashboard: http://localhost:{port}/   (bind {host}; Ctrl+C to stop)")
+    http.server.HTTPServer((host, port), handler).serve_forever()
 
 
 def cmd_publish(args):
@@ -762,6 +763,29 @@ HTTPS_TUNNEL_PORT = 8443
 # (needed for the app's `api.<domain>` clearnet URL + TLS SNI) WITHOUT touching /etc/hosts (no sudo).
 HTTPS_TUNNEL_DOMAIN = f"127.0.0.1.nip.io:{HTTPS_TUNNEL_PORT}"
 
+# Trusted local HTTPS name for the `https` transport (see handover2.md / setup-theory7-https.sh):
+# Caddy on 127.0.0.1:443 serves a browser-trusted mkcert cert for THEORY7_DOMAIN and reverse-proxies
+# to the same 8443 SSH tunnel -> VM nginx. The app connects straight to https://<domain>/graphql
+# (HTTPS_APEX=1, no api. prefix) and VALIDATES the cert against the mkcert root (HTTPS_CA) — a REAL
+# cert check over a real domain, replacing the old self-signed nip.io "trust anything" behaviour.
+THEORY7_DOMAIN = os.environ.get("HTTPS_DEV_DOMAIN", "theory7.weersurf.nl")
+MKCERT_CA = os.path.expanduser("~/.local/share/mkcert/rootCA.pem")
+
+
+def _ensure_theory7():
+    """Ensure the trusted-HTTPS chain for the `https` transport is up: the 8443 SSH tunnel (VM nginx)
+    plus the Caddy user-service that serves https://THEORY7_DOMAIN with a mkcert cert. Returns
+    (domain, ca_path_or_None). No sudo — /etc/hosts, the cert, the CA and setcap were provisioned once
+    by setup-theory7-https.sh; here we only (re)start the tunnel + the user-service."""
+    _ensure_https_tunnel()  # 8443 -> VM:443
+    up = _sh("ss -tlnp 2>/dev/null | grep -q '127.0.0.1:443 '").returncode == 0
+    if not up:
+        print(f"{GREY}starting theory7 Caddy user-service (127.0.0.1:443)…{OFF}")
+        _sh("systemctl --user start theory7-https.service", timeout=20)
+        time.sleep(1)
+    ca = MKCERT_CA if os.path.exists(MKCERT_CA) else None
+    return THEORY7_DOMAIN, ca
+
 
 def _ensure_https_tunnel():
     """SSH-forward host 127.0.0.1:8443 -> the VM's nginx :443 so the app can reach the SAME backend
@@ -856,8 +880,17 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
     is_tor = net in ("tor", "chutney")     # onion transports (SOCKS + Tor flakiness/retry)
     _ensure_api_nix_path()                 # backend needs nix for Services on ANY transport
     if net == "https":
-        address = _ensure_https_tunnel()   # app connects over clearnet; address = tunnel domain
-        dart_defines = f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token}"
+        # Trusted real domain (theory7.weersurf.nl) via Caddy+mkcert — NOT the old self-signed nip.io
+        # onion-adjacent hack. App connects to https://<domain>/graphql (HTTPS_APEX) and validates the
+        # cert against the mkcert CA (HTTPS_CA), so a bad cert fails red.
+        address, ca = _ensure_theory7()
+        dart_defines = (f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token} "
+                        f"--dart-define=HTTPS_APEX=1")
+        if ca:
+            dart_defines += f" --dart-define=HTTPS_CA={ca}"
+        else:
+            print(f"{AMBER}mkcert CA not found ({MKCERT_CA}) — run setup-theory7-https.sh so the app "
+                  f"can VALIDATE the cert (falling back to trust-anything for this run).{OFF}")
     else:
         # onion transports: tor (real Tor, SOCKS 9050) or chutney (private net, its client SOCKS).
         have_socks = True if net == "chutney" else pf.get("tor")
