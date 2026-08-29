@@ -636,13 +636,13 @@ def _ensure_tor():
     return False
 
 
-def _onion_reachable(onion, tries=45):
-    """True once the .onion answers over host Tor (SOCKS 9050). A freshly-(re)started v3 hidden
-    service takes 2–5 min to establish intro points, upload its descriptor and become fetchable —
-    so retry generously (~6 min)."""
+def _onion_reachable(onion, tries=45, socks_port=9050):
+    """True once the .onion answers over a SOCKS proxy (9050 = host Tor; chutney uses the private
+    network's client SOCKS). A freshly-(re)started v3 hidden service takes time to establish intro
+    points, upload its descriptor and become fetchable — so retry generously."""
     for i in range(tries):
         code = (_sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 25 "
-                    f"--socks5-hostname 127.0.0.1:9050 -k https://{onion}/api/version", timeout=35).stdout or "").strip()
+                    f"--socks5-hostname 127.0.0.1:{socks_port} -k https://{onion}/api/version", timeout=35).stdout or "").strip()
         if code in ("200", "301", "302", "401", "403"):
             return True
         if i and i % 6 == 0:
@@ -662,7 +662,7 @@ def _kick_vm_tor():
 _VM_SSH = ("sshpass -p '' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=6 -p 2222 root@localhost")
 
 
-def _start_keepwarm(onion):
+def _start_keepwarm(onion, socks_port=9050):
     """Keep the Tor hidden-service circuit + descriptor HOT during the app run. The app caches its
     SOCKS client and only recreates it on address change (never on failure), so if its very first
     connection (fired a few seconds into a CPU-heavy boot, after the ~18s build let the circuit cool)
@@ -673,7 +673,7 @@ def _start_keepwarm(onion):
 
     def loop():
         while not stop.is_set():
-            _sh(f"curl -s -o /dev/null --max-time 10 --socks5-hostname 127.0.0.1:9050 -k "
+            _sh(f"curl -s -o /dev/null --max-time 10 --socks5-hostname 127.0.0.1:{socks_port} -k "
                 f"https://{onion}/api/version", timeout=15)
             stop.wait(1.2)
 
@@ -777,7 +777,7 @@ def _ensure_https_tunnel():
     return HTTPS_TUNNEL_DOMAIN
 
 
-def run_l3_flutter(address, token, pf, net="tor"):
+def run_l3_flutter(address, token, pf, net="tor", socks_port=9050):
     """Run the AUTOMATED providers-tab integration test, recorded, over transport `net`
     (tor | chutney | https). The test lives in the dashboard repo and is injected into the app for
     the run, then the Manager repo is restored byte-for-byte. For tor/chutney the app dials an
@@ -793,17 +793,21 @@ def run_l3_flutter(address, token, pf, net="tor"):
         address = _ensure_https_tunnel()   # app connects over clearnet; address = tunnel domain
         dart_defines = f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token}"
     else:
-        if not pf.get("tor"):
+        # onion transports: tor (real Tor, SOCKS 9050) or chutney (private net, its client SOCKS).
+        have_socks = True if net == "chutney" else pf.get("tor")
+        if not have_socks:
             print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the "
                   f".onion; the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
-        # Gate on the onion answering over Tor RIGHT BEFORE launch (cold circuits throw
+        # Gate on the onion answering over SOCKS RIGHT BEFORE launch (cold circuits throw
         # hostUnreachable, which integration_test treats as a fatal uncaught error).
-        if pf.get("tor"):
-            if not _onion_reachable(address, tries=6):
-                print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
-                _kick_vm_tor()
-                _onion_reachable(address, tries=30)
-        dart_defines = f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token}"
+        if have_socks:
+            if not _onion_reachable(address, tries=6, socks_port=socks_port):
+                if net == "tor":
+                    print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
+                    _kick_vm_tor()
+                _onion_reachable(address, tries=30, socks_port=socks_port)
+        dart_defines = (f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token} "
+                        f"--dart-define=SOCKS_PORT={socks_port}")
     itdir = os.path.join(app, "integration_test")
     injected = os.path.join(itdir, "providers_flow_test.dart")
     backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
@@ -830,7 +834,8 @@ def run_l3_flutter(address, token, pf, net="tor"):
         # circuit connects — so we retry, kicking the VM's tor between attempts. Clearnet HTTPS is
         # reliable, so https gets a single attempt; a failure there is real and stays red.
         transient_markers = ("hostUnreachable", "TimeoutException", "SocketException", "Connection refused")
-        keepwarm = _start_keepwarm(address) if (is_tor and pf.get("tor")) else None
+        keepwarm = _start_keepwarm(address, socks_port=socks_port) if (
+            is_tor and (net == "chutney" or pf.get("tor"))) else None
         max_attempts = 3 if is_tor else 1
         for attempt in range(1, max_attempts + 1):
             rec = run_entry(entry, net=net, method="vm-local", record=True, shots=True)
@@ -842,11 +847,12 @@ def run_l3_flutter(address, token, pf, net="tor"):
                 log_txt = open(os.path.join(ROOT, cl), errors="replace").read()
             is_transient = any(m in log_txt for m in transient_markers)
             if is_tor and is_transient and attempt < max_attempts:
-                print(f"{AMBER}transient Tor connection failure{OFF} — kicking the VM's tor and retrying "
+                print(f"{AMBER}transient {net} connection failure{OFF} — retrying "
                       f"(attempt {attempt + 1}/{max_attempts})…")
                 drop_record(rec["run_id"])           # don't leave a flaky-fail on the board
-                _kick_vm_tor()
-                _onion_reachable(address, tries=20)  # re-warm before the next launch
+                if net == "tor":
+                    _kick_vm_tor()                   # chutney HS is host-side; nothing to kick
+                _onion_reachable(address, tries=20, socks_port=socks_port)  # re-warm before next launch
             else:
                 break                                # a real failure (or out of attempts) — keep it
         if keepwarm:
