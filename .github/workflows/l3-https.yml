@@ -5,6 +5,9 @@ name: L3 https (weersurf.nl · self-hosted)
 # through an SSH tunnel to the VM's nginx, and the app VALIDATES that cert. That backend and trusted
 # domain only exist on the dev machine, and the flow needs a display (Xvfb) + Flutter — so this can
 # ONLY run on a SELF-HOSTED runner on that machine. GitHub's cloud runners cannot reach any of it.
+#
+# Re-run manually via the Actions tab ("Run workflow" → optional `flows` input), or by pushing a
+# change to any watched path below. The runner must be online (`runner/actions-runner/run.sh`).
 on:
   workflow_dispatch:
     inputs:
