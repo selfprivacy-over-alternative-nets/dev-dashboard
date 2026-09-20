@@ -73,8 +73,9 @@ tr.group td { background: var(--panel2); color: var(--dim);
 .cell { min-height: 20px; cursor: pointer; }
 .cell.na { background: repeating-linear-gradient(45deg,#0d1017,#0d1017 6px,#0f141c 6px,#0f141c 12px); cursor: default; color: var(--dim2); text-align:center; }
 .cell.future { background: repeating-linear-gradient(45deg,#0d1017,#0d1017 6px,#12111c 6px,#12111c 12px); cursor: default; color: var(--dim2); text-align:center; }
-.cell.cina { background: #16100f; color: #7a4a45; text-align:center; cursor: help; }
-.cell.np { background: #16100f; color: #7a4a45; text-align: center; cursor: help; }   /* not possible ✕ */
+.cell.cina { background: var(--panel2); color: var(--dim2); text-align:center; cursor: help; font-size:10px; }
+/* "not applicable" — muted grey, deliberately NOT red so it never reads as a failed test */
+.cell.np { background: var(--panel2); color: var(--dim2); text-align: center; cursor: help; font-size: 10px; letter-spacing: 0.5px; }
 .ni { color: var(--dim2); }                                                            /* not implemented ○ */
 th.env { text-align:center; font-size:9px; color: var(--dim2); font-weight:400; text-transform:uppercase; letter-spacing:0; padding:2px 3px; }
 .cell.open { outline: 1px solid var(--blue); }
@@ -95,6 +96,11 @@ tr.details > td { background: #0c1119; border-top: none; }
 .detail .head { color: var(--fg); }
 .detail .meta { color: var(--dim); }
 .detail .err { color: var(--red); white-space: pre-wrap; margin: 3px 0; }
+.detail .prov { margin: 4px 0; padding: 3px 8px; border-left: 2px solid var(--blue);
+  background: #0e1522; border-radius: 2px; font-size: 12px; }
+.detail .prov .provhead { color: var(--blue); font-weight: 600; }
+.detail .prov .provbody { color: var(--dim); }
+.detail .prov code { color: var(--fg); background: #0a0e14; padding: 0 3px; border-radius: 2px; }
 .detail .arts { margin-top: 3px; }
 .detail .arts a { margin-right: 14px; }
 .detail .local { color: var(--dim2); margin-right: 14px; }

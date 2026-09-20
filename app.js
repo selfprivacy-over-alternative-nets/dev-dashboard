@@ -218,7 +218,7 @@ function renderAppMatrix(idx, states) {
 
   const grp = (label, sub, html) => `<tr class="group"><td colspan="${total}">${label}${sub ? ` — ${sub}` : ""}</td></tr>` + html;
   $("appmatrix").innerHTML =
-    `<div class="grouphead">app usage (L3) <small>— columns: install method × network × [local | ci]. ✕ = can't run on CI. Click a cell to unfold runs, errors, logs &amp; video.</small></div>` +
+    `<div class="grouphead">app usage (L3) <small>— columns: install method × network × [local | ci]. N/A = not meant to run here (e.g. CI can't drive the app). Click a cell to unfold runs, errors, logs &amp; video.</small></div>` +
     `<table><thead>${h1}${h2}${h3}</thead><tbody>` +
     grp("installation", "deploy time per method (network-independent)", installRow()) +
     grp("desktop app", "flutter app on Ubuntu / NixOS", flowRows("desktop")) +
@@ -249,6 +249,30 @@ function detailRow(cid, runs, entry, total) {
     : `<div class="meta">No runs for this cell.${entry && entry.cmd === "@todo" ? " The automated test isn't written yet." : ""}</div>`;
   return `<tr class="details"><td colspan="${total || 3}"><div class="detail"><div class="head">${esc(cid.replace(/\|/g, "  ·  "))}</div>${inner}</div></td></tr>`;
 }
+// Human, EXPLICIT network provenance — states the network by NAME and explains the port,
+// so nobody has to know "9050 = Tor / 9009 = chutney". Data comes from the recorded
+// dial_domain/socks_port (parsed from the app's own launch command), not from guessing.
+const NET_INFO = {
+  tor:     { label: "Tor",     blurb: "the real, public Tor network" },
+  chutney: { label: "chutney", blurb: "a private, self-contained Tor test-network — NOT the real Tor" },
+  https:   { label: "HTTPS",   blurb: "a direct clearnet connection secured with TLS" },
+};
+function provenanceHtml(r) {
+  if (!r.dial_domain) return "";
+  const info = NET_INFO[r.transport] || { label: r.transport, blurb: "" };
+  const isOnion = /\.onion$/.test(r.dial_domain) || r.transport === "tor" || r.transport === "chutney";
+  let how;
+  if (isOnion) {
+    // Only cite a port when we actually recorded it — never fabricate 9050/9009.
+    how = `through the <b>${esc(info.label)}</b> network's proxy` +
+          (r.socks_port ? ` (SOCKS port ${esc(r.socks_port)})` : ``);
+  } else {
+    how = `directly over TLS (no onion, no proxy)`;
+  }
+  return `<div class="prov"><span class="provhead">🔌 Connected over ${esc(info.label)}</span>` +
+    `<span class="provbody"> — ${esc(info.blurb)}. The app reached the backend at ` +
+    `<code>${esc(r.dial_domain)}</code> ${how}.</span></div>`;
+}
 function runDetail(r) {
   const media = (label, p) => !p ? "" : (IS_PAGES ? `<span class="local">${label} (local only)</span>` : `<a href="${esc(p)}" target="_blank">${label}</a>`);
   const a = r.artifacts || {};
@@ -270,6 +294,7 @@ function runDetail(r) {
   return `<div class="runline"><span class="head">${GLYPH[r.status] || "⚪"} ${esc(r.status)}${r.duration_s ? " · " + fmtDur(r.duration_s) : ""}</span> ` +
     `<span class="meta">· ${esc(fmtWhen(r.ts))} · ${esc(r.env)} · ${esc(r.repo)}@${esc(r.commit)}${r.dirty ? " (dirty " + esc(r.diff_hash) + ")" : ""}` +
     `${r.config_label ? " · " + esc(r.config_label) : ""}${r.method && r.method !== "-" ? " · " + esc(r.method) : ""}${r.transport && r.transport !== "-" ? " · " + esc(r.transport) : ""}</span>` +
+    provenanceHtml(r) +
     (r.error ? `<div class="err">${esc(r.error)}</div>` : "") + arts +
     (r.demo ? `<div class="demoflag">— illustrative DEMO record —</div>` : "") + `</div>`;
 }
@@ -289,8 +314,8 @@ function renderSummary(states, recs) {
 function renderLegend() {
   $("legend").innerHTML =
     `<b>🟢 pass</b> · <b>🟠 slow</b> · <b>🔴 fail</b> — each shows its duration; <b>hover a run</b> for when · commit · dirty-config, or <b>click</b> to unfold error, logs &amp; video. Multiple runs stack newest-first.<br>` +
-    `<b>○ not implemented</b> — no automated test written for this flow yet. &nbsp; <b>· not run</b> — test exists &amp; the combo is valid, but no run recorded for this commit/config/network/env. &nbsp; <b>✕ not possible</b> — this combo can't run (hover for why: CI can't do app/install methods; future transports; or N/A for the client). &nbsp; <b>▶</b> recording · <b>ᶜ</b> CI run.<br>` +
-    `Every network shows two columns — <b>local</b> and <b>ci</b>. CI runs L1 + L2 (nix VMs) but not the app/install methods, so those CI cells are ✕. Toggle networks up top.<br>` +
+    `<b>○ not implemented</b> — no automated test written for this flow yet. &nbsp; <b>· not run</b> — test exists &amp; the combo is valid, but no run recorded for this commit/config/network/env. &nbsp; <b>N/A not applicable</b> — this combo isn't meant to run (hover for why: CI can't drive the app/install methods; future transports; or the flow doesn't apply to that client). &nbsp; <b>▶</b> recording · <b>ᶜ</b> CI run.<br>` +
+    `Every network shows two columns — <b>local</b> and <b>ci</b>. CI runs L1 + L2 (nix VMs) but not the app/install methods, so those CI cells show <b>N/A</b>. Toggle networks up top.<br>` +
     `Multiple runs <b>stack newest-first</b>. Click a cell to <b>unfold</b> runs, errors, CLI log, server log, video. Pick a <b>commit</b> then a <b>config</b> to compare clean vs dirty. Videos/logs are local-only (<code>./dash serve</code>); on Pages they're placeholders.`;
 }
 function bindCells() {
@@ -299,8 +324,10 @@ function bindCells() {
 }
 
 // ── utils ────────────────────────────────────────────────────────────────
-// "not possible" — this combination can't run (CI / future transport / N/A). One clear glyph, ✕.
-const npCell = (reason) => `<td class="cell np" title="not possible — ${esc(reason)}">✕</td>`;
+// "not applicable" — this combination isn't meant to run (CI limits / future transport / client N/A).
+// Shown as a muted "N/A" (NOT a red 🔴, which is reserved for tests that actually ran and failed).
+// The specific reason is on hover.
+const npCell = (reason) => `<td class="cell np" title="not applicable — ${esc(reason)}">N/A</td>`;
 const npPair = (reason) => npCell(reason) + npCell(reason);
 function fmtDur(s) {
   s = Number(s) || 0;

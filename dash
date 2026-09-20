@@ -110,6 +110,31 @@ def append_record(rec):
         f.write(json.dumps(rec) + "\n")
 
 
+def cmd_backfill_provenance(args):
+    """One-time migration: add dial_domain (+ socks_port) to existing app-run records by
+    parsing the dart-defines out of each run's log header. Idempotent (skips records that
+    already carry it, or that have no parseable app command)."""
+    if not os.path.exists(DATA):
+        print("no results.jsonl")
+        return
+    out, changed = [], 0
+    for line in open(DATA):
+        if not line.strip():
+            out.append(line.rstrip("\n"))
+            continue
+        r = json.loads(line)
+        if "dial_domain" not in r:
+            lp = (r.get("artifacts") or {}).get("client_log") or r.get("log_path")
+            prov = extract_provenance(log_header_cmd(os.path.join(ROOT, lp))) if lp else {}
+            if prov:
+                r.update(prov)
+                changed += 1
+        out.append(json.dumps(r))
+    with open(DATA, "w") as f:
+        f.write("\n".join(out) + "\n")
+    print(f"backfilled provenance into {changed} record(s)")
+
+
 def drop_record(run_id):
     """Remove a previously-appended record by run_id (used to discard a transient retry attempt so
     the board isn't polluted with flaky-Tor failures we immediately retried past)."""
@@ -258,6 +283,48 @@ def collect_screenshots(shot_dir):
     return [os.path.relpath(os.path.join(shot_dir, f), ROOT) for f in pngs]
 
 
+def scrub_onion(dom):
+    """Keep a .onion recognisable but not fully published: first 8 + last 6 base32 chars.
+    Enough to eyeball-match against the (local, git-ignored) log; not the whole address."""
+    m = re.match(r"^([a-z2-7]{16,})\.onion$", dom or "")
+    return f"{m.group(1)[:8]}…{m.group(1)[-6:]}.onion" if m else (dom or "")
+
+
+def extract_provenance(cmd):
+    """Surface WHICH network endpoint the app actually dialed, straight from the flutter
+    dart-defines, so a run's transport is self-evident without opening the log:
+      onion transports → ONION_DOMAIN (scrubbed) + SOCKS_PORT (tor=9050, chutney=its client port)
+      https            → HTTPS_DOMAIN, no SOCKS.
+    Returns {} for non-app runs (L1/L2 have no dart-defines)."""
+    prov = {}
+    onion = re.search(r"--dart-define=ONION_DOMAIN=(\S+)", cmd or "")
+    https = re.search(r"--dart-define=HTTPS_DOMAIN=(\S+)", cmd or "")
+    if onion:
+        prov["dial_domain"] = scrub_onion(onion.group(1))
+    elif https:
+        prov["dial_domain"] = https.group(1)
+    else:
+        return {}
+    sp = re.search(r"--dart-define=SOCKS_PORT=(\d+)", cmd or "")
+    prov["socks_port"] = int(sp.group(1)) if sp else None
+    return prov
+
+
+def log_header_cmd(path):
+    """Read the `# <cmd>` line dash wrote at the top of a run log (holds the dart-defines)."""
+    try:
+        with open(path, errors="replace") as f:
+            for _ in range(6):
+                line = f.readline()
+                if not line:
+                    break
+                if "--dart-define=" in line:
+                    return line.lstrip("# ").strip()
+    except OSError:
+        pass
+    return ""
+
+
 def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False):
     cmd = entry.get("cmd", "")
     if entry.get("cmd_by_net"):
@@ -283,6 +350,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if gs["dirty"] else ""),
         **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
+        **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
 
     if cmd == "@todo":
@@ -1149,6 +1217,7 @@ def main():
     h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
     h.set_defaults(fn=cmd_here)
 
+    sub.add_parser("backfill-provenance", help="add dial_domain/socks_port to old app-run records (from their logs)").set_defaults(fn=cmd_backfill_provenance)
     sub.add_parser("vm-reset", help="kill stale VBox sessions + remove all copies of the SelfPrivacy VM").set_defaults(fn=cmd_vm_reset)
     sub.add_parser("demo").set_defaults(fn=cmd_demo)
     sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
