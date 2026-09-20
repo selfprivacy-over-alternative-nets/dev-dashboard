@@ -23,10 +23,13 @@ async function boot() {
     return;
   }
   for (const n of CATALOG.networks) SHOWN[n] = true;   // show ALL networks by default
-  ["f-commit", "f-config", "f-demo", "f-allruns"].forEach((id) => $(id).addEventListener("change", render));
-  $("f-commit").addEventListener("change", buildConfigOptions);
-  $("f-demo").addEventListener("change", () => { buildCommitOptions(); buildConfigOptions(); });
-  $("reload").addEventListener("click", boot);
+  // Bind defensively: a stale/cached index.html could be missing a newer control (e.g. #f-allruns).
+  // One absent element must never abort boot() and leave the whole board blank.
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  ["f-commit", "f-config", "f-demo", "f-allruns"].forEach((id) => on(id, "change", render));
+  on("f-commit", "change", buildConfigOptions);
+  on("f-demo", "change", () => { buildCommitOptions(); buildConfigOptions(); });
+  on("reload", "click", boot);
   buildCommitOptions();
   buildConfigOptions();
   buildNetTabs();
