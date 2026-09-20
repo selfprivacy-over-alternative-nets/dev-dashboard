@@ -23,7 +23,7 @@ async function boot() {
     return;
   }
   for (const n of CATALOG.networks) SHOWN[n] = true;   // show ALL networks by default
-  ["f-commit", "f-config", "f-demo"].forEach((id) => $(id).addEventListener("change", render));
+  ["f-commit", "f-config", "f-demo", "f-allruns"].forEach((id) => $(id).addEventListener("change", render));
   $("f-commit").addEventListener("change", buildConfigOptions);
   $("f-demo").addEventListener("change", () => { buildCommitOptions(); buildConfigOptions(); });
   $("reload").addEventListener("click", boot);
@@ -227,8 +227,17 @@ function renderAppMatrix(idx, states) {
 }
 
 // ── cells & details ─────────────────────────────────────────────────────────
+const showAllRuns = () => { const el = $("f-allruns"); return el ? el.checked : false; };
 function cellHtml(runs, entry) {
-  if (runs.length) return runs.map(runChip).join("");
+  if (runs.length) {
+    // Default: only the most recent run per cell (compact). "all runs" stacks the full history.
+    // Either way, clicking the cell unfolds every run's details below.
+    const shown = showAllRuns() ? runs : runs.slice(0, 1);
+    const more = (!showAllRuns() && runs.length > 1)
+      ? `<span class="more" title="+${runs.length - 1} older run(s) — tick “all runs” up top, or click the cell for full history">+${runs.length - 1}</span>`
+      : "";
+    return shown.map(runChip).join("") + more;
+  }
   if (entry && entry.implemented === false)
     return `<span class="ni" title="not implemented — no automated test is written for this flow yet">○</span>`;
   return `<span class="norun" title="not run — this test exists and the combination is valid, but no run is recorded for the selected commit / config / network / env. Start one with ./dash here or ./dash run.">·</span>`;
@@ -316,7 +325,7 @@ function renderLegend() {
     `<b>🟢 pass</b> · <b>🟠 slow</b> · <b>🔴 fail</b> — each shows its duration; <b>hover a run</b> for when · commit · dirty-config, or <b>click</b> to unfold error, logs &amp; video. Multiple runs stack newest-first.<br>` +
     `<b>○ not implemented</b> — no automated test written for this flow yet. &nbsp; <b>· not run</b> — test exists &amp; the combo is valid, but no run recorded for this commit/config/network/env. &nbsp; <b>N/A not applicable</b> — this combo isn't meant to run (hover for why: CI can't drive the app/install methods; future transports; or the flow doesn't apply to that client). &nbsp; <b>▶</b> recording · <b>ᶜ</b> CI run.<br>` +
     `Every network shows two columns — <b>local</b> and <b>ci</b>. CI runs L1 + L2 (nix VMs) but not the app/install methods, so those CI cells show <b>N/A</b>. Toggle networks up top.<br>` +
-    `Multiple runs <b>stack newest-first</b>. Click a cell to <b>unfold</b> runs, errors, CLI log, server log, video. Pick a <b>commit</b> then a <b>config</b> to compare clean vs dirty. Videos/logs are local-only (<code>./dash serve</code>); on Pages they're placeholders.`;
+    `By default each cell shows only its <b>most recent</b> run (older ones as <b>+N</b>); tick <b>all runs</b> up top to stack the full history newest-first. Click a cell to <b>unfold</b> every run — errors, CLI log, server log, video. Pick a <b>commit</b> then a <b>config</b> to compare clean vs dirty. Videos/logs are local-only (<code>./dash serve</code>); on Pages they're placeholders.`;
 }
 function bindCells() {
   document.querySelectorAll(".cell[data-cell]").forEach((el) =>

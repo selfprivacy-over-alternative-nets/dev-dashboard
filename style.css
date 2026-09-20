@@ -86,6 +86,7 @@ th.env { text-align:center; font-size:9px; color: var(--dim2); font-weight:400; 
 .st-fail .d { color: var(--red); } .st-skip .d { color: var(--dim); }
 .run.demo .d { color: var(--violet); }
 .vidmark { color: var(--blue); }
+.more { color: var(--dim2); font-size: 10px; padding: 0 2px; cursor: pointer; }
 .todo { color: var(--dim2); } .norun { color: var(--dim2); }
 
 /* full-width unfold row (never a side pane) */

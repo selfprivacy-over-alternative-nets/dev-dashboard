@@ -1151,6 +1151,64 @@ def cmd_here(args):
     print(f"\n{BOLD}dash here done.{OFF} View: ./dash serve" + ("" if args.no_publish else "  ·  pushed to the live board"))
 
 
+L3_FLOWS = ["connect", "login", "services", "providers", "nextcloud", "users", "menus", "addremove"]
+
+
+def cmd_rerecord(args):
+    """Re-run + re-record the L3 desktop flows over ONE transport (default chutney), producing
+    fresh videos + screenshots. Each run STACKS a new record newest-first (old videos stay on
+    disk but the latest record points at the new ones). Brings the backend VM up; for chutney it
+    also stands up the private chutney network + host-side HS. The mutating flow (addremove) gets a
+    single attempt so a blind retry can't double-apply the backend mutation."""
+    cat = load_catalog()
+    net = args.net or "chutney"
+    if net not in ("chutney", "tor", "https"):
+        print(f"{RED}--net must be chutney|tor|https (got {net}){OFF}")
+        sys.exit(1)
+    flows = [f.strip() for f in args.flows.split(",")] if args.flows else L3_FLOWS
+    pf = preflight(do_sudo=args.long)
+    if not (pf["flutter"] and pf["display"]):
+        print(f"{RED}can't record L3{OFF} — need Flutter + a display (see preflight above). "
+              f"Install app deps with {CYAN}./dash here --setup{OFF}.")
+        sys.exit(1)
+
+    # Backend VM (persistent onion) must be up for every transport — chutney/https proxy to it too.
+    if args.long:
+        base_onion = bring_up_backend(cat)
+    else:
+        base_onion, _, note = ensure_backend(install_ok=not args.no_install)
+    if not base_onion:
+        print(f"{AMBER}backend not ready{OFF} — {note if not args.long else 'VM/onion not up'}. "
+              f"Try {CYAN}./dash rerecord --net {net} --long{OFF} to build + boot it.")
+        sys.exit(1)
+
+    # Resolve the endpoint + SOCKS port for the chosen transport.
+    if net == "chutney":
+        address, socks = _ensure_chutney()
+        if not address:
+            print(f"{RED}chutney backend not ready — aborting (see /tmp/chutney_up.log).{OFF}")
+            sys.exit(1)
+    elif net == "tor":
+        address, socks = base_onion, 9050
+    else:  # https — run_l3_flutter resolves theory7.weersurf.nl + the mkcert CA itself
+        address, socks = None, None
+
+    print(f"{BOLD}re-recording {len(flows)} {net} flow(s):{OFF} {', '.join(flows)}")
+    ok = 0
+    for flow in flows:
+        retries = 1 if flow == "addremove" else None
+        rec = run_l3_flutter(address, DEV_TOKEN, pf, net=net, socks_port=socks, flow=flow, retries=retries)
+        if rec and rec.get("status") == "pass":
+            ok += 1
+
+    if net == "chutney" and not args.keep_up:
+        print(f"{GREY}tearing down chutney (real Tor + VM left untouched)…{OFF}")
+        _stop_chutney()
+    if not args.no_publish:
+        cmd_publish(argparse.Namespace(message=f"rerecord {net} L3 ({ok}/{len(flows)} pass) @ {now_iso()}"))
+    print(f"\n{BOLD}rerecord done.{OFF} {ok}/{len(flows)} pass. View: {CYAN}./dash serve{OFF}")
+
+
 def cmd_vm_reset(args):
     print(f"{BOLD}vm-reset{OFF} — killing stale VBox sessions and removing all copies of {VM_NAME}…")
     _destroy_vm()
@@ -1216,6 +1274,15 @@ def main():
     h.add_argument("--no-install", action="store_true", help="(quick mode) don't start/create a VM")
     h.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
     h.set_defaults(fn=cmd_here)
+
+    rr = sub.add_parser("rerecord", help="re-run + re-record the L3 desktop flows over one transport (default chutney)")
+    rr.add_argument("--net", default="chutney", help="transport: chutney|tor|https")
+    rr.add_argument("--flows", help="comma-separated subset, e.g. connect,login (default: all 8)")
+    rr.add_argument("--long", action="store_true", help="full VM bring-up (build if missing, sudo-start host Tor)")
+    rr.add_argument("--no-install", action="store_true", help="don't create a VM if one is missing")
+    rr.add_argument("--keep-up", action="store_true", help="leave the chutney network running afterward")
+    rr.add_argument("--no-publish", action="store_true", help="don't commit+push results at the end")
+    rr.set_defaults(fn=cmd_rerecord)
 
     sub.add_parser("backfill-provenance", help="add dial_domain/socks_port to old app-run records (from their logs)").set_defaults(fn=cmd_backfill_provenance)
     sub.add_parser("vm-reset", help="kill stale VBox sessions + remove all copies of the SelfPrivacy VM").set_defaults(fn=cmd_vm_reset)
