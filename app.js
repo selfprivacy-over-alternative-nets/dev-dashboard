@@ -4,6 +4,10 @@ const ENVS = ["local", "ci"];
 const GLYPH = { pass: "🟢", slow: "🟠", fail: "🔴", skip: "⚪" };
 const IS_PAGES = location.hostname.endsWith("github.io");
 const $ = (id) => document.getElementById(id);
+// how-to-run text: appended to hover tooltips and shown in the click-unfold panel.
+// Uses <PLACEHOLDERS> so anyone on a different network / target can adapt it.
+function runTip(t){ return t && t.run ? "\n\n▶ how to run (edit the <PLACEHOLDERS>):\n" + t.run : ""; }
+function methRun(m){ const i = ((typeof CATALOG!=="undefined" && CATALOG && CATALOG.installs) || []).find(x => x.method === m.id); return i ? runTip(i) : ""; }
 
 let CATALOG = null;
 let RECORDS = [];
@@ -128,7 +132,7 @@ function renderUnit(idx, states) {
   const rows = CATALOG.tests.filter((t) => t.level === "L1");
   const body = rows.map((t) => {
     let details = "";
-    let tds = `<td class="rowname" title="${esc(t.desc)}"><span class="lvl">L1 · </span>${esc(t.name)}</td>`;
+    let tds = `<td class="rowname" title="${esc(t.desc + runTip(t))}"><span class="lvl">L1 · </span>${esc(t.name)}</td>`;
     for (const env of ENVS) {
       const runs = runsFor(idx, t.id, undefined, undefined, env);
       states.push(runs.length ? runs[0].status : "norun");
@@ -148,7 +152,7 @@ function renderL2(idx, states) {
   const total = 1 + nets.length * 2;
   const rows = CATALOG.tests.filter((t) => t.level === "L2");
   const body = rows.map((t) => {
-    let tds = `<td class="rowname" title="${esc(t.desc)}"><span class="lvl">L2 · </span>${esc(t.name)}</td>`;
+    let tds = `<td class="rowname" title="${esc(t.desc + runTip(t))}"><span class="lvl">L2 · </span>${esc(t.name)}</td>`;
     let details = "";
     for (const n of nets) {
       if (fut(n)) { tds += npPair("future transport — not wired yet"); continue; }
@@ -175,7 +179,7 @@ function renderAppMatrix(idx, states) {
   if (!nets.length) { $("appmatrix").innerHTML = `<div class="grouphead">app usage (L3)</div><div class="empty">Enable a network above.</div>`; return; }
 
   const h1 = `<tr><th class="rowname" rowspan="3">flow</th>` +
-    methods.map((m) => `<th class="method" colspan="${per}" title="${esc(m.desc)}">${esc(m.label)}<small>${esc(m.group)}</small></th>`).join("") + `</tr>`;
+    methods.map((m) => `<th class="method" colspan="${per}" title="${esc(m.desc + methRun(m))}">${esc(m.label)}<small>${esc(m.group)}</small></th>`).join("") + `</tr>`;
   const h2 = `<tr>` + methods.map(() => nets.map((n) => `<th class="net ${fut(n) ? "future" : ""}" colspan="2">${n}</th>`).join("")).join("") + `</tr>`;
   const h3 = `<tr>` + methods.map(() => nets.map(() => `<th class="env">local</th><th class="env">ci</th>`).join("")).join("") + `</tr>`;
 
@@ -200,7 +204,7 @@ function renderAppMatrix(idx, states) {
   };
 
   const flowRows = (client) => CATALOG.tests.filter((t) => t.level === "L3" && t.client === client).map((t) => {
-    let tds = `<td class="rowname" title="${esc(t.desc)}">${esc(t.name)}</td>`;
+    let tds = `<td class="rowname" title="${esc(t.desc + runTip(t))}">${esc(t.name)}</td>`;
     let details = "";
     for (const m of methods) {
       for (const n of nets) {
@@ -259,7 +263,10 @@ function detailRow(cid, runs, entry, total) {
   if (!OPEN.has(cid)) return "";
   const inner = runs.length ? runs.map(runDetail).join("")
     : `<div class="meta">No runs for this cell.${entry && entry.cmd === "@todo" ? " The automated test isn't written yet." : ""}</div>`;
-  return `<tr class="details"><td colspan="${total || 3}"><div class="detail"><div class="head">${esc(cid.replace(/\|/g, "  ·  "))}</div>${inner}</div></td></tr>`;
+  const runBlock = entry && entry.run
+    ? `<div class="runlabel">how to run this test — copy &amp; edit the <code>&lt;PLACEHOLDERS&gt;</code>:</div><pre class="runcmd">${esc(entry.run)}</pre>`
+    : "";
+  return `<tr class="details"><td colspan="${total || 3}"><div class="detail"><div class="head">${esc(cid.replace(/\|/g, "  ·  "))}</div>${runBlock}${inner}</div></td></tr>`;
 }
 // Human, EXPLICIT network provenance — states the network by NAME and explains the port,
 // so nobody has to know "9050 = Tor / 9009 = chutney". Data comes from the recorded

@@ -119,3 +119,14 @@ tr.details > td { background: #0c1119; border-top: none; }
 .empty { color: var(--dim); padding: 24px 16px; }
 .legend { color: var(--dim); padding: 12px 16px 30px; border-top: 1px solid var(--border); margin-top: 14px; line-height: 1.7; }
 .legend b { color: var(--fg); }
+
+/* how-to-run command block in the unfold panel */
+.runlabel { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; margin: 8px 0 3px; }
+.runlabel code { color: var(--amber); text-transform: none; letter-spacing: 0; }
+.runcmd {
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-left: 3px solid var(--blue);
+  border-radius: 4px; padding: 8px 10px; margin: 0 0 8px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-x: auto; user-select: all;
+}

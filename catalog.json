@@ -11,9 +11,9 @@
     "hyphanet"
   ],
   "levels": {
-    "L1": "Unit \u2014 pure Python logic in the API (e.g. onion/URL routing). No VM, no network, no app. Runs in milliseconds.",
-    "L2": "Integration \u2014 a real NixOS backend boots in a VM and its routing is checked over a transport. No app involved.",
-    "L3": "App usage \u2014 the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded."
+    "L1": "Unit — pure Python logic in the API (e.g. onion/URL routing). No VM, no network, no app. Runs in milliseconds.",
+    "L2": "Integration — a real NixOS backend boots in a VM and its routing is checked over a transport. No app involved.",
+    "L3": "App usage — the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded."
   },
   "install_methods": [
     {
@@ -25,35 +25,35 @@
     },
     {
       "id": "vm-local",
-      "label": "VM \u00b7 same device",
+      "label": "VM · same device",
       "backend": "vm",
       "group": "VM on Ubuntu",
       "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh)."
     },
     {
       "id": "vm-remote",
-      "label": "VM \u00b7 other device",
+      "label": "VM · other device",
       "backend": "vm",
       "group": "VM on Ubuntu",
       "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network."
     },
     {
       "id": "native-ethernet",
-      "label": "native \u00b7 ethernet",
+      "label": "native · ethernet",
       "backend": "native",
       "group": "NixOS native",
       "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device."
     },
     {
       "id": "native-usb-nvme",
-      "label": "native \u00b7 USB\u2192NVMe",
+      "label": "native · USB→NVMe",
       "backend": "native",
       "group": "NixOS native",
       "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer."
     },
     {
       "id": "native-boot-usb",
-      "label": "native \u00b7 bootable USB",
+      "label": "native · bootable USB",
       "backend": "native",
       "group": "NixOS native",
       "desc": "NixOS booted directly off a bootable USB drive."
@@ -78,8 +78,9 @@
       "networks": [],
       "repo": "../selfprivacy-api",
       "budget_s": 180,
-      "desc": "Unit-tests the API logic that rewrites service URLs for .onion path-routing (T1.1\u2013T1.17).",
-      "cmd": "nix run .#pytest-vm -- tests/test_onion_routing.py -q"
+      "desc": "Unit-tests the API logic that rewrites service URLs for .onion path-routing (T1.1–T1.17).",
+      "cmd": "nix run .#pytest-vm -- tests/test_onion_routing.py -q",
+      "run": "# Pure unit test — no VM, no network, no target.\ncd selfprivacy-api && nix run .#pytest-vm -- tests/test_onion_routing.py -q"
     },
     {
       "id": "L2.backend",
@@ -98,7 +99,8 @@
         "tor": "nix build .#checks.x86_64-linux.tor-integration --no-link -L",
         "https": "nix build .#checks.x86_64-linux.https-integration --no-link -L"
       },
-      "server_log_cmd": ""
+      "server_log_cmd": "",
+      "run": "# L2 integration: boots a NixOS backend in a throwaway test-VM and checks API + nginx path\n# routing over the transport. No app, no real target.\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && nix build .#checks.x86_64-linux.<L2-test>"
     },
     {
       "id": "L3.connect.desktop",
@@ -115,7 +117,8 @@
       "desc": "[desktop] Open the Server details page and load real server information from the backend over the transport.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.login.desktop",
@@ -129,10 +132,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] Open More\u2192Devices and load the auth-gated API-token/device list \u2014 proving the token was accepted.",
+      "desc": "[desktop] Open More→Devices and load the auth-gated API-token/device list — proving the token was accepted.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.services.desktop",
@@ -149,7 +153,8 @@
       "desc": "[desktop] The Services tab loads the list of services from the backend.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.providers.desktop",
@@ -163,10 +168,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
+      "desc": "[desktop] Open the app, switch Providers→Services and back, then close — the recorded smoke flow.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.nextcloud.desktop",
@@ -183,7 +189,8 @@
       "desc": "[desktop] Open the Nextcloud service detail from the app.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.users.desktop",
@@ -200,7 +207,8 @@
       "desc": "[desktop] The Users tab loads the real user account list from the backend.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.menus.desktop",
@@ -214,10 +222,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[desktop] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "desc": "[desktop] Walk the main tabs (Providers → Services → Users → More) and back.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.addremove.desktop",
@@ -234,7 +243,8 @@
       "desc": "[desktop] Disable a service via the Jobs panel and confirm the backend applies the mutation.",
       "implemented": true,
       "cmd": "@flutter",
-      "records_video": true
+      "records_video": true,
+      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
     },
     {
       "id": "L3.connect.android",
@@ -250,7 +260,8 @@
       "desc": "[android] Open the Server details page and load real server information from the backend over the transport.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.login.android",
@@ -263,10 +274,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] Open More\u2192Devices and load the auth-gated API-token/device list \u2014 proving the token was accepted.",
+      "desc": "[android] Open More→Devices and load the auth-gated API-token/device list — proving the token was accepted.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.services.android",
@@ -282,7 +294,8 @@
       "desc": "[android] The Services tab loads the list of services from the backend.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.providers.android",
@@ -295,10 +308,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] Open the app, switch Providers\u2192Services and back, then close \u2014 the recorded smoke flow.",
+      "desc": "[android] Open the app, switch Providers→Services and back, then close — the recorded smoke flow.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.nextcloud.android",
@@ -314,7 +328,8 @@
       "desc": "[android] Open the Nextcloud service detail from the app.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.users.android",
@@ -330,7 +345,8 @@
       "desc": "[android] The Users tab loads the real user account list from the backend.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.menus.android",
@@ -343,10 +359,11 @@
       ],
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
       "budget_s": 90,
-      "desc": "[android] Walk the main tabs (Providers \u2192 Services \u2192 Users \u2192 More) and back.",
+      "desc": "[android] Walk the main tabs (Providers → Services → Users → More) and back.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     },
     {
       "id": "L3.addremove.android",
@@ -362,13 +379,14 @@
       "desc": "[android] Disable a service via the Jobs panel and confirm the backend applies the mutation.",
       "implemented": false,
       "cmd": "@todo",
-      "records_video": true
+      "records_video": true,
+      "run": "# @todo — no automated test written for this flow yet."
     }
   ],
   "installs": [
     {
       "id": "install.vm-local",
-      "name": "VM \u00b7 same device",
+      "name": "VM · same device",
       "level": "install",
       "category": "install",
       "client": "-",
@@ -378,11 +396,12 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
       "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
-      "cmd": "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
+      "cmd": "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh",
+      "run": "# NixOS backend in VirtualBox on THIS Ubuntu host (local only — not over LAN).\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
     },
     {
       "id": "install.vm-remote",
-      "name": "VM \u00b7 other device",
+      "name": "VM · other device",
       "level": "install",
       "category": "install",
       "client": "-",
@@ -392,11 +411,12 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
       "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network.",
-      "cmd": "@manual"
+      "cmd": "@manual",
+      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
     },
     {
       "id": "install.native-ethernet",
-      "name": "native \u00b7 ethernet",
+      "name": "native · ethernet",
       "level": "install",
       "category": "install",
       "client": "-",
@@ -405,12 +425,14 @@
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device.",
-      "cmd": "@manual"
+      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device. E2E: wipe+install+verify in one command (needs target booted in network mode).",
+      "cmd": "tools/e2e_install_native_ethernet.sh",
+      "verify_cmd": "tools/verify_install_native_ethernet.py --domain <d> --ip <ip> --token <tok> [--onion <o>] [--ssh-key <k>]",
+      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify HTTPS from anywhere.\n# Prereqs: your laptop on the TARGET's LAN (ethernet OR the target-router's wifi); target powered\n#   on & reachable via SSH at IP; a deploy flake with nixosConfigurations.<host>; injected state/\n#   extra (LE fullchain+key, secrets.json). The edge router must already forward :443 to the target\n#   (one-off; see the openrouter 'selfprivacy-edge' branch).\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_SSH_KEY> \\\n  DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra \\\n  dev-dashboard/tools/e2e_install_native_ethernet.sh\n\n# Verify-only (no wipe): does the running target serve the domain, trusted, from anywhere?\npython3 dev-dashboard/tools/verify_install_native_ethernet.py \\\n  --transport https --domain <YOUR_DOMAIN> --token <API_TOKEN> [--ssh-key ~/.ssh/<KEY>]\n# over Tor instead:  --transport onion --onion <56>.onion --token <API_TOKEN>  (needs tor SOCKS :9050)"
     },
     {
       "id": "install.native-usb-nvme",
-      "name": "native \u00b7 USB\u2192NVMe",
+      "name": "native · USB→NVMe",
       "level": "install",
       "category": "install",
       "client": "-",
@@ -420,11 +442,12 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
       "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer.",
-      "cmd": "@manual"
+      "cmd": "@manual",
+      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
     },
     {
       "id": "install.native-boot-usb",
-      "name": "native \u00b7 bootable USB",
+      "name": "native · bootable USB",
       "level": "install",
       "category": "install",
       "client": "-",
@@ -434,7 +457,8 @@
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
       "desc": "NixOS booted directly off a bootable USB drive.",
-      "cmd": "@manual"
+      "cmd": "@manual",
+      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
     }
   ]
 }
