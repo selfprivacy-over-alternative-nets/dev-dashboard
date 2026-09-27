@@ -12,10 +12,10 @@ stack. One orchestrator script runs/times/records every command; the board publi
 The app-usage matrix is 3-dimensional, exactly as requested:
 
 - **rows** = the test / flow,
-- **columns** = the **installation method** — *where/how the backend runs* (VM same device, VM other
-  device, native ethernet, native USB→NVMe, native bootable USB),
-- **3rd dimension** = the **network** (tor · chutney · https · future ygg/hypha) shown as sub-columns
-  you toggle up top.
+- **columns** = the **install setup** (`--on`) — *where/how the backend runs*: `vm-local`,
+  `lan-setup-0`, `lan-setup-1`, `lan-setup-2`, `usb` (see **Install setups** below, or `./dash setups`),
+- **3rd dimension** = the **network** (`--net`: tor · chutney · https · future ygg/hypha) shown as
+  sub-columns you toggle up top.
 
 A dedicated **installation** row shows how long each deploy took (network-independent), so install
 times and test times sit in the same matrix.
@@ -29,6 +29,39 @@ times and test times sit in the same matrix.
   add a service …) against a running backend, and **screen-recorded**.
 
 `unit` is deliberately **not** a network column.
+
+### Install setups (`--on`)
+
+`--on` names the setup the backend is installed on. `./dash setups` prints these with live
+diagrams; before an install runs, `dash` **preflights** the chosen setup and refuses with an
+actionable fix if it isn't ready (e.g. router R not configured for netboot).
+
+```
+vm-local     VirtualBox VM on this host (build-and-run.sh)
+
+lan-setup-0  direct cable, router OUT of path — netboot install
+             +--------+  ethernet   +--------+
+             | laptop |------------>| target |   (192.168.100.x)
+             +--------+             +--------+
+
+lan-setup-1  laptop on R's wifi, target wired to R   (needs R set up for netboot)
+             +--------+ wifi  +----------+ ethernet +--------+
+             | laptop |------>| router R |--------->| target |
+             +--------+       +----------+          +--------+
+
+lan-setup-2  laptop + target both on R's wifi        (needs R set up for netboot)
+             +--------+ wifi  +----------+ wifi  +--------+
+             | laptop |------>| router R |------>| target |
+             +--------+       +----------+       +--------+
+
+usb          installer USB → target internal disk (manual boot)
+```
+
+- `lan-setup-0` is fully automated (netboot over the direct link → `nixos-anywhere` → verify).
+- `lan-setup-1/2` require router R configured for network boot (its DHCP otherwise fights the
+  installer's); until then `dash`'s preflight blocks them with instructions. Use `lan-setup-0` or `usb`.
+- Each successful install writes a **KeePassXC DB of all credentials** — see
+  `../pcname-deploy/SECRETS.md`.
 
 ## One command: run everything this host can
 
