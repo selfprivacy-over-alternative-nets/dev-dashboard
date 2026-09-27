@@ -28,35 +28,40 @@
       "label": "VM · same device",
       "backend": "vm",
       "group": "VM on Ubuntu",
-      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh)."
+      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
+      "topology": "this laptop (Ubuntu)\n  +----------------------------+\n  |  laptop -- VirtualBox VM   |   (build-and-run.sh)\n  +----------------------------+"
     },
     {
-      "id": "vm-remote",
-      "label": "VM · other device",
-      "backend": "vm",
-      "group": "VM on Ubuntu",
-      "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network."
-    },
-    {
-      "id": "native-ethernet",
-      "label": "native · ethernet",
+      "id": "lan-setup-0",
+      "label": "LAN · direct cable",
       "backend": "native",
-      "group": "NixOS native",
-      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device."
+      "group": "NixOS native (LAN)",
+      "desc": "Target netbooted over a direct ethernet cable (router out of path), installed via nixos-anywhere.",
+      "topology": "direct cable, router OUT of path -- netboot install\n  +--------+  ethernet   +--------+\n  | laptop |------------>| target |   (192.168.100.x)\n  +--------+             +--------+"
     },
     {
-      "id": "native-usb-nvme",
-      "label": "native · USB→NVMe",
+      "id": "lan-setup-1",
+      "label": "LAN · via router R (target wired)",
       "backend": "native",
-      "group": "NixOS native",
-      "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer."
+      "group": "NixOS native (LAN)",
+      "desc": "Laptop on R's wifi, target wired to R. Needs R configured for netboot (preflight will tell you how).",
+      "topology": "laptop on R's wifi, target wired to R\n  +--------+ wifi  +----------+ ethernet +--------+\n  | laptop |------>| router R |--------->| target |\n  +--------+       +----------+          +--------+"
     },
     {
-      "id": "native-boot-usb",
-      "label": "native · bootable USB",
+      "id": "lan-setup-2",
+      "label": "LAN · via router R (target wifi)",
       "backend": "native",
-      "group": "NixOS native",
-      "desc": "NixOS booted directly off a bootable USB drive."
+      "group": "NixOS native (LAN)",
+      "desc": "Laptop and target both on R's wifi. Needs R configured for netboot (preflight will tell you how).",
+      "topology": "laptop + target both on R's wifi\n  +--------+ wifi  +----------+ wifi  +--------+\n  | laptop |------>| router R |------>| target |\n  +--------+       +----------+       +--------+"
+    },
+    {
+      "id": "usb",
+      "label": "native · installer USB",
+      "backend": "native",
+      "group": "NixOS native (USB)",
+      "desc": "Target installed from a bootable USB installer to its internal disk (manual boot).",
+      "topology": "installer USB -> target internal disk (no laptop link)\n  +-----+   +--------+\n  | USB |-->| target |\n  +-----+   +--------+"
     }
   ],
   "flows": [
@@ -397,68 +402,67 @@
       "budget_s": 900,
       "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
       "cmd": "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh",
-      "run": "# NixOS backend in VirtualBox on THIS Ubuntu host (local only — not over LAN).\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
+      "run": "# NixOS backend in VirtualBox on THIS Ubuntu host (local only).\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
     },
     {
-      "id": "install.vm-remote",
-      "name": "VM · other device",
+      "id": "install.lan-setup-0",
+      "name": "LAN · direct cable",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
-      "method": "vm-remote",
-      "backend": "vm",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
-      "budget_s": 900,
-      "desc": "NixOS backend in VirtualBox, deployed from another device; app connects over the network.",
-      "cmd": "@manual",
-      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
-    },
-    {
-      "id": "install.native-ethernet",
-      "name": "native · ethernet",
-      "level": "install",
-      "category": "install",
-      "client": "-",
-      "networks": [],
-      "method": "native-ethernet",
+      "method": "lan-setup-0",
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "NixOS installed directly on other hardware (laptop/Pi) over ethernet from this device. E2E: wipe+install+verify in one command (needs target booted in network mode).",
+      "desc": "Target netbooted over a direct ethernet cable (router out of path), wiped+installed via nixos-anywhere, then verified.",
       "cmd": "tools/e2e_install_native_ethernet.sh",
-      "verify_cmd": "tools/verify_install_native_ethernet.py --domain <d> --ip <ip> --token <tok> [--onion <o>] [--ssh-key <k>]",
-      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify HTTPS from anywhere.\n# Prereqs: your laptop on the TARGET's LAN (ethernet OR the target-router's wifi); target powered\n#   on & reachable via SSH at IP; a deploy flake with nixosConfigurations.<host>; injected state/\n#   extra (LE fullchain+key, secrets.json). The edge router must already forward :443 to the target\n#   (one-off; see the openrouter 'selfprivacy-edge' branch).\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_SSH_KEY> \\\n  DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra \\\n  dev-dashboard/tools/e2e_install_native_ethernet.sh\n\n# Verify-only (no wipe): does the running target serve the domain, trusted, from anywhere?\npython3 dev-dashboard/tools/verify_install_native_ethernet.py \\\n  --transport https --domain <YOUR_DOMAIN> --token <API_TOKEN> [--ssh-key ~/.ssh/<KEY>]\n# over Tor instead:  --transport onion --onion <56>.onion --token <API_TOKEN>  (needs tor SOCKS :9050)"
+      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },
     {
-      "id": "install.native-usb-nvme",
-      "name": "native · USB→NVMe",
+      "id": "install.lan-setup-1",
+      "name": "LAN · via router R (target wired)",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
-      "method": "native-usb-nvme",
+      "method": "lan-setup-1",
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "NixOS installed to the machine's internal NVMe via a formatted USB installer.",
-      "cmd": "@manual",
-      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
+      "desc": "Laptop on R's wifi, target wired to R. Requires R configured for netboot (preflight blocks otherwise).",
+      "cmd": "tools/e2e_install_native_ethernet.sh",
+      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },
     {
-      "id": "install.native-boot-usb",
-      "name": "native · bootable USB",
+      "id": "install.lan-setup-2",
+      "name": "LAN · via router R (target wifi)",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
-      "method": "native-boot-usb",
+      "method": "lan-setup-2",
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "NixOS booted directly off a bootable USB drive.",
+      "desc": "Laptop + target both on R's wifi. Requires R configured for netboot (preflight blocks otherwise).",
+      "cmd": "tools/e2e_install_native_ethernet.sh",
+      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
+    },
+    {
+      "id": "install.usb",
+      "name": "native · installer USB",
+      "level": "install",
+      "category": "install",
+      "client": "-",
+      "networks": [],
+      "method": "usb",
+      "backend": "native",
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 900,
+      "desc": "Target installed from a bootable USB installer to its internal disk (manual boot).",
       "cmd": "@manual",
-      "run": "# @manual — no automated runner yet; install by hand, then use the verify-only command from install.native-ethernet."
+      "run": "# @manual: write the installer image to a USB stick, boot the target from it, then:\n#   ./dash report install.usb --status pass --duration <seconds>"
     }
   ]
 }

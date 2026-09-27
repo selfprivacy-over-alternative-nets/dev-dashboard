@@ -69,6 +69,17 @@ TOKEN=$(ssh $SSHO "root@$IP" 'jq -r .api.token /etc/selfprivacy/secrets.json')
 ONION=$(ssh $SSHO "root@$IP" 'cat /var/lib/tor/hidden_service/hostname 2>/dev/null || true')
 echo "token=<${#TOKEN} chars>  onion=${ONION:-<none>}"
 
+say "4b. record deployment credentials in a KeePassXC DB (git-ignored under state/)"
+# Non-fatal: a failed/absent DB must never block the deploy or verify.
+if command -v keepassxc-cli >/dev/null 2>&1; then
+  DOMAIN="$DOMAIN" IP="$IP" KEY="$KEY" TOKEN="$TOKEN" ONION="$ONION" \
+  ROOT_USER=root ROOT_PW="${ROOT_PW:-}" HOST="${HOST:-pcname}" \
+  OUT="${KEEPASS_OUT:-$FLAKE/state/keepass/${HOST:-pcname}.kdbx}" \
+    "$HERE/make_keepass_db.sh" || echo "   (KeePassXC DB generation failed — non-fatal; set SP_KEEPASS_PASSWORD)"
+else
+  echo "   keepassxc-cli not installed — skipping (install it to capture credentials)."
+fi
+
 TRANSPORT=${TRANSPORT:-https}   # https = PUBLIC, from anywhere (the real requirement); or onion
 say "5. VERIFY over transport=$TRANSPORT"
 # Public https also needs (box/router side): api.$DOMAIN -> the box's PUBLIC IP, and :443

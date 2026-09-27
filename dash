@@ -68,6 +68,61 @@ def all_entries(cat):
     return list(cat.get("tests", [])) + list(cat.get("installs", []))
 
 
+# ── Install setups (--on) + preflight ────────────────────────────────────────
+# The --on value names a setup (vm-local | lan-setup-0/1/2 | usb). Before an
+# install runs, preflight() checks the setup is feasible NOW and, if not, returns
+# an actionable fix instead of half-running. Topology diagrams live in the catalog
+# (install_methods[].topology) so they render in `./dash setups` and the README.
+DIRECT_IFACE = os.environ.get("SP_NETBOOT_IFACE", "enp0s31f6")
+DIRECT_IP = "192.168.100.1"
+
+
+def _iface_has_ip(iface, ip):
+    r = subprocess.run(["ip", "-4", "addr", "show", iface], capture_output=True, text=True)
+    return ip in r.stdout
+
+
+def setup_preflight(method):
+    """Return (ok, message): whether `install --on <method>` can run right now."""
+    if method in (None, "", "-", "test-vm", "vm-remote"):
+        return True, ""
+    if method == "vm-local":
+        if not shutil.which("VBoxManage"):
+            return False, "VirtualBox not found (VBoxManage). Install it, e.g. `sudo apt install virtualbox`."
+        return True, ""
+    if method == "lan-setup-0":
+        if not _iface_has_ip(DIRECT_IFACE, DIRECT_IP):
+            return False, (
+                f"Direct-link netboot server is not running on {DIRECT_IFACE}.\n"
+                f"  1) Cable: laptop {DIRECT_IFACE} <-> target ethernet (router OUT of path)\n"
+                f"  2) sudo bash ~/netboot/start-netboot-server.sh   (leave it running)\n"
+                f"  3) Boot the target into UEFI network mode, then re-run.")
+        return True, ""
+    if method in ("lan-setup-1", "lan-setup-2"):
+        return False, (
+            "Router R is not configured for network boot, so the target cannot PXE over R.\n"
+            "  R's own DHCP server fights the installer's DHCP. To use this setup, configure R to EITHER:\n"
+            "    - disable R's DHCP and let THIS laptop serve DHCP+TFTP on R's LAN, OR\n"
+            "    - set R's DHCP boot options (next-server=this laptop, filename=ipxe.efi) [proxyDHCP],\n"
+            "      pointing TFTP/HTTP at ~/netboot.\n"
+            "  Until R is set up, use  --on lan-setup-0  (direct cable)  or  --on usb.\n"
+            "  Details: dev-dashboard/README.md (Setups).")
+    if method == "usb":
+        return True, ""  # manual boot; install cmd is @manual
+    return True, ""
+
+
+def cmd_setups(args):
+    ms = load_catalog().get("install_methods", [])
+    print(f"{BOLD}Install setups (--on values){OFF}\n")
+    for m in ms:
+        print(f"{BOLD}{m['id']}{OFF}  {GREY}{m.get('label','')}{OFF}")
+        print(f"  {m.get('desc','')}")
+        for line in (m.get("topology") or "").splitlines():
+            print(f"    {CYAN}{line}{OFF}")
+        print()
+
+
 def entry_by_id(cat, cid):
     for e in all_entries(cat):
         if e["id"] == cid:
@@ -352,6 +407,16 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
+
+    # Preflight: for an actual install, refuse up-front (with a fix) if the
+    # requested setup (--on) isn't feasible, instead of half-running.
+    if entry.get("category") == "install":
+        ok, msg = setup_preflight(method_tag)
+        if not ok:
+            print(f"{RED}preflight FAILED{OFF}  {entry['id']}  {GREY}[on={method_tag}]{OFF}")
+            for line in msg.splitlines():
+                print(f"  {line}")
+            return None
 
     if cmd == "@todo":
         print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
@@ -1295,6 +1360,7 @@ def main():
 
     sub.add_parser("backfill-provenance", help="add dial_domain/socks_port to old app-run records (from their logs)").set_defaults(fn=cmd_backfill_provenance)
     sub.add_parser("vm-reset", help="kill stale VBox sessions + remove all copies of the SelfPrivacy VM").set_defaults(fn=cmd_vm_reset)
+    sub.add_parser("setups", help="show the install setups (--on values) with topology diagrams").set_defaults(fn=cmd_setups)
     sub.add_parser("demo").set_defaults(fn=cmd_demo)
     sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
 
