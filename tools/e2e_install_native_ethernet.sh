@@ -89,6 +89,22 @@ start_netboot(){
   fi
 }
 
+# Verify the TARGET can reach the internet before a live service verify. Checks from the box
+# itself; if it can't (and we're interactive) it asks the user to fix it, then re-checks.
+ensure_internet(){
+  say "internet check — the target must reach the internet for the live service verify"
+  while :; do
+    if ssh_ok "$IP" && ssh $SSHO "root@$IP" 'curl -sf --max-time 10 https://api.ipify.org >/dev/null 2>&1 || ping -c1 -W2 1.1.1.1 >/dev/null 2>&1'; then
+      echo "   target root@$IP has internet access ✓"; return 0
+    fi
+    echo "   target root@$IP has NO internet access."
+    [ -t 0 ] || return 1
+    echo "   >> Ensure the target device has internet access (uplink/router reachable), then press ENTER to re-check (Ctrl-C to abort)."
+    read _ans || return 1
+    ensure_target >/dev/null 2>&1 || true   # its IP may have changed
+  done
+}
+
 if [ "$NETBOOT" = auto ]; then
   say "0a. bring up the direct-cable netboot server (one-command mode)"
   start_netboot || exit 1
@@ -133,56 +149,74 @@ if ! nix run github:nix-community/nixos-anywhere -- \
     $NA_FALLBACK
 fi
 
-# Direct-cable path: verify the install ON DISK from the still-running installer (no reboot,
-# no internet needed), then hand off. Bringing the box up for a live/service verify needs it
-# on an internet-connected network (router R) — a separate, documented step.
-if [ "$NETBOOT" = auto ]; then
-  say "2. verify the install ON DISK (direct cable has no internet path for a service verify)"
-  ondisk=$(ssh $SSHO "root@$IP" '
-    mkdir -p /mnt/t; ok=""
-    for part in $(lsblk -lnpo NAME,FSTYPE | awk "\$2==\"ext4\"{print \$1}"); do
+# Verify the install ON DISK (works with no reboot / no internet). After --phases disko,install
+# the new root is left MOUNTED (disko's /mnt); a rebooted/fresh installer leaves it unmounted.
+# Handle both: check mounted ext4 filesystems first, then mount unmounted ext4 partitions RO.
+ondisk_verify(){
+  ssh $SSHO "root@$IP" '
+    check(){ [ -f "$1/etc/selfprivacy/secrets.json" ] && [ -L "$1/nix/var/nix/profiles/system" ]; }
+    report(){ printf "root=%s secrets=yes " "$1"; [ -f "$1/etc/ssl/selfprivacy-le/fullchain.pem" ] && printf "le=yes" || printf "le=no"; echo " OK"; }
+    for mp in $(findmnt -rno TARGET -t ext4 2>/dev/null); do check "$mp" && { report "$mp"; exit 0; }; done
+    mkdir -p /mnt/t
+    for part in $(lsblk -lnpo NAME,FSTYPE,MOUNTPOINT | awk "\$2==\"ext4\" && \$3==\"\"{print \$1}"); do
       mount -o ro "$part" /mnt/t 2>/dev/null || continue
-      if [ -f /mnt/t/etc/selfprivacy/secrets.json ] && [ -L /mnt/t/nix/var/nix/profiles/system ]; then
-        printf "root=%s secrets=yes " "$part"
-        [ -f /mnt/t/etc/ssl/selfprivacy-le/fullchain.pem ] && printf "le=yes" || printf "le=no"
-        ok=1; umount /mnt/t 2>/dev/null || true; break
-      fi
+      if check /mnt/t; then report "$part"; umount /mnt/t 2>/dev/null || true; exit 0; fi
       umount /mnt/t 2>/dev/null || true
     done
-    echo; [ -n "$ok" ] && echo OK || echo NO-INSTALLED-ROOT-FOUND
-  ' 2>/dev/null || true)
-  echo "   on-disk: $(echo "$ondisk" | tr "\n" " ")"
+    echo NO-INSTALLED-ROOT-FOUND
+  ' 2>/dev/null || echo NO-INSTALLED-ROOT-FOUND
+}
+
+if [ "$NETBOOT" = auto ]; then
+  say "2. verify the install ON DISK (from the still-running installer — no reboot/internet needed)"
+  ondisk=$(ondisk_verify)
+  echo "   on-disk: $ondisk"
   stop_netboot
-  if echo "$ondisk" | grep -q OK; then
-    say "install.native-ethernet [lan-setup-0]: INSTALL VERIFIED ON DISK"
+  echo "$ondisk" | grep -q OK || { echo "!! no installed root with secrets.json found on disk — install may have failed"; exit 1; }
+  say "install.native-ethernet [lan-setup-0]: INSTALL VERIFIED ON DISK"
+
+  # Install-only when non-interactive or explicitly requested (TRANSPORT=none): hand off and stop.
+  if [ ! -t 0 ] || [ "${TRANSPORT:-https}" = none ]; then
     cat <<EOM
 The install is complete; the injected identity (secrets.json + LE cert) is on disk.
-A live/service verify (https or .onion) needs the box on a network with internet, which a
-direct cable is not. To bring it up and verify from anywhere:
+A live/service verify needs the box on a network WITH INTERNET (a direct cable has none):
   1) Move the target to router R (or set its BIOS boot order to the internal disk).
-  2) Power-cycle it — the netboot server is now stopped, so it boots from disk and joins the LAN.
-  3) Verify services (from anywhere), reading the token off the box:
-       T=\$(ssh $SSHO root@<box-ip> jq -r .api.token /etc/selfprivacy/secrets.json)
-       python3 "$HERE/verify_install_native_ethernet.py" --transport https --domain "$DOMAIN" --token "\$T" --ssh-key "$KEY"
+  2) Power-cycle it — the netboot server is stopped, so it boots from disk and joins the LAN.
+  3) Re-run this (interactively) with the box online, or run the verifier directly.
 EOM
     exit 0
-  else
-    echo "!! no installed root with secrets.json found on disk — install may have failed"; exit 1
   fi
-fi
 
-say "2. wait for reboot into the installed system at static $IP"
-up=""
-for i in $(seq 1 48); do
-  if ssh_ok "$IP"; then up=1; echo "up after ~$((i*5))s"; break; fi
-  sleep 5
-done
-if [ -z "$up" ]; then
-  echo "box not back at $IP within timeout — scanning the LAN for it by MAC $MAC ..."
-  DIP=$(discover_by_mac "$MAC")
-  if [ -n "$DIP" ] && ssh_ok "$DIP"; then echo "found at root@$DIP — adopting"; IP="$DIP"; up=1; fi
+  # Continue to the live verify: ask the user to give the box internet, then locate it.
+  say "2b. bring the target ONLINE for the live service verify"
+  echo "Move the target to a network WITH INTERNET (e.g. router R), or set BIOS disk-boot,"
+  echo "and power it on so it boots the INSTALLED system (not the installer)."
+  echo ">> Press ENTER when the target is powered on and online (or Ctrl-C to finish at install-only)."
+  read _ans || { echo "(no input — finishing at install-only)"; exit 0; }
+  say "   locating the installed system on the LAN (by MAC $MAC) ..."
+  IP=""; _deadline=$((SECONDS+300))
+  while [ $SECONDS -lt $_deadline ]; do
+    _dip=$(discover_by_mac "$MAC")
+    if [ -n "$_dip" ] && ssh_ok "$_dip" && ssh $SSHO "root@$_dip" 'test -f /etc/selfprivacy/secrets.json' 2>/dev/null; then
+      IP="$_dip"; echo "   installed system up at root@$IP"; break
+    fi
+    echo "   ... not up yet (scanning by MAC) — waiting"; sleep 10
+  done
+  [ -n "$IP" ] || { echo "installed system didn't appear on the LAN within 5m (is it booting from disk with internet?)"; exit 1; }
+else
+  say "2. wait for reboot into the installed system at static $IP"
+  up=""
+  for i in $(seq 1 48); do
+    if ssh_ok "$IP"; then up=1; echo "up after ~$((i*5))s"; break; fi
+    sleep 5
+  done
+  if [ -z "$up" ]; then
+    echo "box not back at $IP within timeout — scanning the LAN for it by MAC $MAC ..."
+    DIP=$(discover_by_mac "$MAC")
+    if [ -n "$DIP" ] && ssh_ok "$DIP"; then echo "found at root@$DIP — adopting"; IP="$DIP"; up=1; fi
+  fi
+  [ -n "$up" ] || { echo "box did not come back on the LAN within timeout"; exit 1; }
 fi
-[ -n "$up" ] || { echo "box did not come back on the LAN within timeout"; exit 1; }
 
 say "3. post-install — tighten LE key perms, ensure nginx serving"
 ssh $SSHO "root@$IP" '
@@ -208,6 +242,7 @@ else
 fi
 
 TRANSPORT=${TRANSPORT:-https}   # https = PUBLIC, from anywhere (the real requirement); or onion
+ensure_internet || { echo "!! target has no internet access — cannot run the live $TRANSPORT verify"; exit 1; }
 say "5. VERIFY over transport=$TRANSPORT"
 # Public https also needs (box/router side): api.$DOMAIN -> the box's PUBLIC IP, and :443
 # reachable from the internet (public IP or router port-forward). The verifier enforces this.
