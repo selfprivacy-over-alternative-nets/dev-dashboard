@@ -113,17 +113,62 @@ if ! ensure_target; then
 fi
 [ -f "$EXTRA/etc/ssl/selfprivacy-le/fullchain.pem" ] || { echo "missing LE cert in $EXTRA — run the staging step first"; exit 1; }
 
+# Direct-cable (NETBOOT=auto): install WITHOUT rebooting. Network boot is first in the
+# target's boot order and our netboot server is still up, so a reboot now would PXE
+# straight back into the installer instead of the freshly-installed disk (and the disk
+# would have no DHCP on this cable anyway). We verify on disk and hand off instead.
+NA_MAIN=""; NA_FALLBACK="--phases disko,install,reboot"
+if [ "$NETBOOT" = auto ]; then NA_MAIN="--phases disko,install"; NA_FALLBACK="--phases disko,install"; fi
+
 say "1. WIPE + INSTALL (nixos-anywhere, both disks by serial, inject cert+secrets)"
 if ! nix run github:nix-community/nixos-anywhere -- \
-      --flake "$FLAKE#pcname" --target-host "root@$IP" -i "$KEY" --extra-files "$EXTRA"; then
+      --flake "$FLAKE#pcname" --target-host "root@$IP" -i "$KEY" --extra-files "$EXTRA" $NA_MAIN; then
   echo "!! nixos-anywhere could not reconnect at $IP (kexec installer took a different DHCP lease)."
-  echo "   Discovering the box by MAC $MAC and resuming disko,install,reboot ..."
+  echo "   Discovering the box by MAC $MAC and resuming ..."
   DIP=$(discover_by_mac "$MAC")
   [ -n "$DIP" ] || { echo "could not locate the box by MAC — aborting"; exit 1; }
   echo "   installer found at $DIP — resuming"
   nix run github:nix-community/nixos-anywhere -- \
     --flake "$FLAKE#pcname" --target-host "root@$DIP" -i "$KEY" --extra-files "$EXTRA" \
-    --phases disko,install,reboot
+    $NA_FALLBACK
+fi
+
+# Direct-cable path: verify the install ON DISK from the still-running installer (no reboot,
+# no internet needed), then hand off. Bringing the box up for a live/service verify needs it
+# on an internet-connected network (router R) — a separate, documented step.
+if [ "$NETBOOT" = auto ]; then
+  say "2. verify the install ON DISK (direct cable has no internet path for a service verify)"
+  ondisk=$(ssh $SSHO "root@$IP" '
+    mkdir -p /mnt/t; ok=""
+    for part in $(lsblk -lnpo NAME,FSTYPE | awk "\$2==\"ext4\"{print \$1}"); do
+      mount -o ro "$part" /mnt/t 2>/dev/null || continue
+      if [ -f /mnt/t/etc/selfprivacy/secrets.json ] && [ -L /mnt/t/nix/var/nix/profiles/system ]; then
+        printf "root=%s secrets=yes " "$part"
+        [ -f /mnt/t/etc/ssl/selfprivacy-le/fullchain.pem ] && printf "le=yes" || printf "le=no"
+        ok=1; umount /mnt/t 2>/dev/null || true; break
+      fi
+      umount /mnt/t 2>/dev/null || true
+    done
+    echo; [ -n "$ok" ] && echo OK || echo NO-INSTALLED-ROOT-FOUND
+  ' 2>/dev/null || true)
+  echo "   on-disk: $(echo "$ondisk" | tr "\n" " ")"
+  stop_netboot
+  if echo "$ondisk" | grep -q OK; then
+    say "install.native-ethernet [lan-setup-0]: INSTALL VERIFIED ON DISK"
+    cat <<EOM
+The install is complete; the injected identity (secrets.json + LE cert) is on disk.
+A live/service verify (https or .onion) needs the box on a network with internet, which a
+direct cable is not. To bring it up and verify from anywhere:
+  1) Move the target to router R (or set its BIOS boot order to the internal disk).
+  2) Power-cycle it — the netboot server is now stopped, so it boots from disk and joins the LAN.
+  3) Verify services (from anywhere), reading the token off the box:
+       T=\$(ssh $SSHO root@<box-ip> jq -r .api.token /etc/selfprivacy/secrets.json)
+       python3 "$HERE/verify_install_native_ethernet.py" --transport https --domain "$DOMAIN" --token "\$T" --ssh-key "$KEY"
+EOM
+    exit 0
+  else
+    echo "!! no installed root with secrets.json found on disk — install may have failed"; exit 1
+  fi
 fi
 
 say "2. wait for reboot into the installed system at static $IP"

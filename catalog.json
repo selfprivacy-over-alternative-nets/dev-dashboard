@@ -415,7 +415,7 @@
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "ONE command: auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, then wipes+installs via nixos-anywhere and verifies. Direct-cable installer IP is 192.168.100.50; the post-install public verify needs the box on the router (re-cable) or TRANSPORT=onion.",
+      "desc": "ONE command: auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, wipes+installs via nixos-anywhere (no reboot — network-boot-first would loop back into the installer), then verifies the install ON DISK. A live service verify (https/.onion) needs the box on an internet network, so it hands off: move the box to router R (or set disk-boot), power-cycle, then run the verifier. Installer IP 192.168.100.50.",
       "cwd": ".",
       "env": {"IP": "192.168.100.50", "NETBOOT": "auto"},
       "cmd": "tools/e2e_install_native_ethernet.sh",
