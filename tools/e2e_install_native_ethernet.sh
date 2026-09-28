@@ -187,22 +187,50 @@ EOM
     exit 0
   fi
 
-  # Continue to the live verify: ask the user to give the box internet, then locate it.
+  # Continue to the live verify. The box is still running the in-RAM INSTALLER (we didn't
+  # reboot, to avoid the PXE loop). Ask the user to put it on an internet network, then reboot
+  # it OURSELVES so it boots from disk into the installed system (no manual power-cycle needed).
   say "2b. bring the target ONLINE for the live service verify"
-  echo "Move the target to a network WITH INTERNET (e.g. router R), or set BIOS disk-boot,"
-  echo "and power it on so it boots the INSTALLED system (not the installer)."
-  echo ">> Press ENTER when the target is powered on and online (or Ctrl-C to finish at install-only)."
+  echo "Connect the target to a network WITH INTERNET (e.g. router R) — it's currently running"
+  echo "the in-RAM installer; I'll reboot it into the installed disk once it's on that network."
+  echo ">> Press ENTER when it's cabled to that network (or Ctrl-C to finish at install-only)."
   read _ans || { echo "(no input — finishing at install-only)"; exit 0; }
-  say "   locating the installed system on the LAN (by MAC $MAC) ..."
-  IP=""; _deadline=$((SECONDS+300))
-  while [ $SECONDS -lt $_deadline ]; do
+
+  # find_installed: scan by MAC until we see the INSTALLED system (secrets.json on the live fs).
+  # echoes the IP, or "" on timeout. $1 = timeout seconds, $2 = label.
+  find_installed(){
+    local dl=$(( SECONDS + $1 )) dip
+    while [ $SECONDS -lt $dl ]; do
+      dip=$(discover_by_mac "$MAC")
+      if [ -n "$dip" ] && ssh_ok "$dip" && ssh $SSHO "root@$dip" 'test -f /etc/selfprivacy/secrets.json' 2>/dev/null; then
+        echo "$dip"; return 0
+      fi
+      echo "   ... $2 — waiting" >&2; sleep 10
+    done
+    return 1
+  }
+
+  # Locate the box by MAC (installer or, if you already rebooted, the installed system).
+  say "   locating the target on the LAN (by MAC $MAC) ..."
+  BIP=""; _dl=$((SECONDS+180))
+  while [ $SECONDS -lt $_dl ]; do
     _dip=$(discover_by_mac "$MAC")
-    if [ -n "$_dip" ] && ssh_ok "$_dip" && ssh $SSHO "root@$_dip" 'test -f /etc/selfprivacy/secrets.json' 2>/dev/null; then
-      IP="$_dip"; echo "   installed system up at root@$IP"; break
-    fi
-    echo "   ... not up yet (scanning by MAC) — waiting"; sleep 10
+    if [ -n "$_dip" ] && ssh_ok "$_dip"; then BIP="$_dip"; break; fi
+    echo "   ... not found yet — waiting"; sleep 10
   done
-  [ -n "$IP" ] || { echo "installed system didn't appear on the LAN within 5m (is it booting from disk with internet?)"; exit 1; }
+  [ -n "$BIP" ] || { echo "couldn't find the target on the LAN by MAC $MAC — is it cabled to the router and powered on?"; exit 1; }
+
+  if ssh $SSHO "root@$BIP" 'test -f /etc/selfprivacy/secrets.json' 2>/dev/null; then
+    IP="$BIP"; echo "   already the installed system at root@$IP"
+  else
+    echo "   target at root@$BIP is still the INSTALLER — rebooting it to boot the installed disk ..."
+    ssh $SSHO "root@$BIP" 'systemctl reboot || reboot' 2>/dev/null || true
+    sleep 20
+    say "   waiting for the INSTALLED system to boot from disk (by MAC $MAC) ..."
+    IP=$(find_installed 300 "not up yet (booting from disk)") || {
+      echo "installed system didn't come up from disk within 5m — check the target booted the disk (not PXE) and reached the network"; exit 1; }
+    echo "   installed system up at root@$IP"
+  fi
 else
   say "2. wait for reboot into the installed system at static $IP"
   up=""
