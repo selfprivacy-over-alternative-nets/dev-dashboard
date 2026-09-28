@@ -22,6 +22,9 @@ MAC=${MAC:-d8:cb:8a:7c:0a:f4}                 # target NIC MAC (for kexec-IP-cha
 KEY=${KEY:-$HOME/.ssh/pcname_ed25519}
 DOMAIN=${DOMAIN:-weersurf.nl}
 EXTRA=${EXTRA:-$FLAKE/state/extra}
+NETBOOT=${NETBOOT:-off}                        # auto = (re)start the direct-cable netboot server ourselves (one-command install)
+NETBOOT_SCRIPT=${NETBOOT_SCRIPT:-$HOME/netboot/start-netboot-server.sh}
+WAIT_TARGET_S=${WAIT_TARGET_S:-}              # seconds to wait for the target at step 0 (default set below per NETBOOT)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
 export NIX_CONFIG='experimental-features = nix-command flakes'
@@ -57,9 +60,52 @@ ensure_target(){
   return 1
 }
 
+NETBOOT_STARTED=""; SUDO_KEEPALIVE=""
+stop_netboot(){
+  [ -n "$SUDO_KEEPALIVE" ] && kill "$SUDO_KEEPALIVE" 2>/dev/null || true; SUDO_KEEPALIVE=""
+  [ -n "$NETBOOT_STARTED" ] || return 0
+  echo "stopping the netboot server we started ..."
+  sudo pkill -x dnsmasq 2>/dev/null || true
+  sudo pkill -f "http\.server 8080" 2>/dev/null || true
+  NETBOOT_STARTED=""
+}
+# (re)start the direct-cable netboot server ourselves so the whole install is ONE command.
+# Idempotent: reuses an already-running server. Needs sudo (prompted once; kept warm so the
+# EXIT-time cleanup doesn't re-prompt during a long install).
+start_netboot(){
+  if ss -lun 2>/dev/null | grep -q ':67 '; then echo "netboot server already running — reusing it"; return 0; fi
+  [ -f "$NETBOOT_SCRIPT" ] || { echo "netboot script not found: $NETBOOT_SCRIPT"; return 1; }
+  echo "starting the direct-cable netboot server (sudo — you'll be prompted once) ..."
+  sudo -v || { echo "sudo needed to start the netboot server"; return 1; }
+  ( while true; do sudo -n true 2>/dev/null || break; sleep 50; done ) & SUDO_KEEPALIVE=$!
+  sudo bash "$NETBOOT_SCRIPT" >/tmp/netboot-server.log 2>&1 &
+  NETBOOT_STARTED=1
+  trap 'stop_netboot' EXIT INT TERM
+  local i; for i in $(seq 1 20); do ss -lun 2>/dev/null | grep -q ':67 ' && break; sleep 0.5; done
+  if ss -lun 2>/dev/null | grep -q ':67 '; then
+    echo "netboot server up (DHCP+TFTP on the direct link; log: /tmp/netboot-server.log)"
+  else
+    echo "netboot server did not come up — see /tmp/netboot-server.log"; return 1
+  fi
+}
+
+if [ "$NETBOOT" = auto ]; then
+  say "0a. bring up the direct-cable netboot server (one-command mode)"
+  start_netboot || exit 1
+  echo ">>> now POWER ON / RESET the target into UEFI IPv4 network boot — waiting for it to appear <<<"
+  : "${WAIT_TARGET_S:=300}"
+else
+  : "${WAIT_TARGET_S:=20}"
+fi
+
 say "0. preflight — target reachable over LAN (network mode)?"
+_deadline=$((SECONDS + WAIT_TARGET_S)); _t0=$SECONDS
+until ssh_ok "$IP" || [ $SECONDS -ge $_deadline ]; do
+  echo "   ... waiting for target at root@$IP (or MAC $MAC on the LAN) — $((SECONDS-_t0))s/${WAIT_TARGET_S}s  (Ctrl-C to abort)"
+  sleep 8
+done
 if ! ensure_target; then
-  echo "target not reachable at root@$IP and not found on the LAN by MAC $MAC."
+  echo "target not reachable at root@$IP and not found on the LAN by MAC $MAC (waited ${WAIT_TARGET_S}s)."
   echo "  - boot it in network mode (installer or installed NixOS, sshd up, on the LAN), or"
   echo "  - pass the right IP:   IP=<addr> $0    (or  ./dash run <install-id> --ip <addr>), or"
   echo "  - check MAC=$MAC matches the target's NIC."
@@ -121,8 +167,10 @@ say "5. VERIFY over transport=$TRANSPORT"
 # Public https also needs (box/router side): api.$DOMAIN -> the box's PUBLIC IP, and :443
 # reachable from the internet (public IP or router port-forward). The verifier enforces this.
 echo "   box's public (WAN) IP as seen from itself: $(ssh $SSHO "root@$IP" 'curl -s --max-time 10 https://api.ipify.org || echo unknown' 2>/dev/null)"
+# Not `exec`: let the script reach its EXIT trap so an auto-started netboot server is stopped.
+# With `set -e`, a failing verify still exits non-zero (and fires the trap).
 if [ "$TRANSPORT" = onion ]; then
-  exec python3 "$HERE/verify_install_native_ethernet.py" --transport onion --onion "$ONION" --token "$TOKEN"
+  python3 "$HERE/verify_install_native_ethernet.py" --transport onion --onion "$ONION" --token "$TOKEN"
 else
-  exec python3 "$HERE/verify_install_native_ethernet.py" --transport https --domain "$DOMAIN" --token "$TOKEN" --ssh-key "$KEY"
+  python3 "$HERE/verify_install_native_ethernet.py" --transport https --domain "$DOMAIN" --token "$TOKEN" --ssh-key "$KEY"
 fi

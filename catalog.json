@@ -415,9 +415,9 @@
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "Target netbooted over a direct ethernet cable (router out of path), wiped+installed via nixos-anywhere, then verified. Direct-cable installer IP is 192.168.100.50; note the post-install public verify needs the box on the router (re-cable) or TRANSPORT=onion.",
+      "desc": "ONE command: auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, then wipes+installs via nixos-anywhere and verifies. Direct-cable installer IP is 192.168.100.50; the post-install public verify needs the box on the router (re-cable) or TRANSPORT=onion.",
       "cwd": ".",
-      "env": {"IP": "192.168.100.50"},
+      "env": {"IP": "192.168.100.50", "NETBOOT": "auto"},
       "cmd": "tools/e2e_install_native_ethernet.sh",
       "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },
