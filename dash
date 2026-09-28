@@ -380,6 +380,33 @@ def log_header_cmd(path):
     return ""
 
 
+def missing_local_cmd(cmd, run_dir):
+    """Best-effort guard: if the command invokes a local script/binary by a relative or
+    absolute path that doesn't exist (relative paths resolved against run_dir), return that
+    path so the caller can emit a clear 'harness/catalog path error' instead of a cryptic
+    '/bin/sh: … not found' that reads like a target/device failure.
+
+    Deliberately conservative to avoid false positives: skips env-var prefixes (FOO=bar),
+    common wrappers (sudo/env/exec/…), and bare PATH command names; bails out (returns None)
+    on any compound/shell command (cd, pipes, &&, ;, redirects) it can't reason about safely."""
+    try:
+        import shlex
+        toks = shlex.split(cmd)
+    except Exception:
+        return None
+    for t in toks:
+        if any(op in t for op in (";", "&&", "||", "|", "&", ">", "<", "`")) or t in ("cd", "sudo", "env", "exec", "nice", "time"):
+            return None  # too complex / wrapped to reason about safely
+        if "=" in t and not t.startswith(("/", "./", "../")) and "/" not in t.split("=", 1)[0]:
+            continue     # env assignment prefix (FOO=bar)
+        looks_local = t.startswith(("/", "./", "../")) or "/" in t or t.endswith((".sh", ".py"))
+        if not looks_local:
+            return None  # bare command name resolved via PATH — don't second-guess
+        cand = t if os.path.isabs(t) else os.path.join(run_dir, t)
+        return None if os.path.exists(cand) else t
+    return None
+
+
 def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False):
     cmd = entry.get("cmd", "")
     if entry.get("cmd_by_net"):
@@ -427,6 +454,30 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         return None
 
     repo_dir = os.path.normpath(os.path.join(ROOT, entry["repo"])) if entry.get("repo") else ROOT
+    # Where the command actually runs. Defaults to the repo dir so repo-relative cmds
+    # (e.g. ./build-and-run.sh) keep working. An entry may set "cwd" (relative to the
+    # dashboard root) when its script lives somewhere other than `repo` — e.g. the install
+    # entries whose `repo` is the backend (for git provenance) but whose script is in
+    # dev-dashboard/tools/. git provenance uses `git -C repo` and is independent of cwd.
+    run_dir = os.path.normpath(os.path.join(ROOT, entry["cwd"])) if entry.get("cwd") else repo_dir
+
+    # Fail fast with an unambiguous message if the command's own script/binary isn't where
+    # we'll run it — instead of a cryptic "/bin/sh: … not found" (exit 127) that looks like
+    # the target/device wasn't reachable.
+    miss = missing_local_cmd(cmd, run_dir)
+    if miss:
+        rel = os.path.relpath(run_dir, ROOT) or "."
+        print(f"{RED}FAILED{OFF}  {entry['id']}  {GREY}[net={net_tag} on={method_tag}]{OFF}")
+        print(f"  command not found: {BOLD}{miss}{OFF} does not exist at cwd '{rel}'.")
+        print(f"  This is a harness/catalog PATH error — NOT a target/device failure:")
+        print(f"  the script never ran, so nothing ever tried to reach the target.")
+        print(f"  Fix this entry's cmd/cwd in dev-dashboard/catalog.json.")
+        rec = {**base, "status": "fail", "duration_s": 0.0, "exit_code": 127,
+               "error": f"harness: '{miss}' not found at cwd '{rel}' — catalog/path error, not a target failure",
+               "log_path": "", "artifacts": {"client_log": "", "server_log": "", "video": "", "screenshots": []}}
+        append_record(rec)
+        return rec
+
     log_path = os.path.join(LOGS, run_id + ".log")
     os.makedirs(LOGS, exist_ok=True)
     tags = f"{GREY}[net={net_tag} on={method_tag}]{OFF}"
@@ -443,10 +494,10 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         run_env["SHOT_SIZE"] = "1280x800"
     start = datetime.datetime.now()
     with open(log_path, "w") as log:
-        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {repo_dir}\n# started {now_iso()}\n\n")
+        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
         log.flush()
         try:
-            proc = subprocess.Popen(cmd, shell=True, cwd=repo_dir, stdout=subprocess.PIPE,
+            proc = subprocess.Popen(cmd, shell=True, cwd=run_dir, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, bufsize=1, env=run_env)
             for line in proc.stdout:
                 sys.stdout.write(line)
