@@ -407,7 +407,7 @@ def missing_local_cmd(cmd, run_dir):
     return None
 
 
-def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False):
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None):
     cmd = entry.get("cmd", "")
     if entry.get("cmd_by_net"):
         if not net:
@@ -483,7 +483,15 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     tags = f"{GREY}[net={net_tag} on={method_tag}]{OFF}"
     print(f"{BOLD}▶ {entry['id']}{OFF} {tags}  {GREY}{cmd}{OFF}")
     rec_handle = start_recording(run_id) if record else None
-    run_env = {**os.environ}
+    # env precedence: entry "env" defaults < the caller's shell env < CLI overrides (--ip/--env)
+    # < the recorder's display env. Install entries keep their per-setup default IP in "env".
+    run_env = {**entry.get("env", {}), **os.environ}
+    if ip:
+        run_env["IP"] = ip
+    for kv in (extra_env or []):
+        k, sep, v = kv.partition("=")
+        if sep:
+            run_env[k.strip()] = v
     if rec_handle and rec_handle.get("env"):
         run_env.update(rec_handle["env"])       # run the app on the recorder's display (e.g. Xvfb :99)
     shot_dir = ""
@@ -590,7 +598,8 @@ def cmd_run(args):
     entries = select(args)
     print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
     results = [run_entry(e, args.config, net=args.net, method=args.on,
-                         record=args.record, server_log=args.server_log) for e in entries]
+                         record=args.record, server_log=args.server_log,
+                         ip=args.ip, extra_env=args.env) for e in entries]
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
     print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → data/results.jsonl")
@@ -1358,6 +1367,9 @@ def main():
     r.add_argument("--on", help="install method the backend runs on: vm-local|native-ethernet|...")
     r.add_argument("--record", action="store_true", help="screen-record the client UI (local media)")
     r.add_argument("--server-log", help="shell cmd to fetch backend logs after the run (e.g. ssh ... journalctl)")
+    r.add_argument("--ip", help="override the target IP for install runs (else the per-setup default; if unreachable the e2e auto-discovers the box on the LAN by MAC)")
+    r.add_argument("--env", action="append", metavar="KEY=VAL",
+                   help="set/override an env var for the run (repeatable): --env DOMAIN=example.com --env MAC=aa:bb:...")
     r.set_defaults(fn=cmd_run)
 
     w = sub.add_parser("wrap")
