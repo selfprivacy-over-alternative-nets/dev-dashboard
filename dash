@@ -202,6 +202,43 @@ def flake_pins():
     return pins
 
 
+def api_pin_mismatch():
+    """None if the local selfprivacy-api checkout CORRESPONDS to the flake.lock pin (what the
+    deploy actually builds), else a dict describing the mismatch. 'Corresponds' = local HEAD ==
+    pinned rev AND the checkout is clean. Returns None when not configured/checkable, so it
+    never blocks setups that don't involve the api."""
+    try:
+        cat = load_catalog()
+    except Exception:
+        return None
+    api_rel = (cat.get("project_repos") or {}).get("api")
+    lock_rel = cat.get("pins_lock")
+    if not api_rel or not lock_rel:
+        return None
+    api = os.path.normpath(os.path.join(ROOT, api_rel))
+    if not _is_git(api):
+        return None
+    try:
+        head = subprocess.check_output(["git", "-C", api, "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return None
+    try:
+        lock = json.load(open(os.path.normpath(os.path.join(ROOT, lock_rel))))
+    except Exception:
+        return None
+    pin = ((lock.get("nodes", {}).get("selfprivacy-api", {}) or {}).get("locked", {}) or {}).get("rev")
+    if not pin:
+        return None
+    dirty = bool(subprocess.run(["git", "-C", api, "status", "--porcelain"], capture_output=True).stdout.strip())
+    if head != pin:
+        return {"kind": "rev", "pin": pin[:12], "checkout": head[:12],
+                "msg": f"flake.lock pins selfprivacy-api @ {pin[:12]} but the local api checkout is @ {head[:12]}"}
+    if dirty:
+        return {"kind": "dirty", "pin": pin[:12], "checkout": head[:12],
+                "msg": f"selfprivacy-api checkout @ {head[:12]} matches the pin but has UNCOMMITTED changes (the deploy builds the committed pin, not your edits)"}
+    return None
+
+
 def gen_run_id():
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     return f"{stamp}-{os.urandom(2).hex()}"
@@ -480,7 +517,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if gs["dirty"] else ""),
-        "repos": project_repo_states(), "pins": flake_pins(),
+        "repos": project_repo_states(), "pins": flake_pins(), "pin_mismatch": api_pin_mismatch(),
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
@@ -492,6 +529,16 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         print(f"{RED}dirty{OFF}  {entry['id']} — {gs['repo']} @ {gs['commit']} has uncommitted changes.")
         print(f"  commit {gs['repo']} first so every run shares one state, or pass --allow-dirty.")
         return None
+
+    # Pin gate: the deploy builds the selfprivacy-api rev PINNED in the flake.lock — not your
+    # local api checkout. If they differ, the run wouldn't exercise your api code at all, so the
+    # result would be mislabelled. Refuse unless --allow-dirty.
+    if entry.get("category") in ("test", "install") and not allow_dirty:
+        _mm = api_pin_mismatch()
+        if _mm:
+            print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {_mm['msg']}.")
+            print(f"  bump the flake input to match (nix flake lock / update the follows) or check out the pinned rev; or pass --allow-dirty.")
+            return None
 
     # Preflight: for an actual install, refuse up-front (with a fix) if the
     # requested setup (--on) isn't feasible, instead of half-running.
@@ -691,7 +738,7 @@ def cmd_report(args):
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
         "artifacts": {"client_log": "", "server_log": "", "video": ""},
-        "repos": project_repo_states(), "pins": flake_pins(),
+        "repos": project_repo_states(), "pins": flake_pins(), "pin_mismatch": api_pin_mismatch(),
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
     }
     append_record(rec)

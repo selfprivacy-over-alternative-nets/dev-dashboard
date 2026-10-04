@@ -59,6 +59,19 @@
   }
   const stateKeyOf = (r) => reposList(r).map((x) => x.name + ":" + x.commit).sort().join("|");
 
+  // Mismatch between the local selfprivacy-api checkout and the DEPLOYED flake.lock pin:
+  // the deploy builds the pinned rev, so if the api checkout differs/is dirty the api under
+  // test ≠ what ran. Derived from the recorded repos[] (api commit) + pins (api rev).
+  function pinMismatch(s) {
+    const api = (s.repos || []).find((x) => x.name === "api" || x.repo === "selfprivacy-api");
+    const pin = s.pins && s.pins["selfprivacy-api"];
+    if (!api || !pin) return null;
+    const a = String(api.commit || ""), p = String(pin), n = Math.min(a.length, p.length);
+    if (n && a.slice(0, n) !== p.slice(0, n)) return { kind: "rev", checkout: api.commit, pin: p };
+    if (api.dirty) return { kind: "dirty", checkout: api.commit, pin: p };
+    return null;
+  }
+
   // A "state" = one combination of all repo commits — i.e. exactly what was under test.
   function build(recs) {
     const smap = new Map(), byState = new Map();
@@ -84,7 +97,8 @@
       const el = document.createElement("div");
       el.className = "commit"; el.dataset.key = s.key;
       const chips = s.repos.map((x) => `<span class="chip${x.dirty ? " d" : ""}" title="${esc(x.name)} @ ${esc(x.branch || "?")}${x.dirty ? " · dirty" : ""}">${esc(x.name)}:${esc(x.commit)}</span>`).join(" ");
-      el.innerHTML = `<div class="chips">${chips}${s.dirty ? ' <span class="dirty">⚠</span>' : ""}</div>` +
+      const pm = pinMismatch(s);
+      el.innerHTML = `<div class="chips">${chips}${s.dirty ? ' <span class="dirty">⚠</span>' : ""}${pm ? ' <span class="dirty" title="api checkout ≠ deployed pin">≠pin</span>' : ""}</div>` +
         `<span class="meta">${esc(relTime(s.ts))} · ${s.n} run${s.n === 1 ? "" : "s"}</span>`;
       el.onclick = () => selectState(s);
       host.appendChild(el);
@@ -108,6 +122,10 @@
     if (s.pins && Object.keys(s.pins).length)
       h += `<div class="poptitle" style="margin-top:8px">Deployed versions (flake.lock pins):</div><ul class="dirtylist">` +
         Object.entries(s.pins).map(([k, v]) => `<li>${esc(k)} · <code>${esc(v)}</code></li>`).join("") + `</ul>`;
+    const pm = pinMismatch(s);
+    if (pm) h += `<div class="poptitle err" style="margin-top:8px">⚠ api checkout ≠ deployed pin: ` +
+      (pm.kind === "dirty" ? `checkout <code>${esc(pm.checkout)}</code> matches the pin but was DIRTY` : `checkout <code>${esc(pm.checkout)}</code> vs deployed pin <code>${esc(pm.pin)}</code>`) +
+      ` — the api under test was NOT what the deploy built.</div>`;
     return h;
   }
 
@@ -126,6 +144,11 @@
     top.append(info);
     if (s.dirty) {
       const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help"; w.textContent = "⚠ dirty state";
+      attachPop(w, configDetailsHtml);
+      top.append(w);
+    }
+    if (pinMismatch(s)) {
+      const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help"; w.textContent = "⚠ api ≠ pin";
       attachPop(w, configDetailsHtml);
       top.append(w);
     }
