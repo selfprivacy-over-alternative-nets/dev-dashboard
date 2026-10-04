@@ -7,3 +7,5 @@ __pycache__/
 *.pyc
 .DS_Store
 testresults/
+# Local per-deploy state: keepass secret DBs (tokens/keys/recovery pw) and L3 golden baselines.
+state/

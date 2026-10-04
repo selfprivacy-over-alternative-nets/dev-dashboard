@@ -197,6 +197,12 @@ def project_repo_states(names=None):
     return out
 
 
+def _state_hash_of(repos):
+    """One short hash identifying a whole code state: all repos' commits + their dirtiness."""
+    return hashlib.sha256("\n".join(sorted(
+        f"{r['name']}:{r.get('commit', '')}:{r.get('diff_hash', '')}" for r in repos)).encode()).hexdigest()[:12]
+
+
 def _self_contained(entry):
     """A test that builds its OWN flake (spins its own throwaway VM) instead of deploying to a
     box — an L2-style nixosTest. Its own flake.lock (not the backend's) is what pins the api /
@@ -723,7 +729,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         if _d:
             _drift.append(_d)
     # One hash identifying the whole code state (all repos' commits + their dirtiness).
-    _state_hash = hashlib.sha256("\n".join(sorted(f"{r['name']}:{r.get('commit', '')}:{r.get('diff_hash', '')}" for r in _repos)).encode()).hexdigest()[:12]
+    _state_hash = _state_hash_of(_repos)
     base = {
         "run_id": run_id, "ts": now_iso(), "env": "ci" if is_ci() else "local",
         "host": socket.gethostname(), "category": entry.get("category", "test"),
@@ -1126,6 +1132,36 @@ def cmd_verify_box(args):
         print("  redeploy the box before testing, so results reflect the current code.")
         sys.exit(1)
     print(f"{GREEN}MATCH{OFF} — box corresponds to current code pins ({', '.join(f'{k}={v}' for k, v in want.items())}).")
+
+
+def cmd_l3_baseline(args):
+    """Capture (bless) or show the known-clean golden backend baseline for an L3 setup. Run `capture`
+    right after a fresh (re)install so later flows' drift is measured against a clean reference. The
+    golden stores only the state sha + modules/users summary — no secrets. All args explicit (reqs 1-6);
+    box setups need --ip/--key/--token (enforced by resolve_backend_target)."""
+    setup = args.on
+    action = args.action or "capture"
+    target = resolve_backend_target(setup, "tor", args.ip, args.key, args.token)
+    if not target:
+        sys.exit(1)
+    if target["kind"] == "box":
+        stamp = read_box_stamp(target["ip"], target["key"])
+        state_key = (stamp or {}).get("state_hash") or "unknown"
+    else:
+        state_key = _state_hash_of(project_repo_states(DEFAULT_REPOS["L3"]))
+    p = _l3_baseline_path(state_key, setup)
+    if action == "show":
+        print(open(p).read() if os.path.exists(p)
+              else f"no baseline for {state_key}/{setup} (expected {os.path.relpath(p, ROOT)})")
+        return
+    pre = _snapshot_backend(target)
+    if not pre.get("present"):
+        sys.exit(f"{RED}backend userdata.json not readable on {setup}{OFF} — is the backend up?")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    json.dump({"sha": pre.get("sha"), "modules": pre.get("modules"), "users_n": pre.get("users_n"),
+               "setup": setup, "state_key": state_key, "captured": now_iso()}, open(p, "w"), indent=1)
+    print(f"{GREEN}captured golden baseline{OFF}  {state_key}/{setup} → {os.path.relpath(p, ROOT)}")
+    print(f"  modules: {pre.get('modules')}   users_n: {pre.get('users_n')}")
 
 
 def cmd_serve(args):
@@ -1656,8 +1692,10 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
     else:  # vm https — run_l3_flutter resolves theory7 itself
         address, socks = None, None
     retries = 1 if flow == "addremove" else None
+    # Baseline key = the deployed backend's identity: a box's stamped state_hash, else this code state.
+    state_key = base.get("box_state_hash") or base.get("state_hash")
     rec = run_l3_flutter(address, target["token"], pf, net=net, socks_port=socks, flow=flow,
-                         retries=retries, target=target)
+                         retries=retries, target=target, state_key=state_key)
     if rec:
         extra = {k: base[k] for k in ("box_stamp", "box_live", "box_stale", "box_state_hash",
                                       "repos", "pins") if k in base}
@@ -1667,8 +1705,158 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
     return rec
 
 
+# ── L3 clean-state baseline: snapshot / restore the backend's mutable SP state per flow ──────────
+# An L3 real-data assertion can pass/fail on LEFTOVER state (a service another flow disabled, a user a
+# prior run created) rather than on the code under test. So around each flow we snapshot the backend's
+# authoritative mutable state — /etc/nixos/userdata.json (enabled services = modules.*.enable, users,
+# dns/server/provider config) — flag drift vs a known-clean golden baseline, and restore after. All
+# target-aware (VM at localhost:2222, or a box over its SSH key). What this CANNOT cover is logged, not
+# silently dropped (req 90).
+L3_STATE_UNCOVERED = [
+    "service DB rows / app content (Nextcloud files, Matrix rooms, Gitea repos, mail)",
+    "a created system user's home dir + password hash (userdata entry is restored; the account "
+    "persists until the next rebuild)",
+    "backups already pushed to a remote provider",
+    "DNS records created at a DNS provider",
+    "a disabled service's torn-down systemd unit when the restore had no Tor mutation channel "
+    "(userdata/API state is restored; the unit returns on the next rebuild)",
+]
+
+
+def _backend_ssh_run(target, remote_cmd, input_data=None, timeout=30):
+    """Run a command on the L3 backend over SSH (no shell on the host side — argv). Target-aware:
+    a box uses its --key over the LAN; the VM uses the empty-password localhost:2222 account."""
+    if target and target.get("kind") == "box":
+        argv = _ssh_base(target["key"]) + [f"root@{target['ip']}", remote_cmd]
+    else:
+        argv = ["sshpass", "-p", "", "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=6",
+                "-p", "2222", "root@localhost", remote_cmd]
+    try:
+        return subprocess.run(argv, input=input_data, capture_output=True, text=True, timeout=timeout)
+    except Exception as ex:
+        return subprocess.CompletedProcess(argv, 1, "", str(ex))
+
+
+def _backend_onion(target):
+    """The backend's .onion for the always-available Tor restore channel (transport-independent, like
+    the old addremove backstop) — live from the box, or the VM's published HS."""
+    if target and target.get("kind") == "box":
+        if target.get("onion"):
+            return target["onion"]
+        o = (_backend_ssh_run(target, "cat /var/lib/tor/hidden_service/hostname", timeout=20).stdout or "").strip()
+        return o if o.endswith(".onion") else ""
+    return _get_onion(retries=3)
+
+
+def _snapshot_backend(target):
+    """Read the backend's mutable SP state. Returns {present, sha, raw, modules:{id:enabled}, users_n}.
+    `raw` is kept in memory for restore only — NEVER recorded/persisted (it holds hashedPassword etc.)."""
+    r = _backend_ssh_run(target, "cat /etc/nixos/userdata.json", timeout=30)
+    raw = r.stdout or ""
+    present = (r.returncode == 0) and raw.strip().startswith("{")
+    modules, users_n, sha = {}, None, None
+    if present:
+        try:
+            d = json.loads(raw)
+            modules = {k: bool((v or {}).get("enable")) for k, v in (d.get("modules") or {}).items()}
+            users_n = len(d.get("users") or [])
+            sha = hashlib.sha256(raw.encode()).hexdigest()[:16]
+        except Exception:
+            present = False
+    return {"present": present, "sha": sha, "raw": raw if present else "",
+            "modules": modules, "users_n": users_n}
+
+
+def _set_service_enabled(target, token, service_id, enable):
+    """Flip a service's enabled state via the enable/disableService mutation over the backend's Tor
+    onion (SOCKS) — the proven channel that also triggers the real rebuild. True on GraphQL success."""
+    onion = _backend_onion(target)
+    if not onion:
+        return False
+    mut = "enableService" if enable else "disableService"
+    q = ('{"query":"mutation{ services{ %s(serviceId:\\"%s\\")'
+         '{ success message } } }"}' % (mut, service_id))
+    socks = (target or {}).get("socks") or 9050
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "--socks5-hostname", f"127.0.0.1:{socks}", "-k",
+             "-H", f"Authorization: Bearer {token}", "-H", "Content-Type: application/json",
+             "-d", q, f"https://{onion}/graphql"],
+            capture_output=True, text=True, timeout=90).stdout or ""
+        return '"success":true' in out.replace(" ", "")
+    except Exception:
+        return False
+
+
+def _restore_backend(pre, post, target, token):
+    """Restore the backend to the pre-flow snapshot. Hybrid: service-enable diffs via GraphQL mutation
+    (authoritative, triggers the rebuild), then a userdata.json file-restore fallback for any remaining
+    non-service fields (users/dns/server — the API reads these from the file; deeper systemd/home-dir
+    effects apply on the next rebuild, see L3_STATE_UNCOVERED). Returns a list of what it restored."""
+    if not (pre.get("present") and post.get("present")):
+        return ["(skipped: userdata.json unreadable pre or post)"]
+    if post["sha"] == pre["sha"]:
+        return []
+    restored = []
+    pm, qm = pre["modules"], post["modules"]
+    for sid in sorted(set(pm) | set(qm)):
+        want = pm.get(sid, False)            # services present in post but not pre → disable (want=False)
+        have = qm.get(sid, False)
+        if want != have:
+            ok = _set_service_enabled(target, token, sid, want)
+            restored.append(f"service:{sid}->{'enabled' if want else 'disabled'}"
+                            + ("" if ok else " (mutation FAILED)"))
+    # File-level fallback: re-read; if userdata still differs (non-service fields), write pre back.
+    post2 = _snapshot_backend(target)
+    if post2.get("present") and post2["sha"] != pre["sha"]:
+        w = _backend_ssh_run(target, "cat > /etc/nixos/userdata.json", input_data=pre["raw"], timeout=30)
+        restored.append("userdata.json (file-restored; non-service fields apply on next rebuild)"
+                        if w.returncode == 0 else "userdata.json file-restore FAILED")
+    return restored
+
+
+def _l3_baseline_path(state_key, setup):
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{state_key or 'unknown'}__{setup or 'unknown'}")
+    return os.path.join(ROOT, "state", "l3_baseline", safe + ".json")
+
+
+def _l3_baseline(state_key, setup, pre):
+    """Compare the pre-flow snapshot to the captured golden baseline for this (state, setup). Returns
+    (match, drift_summary). Auto-captures the golden from `pre` if none exists (loud log) — valid only
+    when the backend was freshly (re)installed before the first flow; re-bless via `dash l3-baseline`.
+    The golden stores only sha + the modules/users summary (no secrets)."""
+    if not pre.get("present"):
+        return True, "(backend state unreadable — baseline not evaluated)"
+    p = _l3_baseline_path(state_key, setup)
+    golden = None
+    if os.path.exists(p):
+        try:
+            golden = json.load(open(p))
+        except Exception:
+            golden = None
+    if golden is None:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        json.dump({"sha": pre.get("sha"), "modules": pre.get("modules"), "users_n": pre.get("users_n"),
+                   "setup": setup, "state_key": state_key, "captured": now_iso()}, open(p, "w"), indent=1)
+        print(f"{AMBER}l3-baseline{OFF} captured golden for {state_key}/{setup} from the current "
+              f"pre-flow state — assumes the backend was freshly installed. Re-bless after a reinstall "
+              f"with {CYAN}./dash l3-baseline capture --on {setup} …{OFF}")
+        return True, "golden auto-captured from this pre-state"
+    if golden.get("sha") == pre.get("sha"):
+        return True, ""
+    drift, gm, nm = [], golden.get("modules") or {}, pre.get("modules") or {}
+    for sid in sorted(set(gm) | set(nm)):
+        if gm.get(sid) != nm.get(sid):
+            drift.append(f"{sid}: baseline={gm.get(sid)} now={nm.get(sid)}")
+    if golden.get("users_n") != pre.get("users_n"):
+        drift.append(f"users: baseline={golden.get('users_n')} now={pre.get('users_n')}")
+    if not drift:
+        drift.append("userdata.json differs in fields outside modules/users")
+    return False, "; ".join(drift)
+
+
 def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="providers", retries=None,
-                   target=None):
+                   target=None, state_key=None):
     """Run an AUTOMATED L3 desktop flow test, recorded, over transport `net`
     (tor | chutney | https). `flow` selects which dashboard-owned test to run
     (flutter/<flow>_flow_test.dart — providers/connect/login/services/nextcloud/menus/addremove).
@@ -1684,6 +1872,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
     is_box = bool(target and target.get("kind") == "box")
     setup = (target or {}).get("setup") or "vm-local"
     rec = None
+    pre_state, base_match, base_drift = None, True, ""   # per-flow clean-state baseline (req 90)
     app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
     test_src = os.path.join(ROOT, "flutter", f"{flow}_flow_test.dart")
     if not os.path.exists(test_src):
@@ -1786,6 +1975,14 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         # force a specific attempt count (e.g. retries=1 for MUTATING flows like addremove, where a
         # blind re-run would re-trigger the backend mutation and confuse the service state).
         max_attempts = retries if retries else (3 if is_tor else 1)
+        # Snapshot the backend's mutable SP state BEFORE the flow, and flag drift vs the known-clean
+        # golden baseline — so a result reflects the code, not leftover state (req 90). Restored in
+        # `finally`. Target-aware (VM or box).
+        pre_state = _snapshot_backend(target)
+        base_match, base_drift = _l3_baseline(state_key, setup, pre_state)
+        if not base_match:
+            print(f"{AMBER}l3-baseline drift{OFF}  {flow}/{setup}: pre-flow backend ≠ golden "
+                  f"({base_drift}) — the result may reflect leftover state, not code.")
         for attempt in range(1, max_attempts + 1):
             rec = run_entry(entry, net=net, method=setup, record=True, shots=True)
             if not rec or rec.get("status") == "pass":
@@ -1821,42 +2018,25 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
             pass
         for f, content in backup.items():
             open(os.path.join(app, f), "w").write(content)
-        # addremove MUTATES the shared backend (disables a service in userdata). Re-enable it over the
-        # always-available real Tor onion so the backend is left clean for the other flows. The
-        # backstop currently targets the VM's onion/dev-token; for a box it would hit the wrong
-        # backend, so skip it there — the universal per-flow snapshot/restore (Track 2 item 1b) will
-        # replace this with a target-aware restore.
-        if flow == "addremove" and not is_box:
-            _reenable_service("jitsi-meet")
-        elif flow == "addremove" and is_box:
-            print(f"{AMBER}addremove backstop skipped for box {setup}{OFF} — target-aware restore "
-                  f"lands in Track 2 item 1b; re-enable the service manually if needed.")
+        # Restore the backend's mutable SP state so the next flow starts from the same clean baseline
+        # (generalises the old addremove-only _reenable_service backstop to EVERY flow, both toggle
+        # directions, and file-level fields — and it's target-aware: VM or box). What it can't cover is
+        # logged, never silently dropped (req 90).
+        if pre_state is not None:
+            try:
+                post_state = _snapshot_backend(target)
+                restored = _restore_backend(pre_state, post_state, target, token)
+                if restored:
+                    print(f"{GREY}backend restore ({setup}): {', '.join(restored)}{OFF}")
+                    print(f"{GREY}  NOT covered by snapshot/restore: {'; '.join(L3_STATE_UNCOVERED)}{OFF}")
+                if rec:
+                    mark_record(rec["run_id"], l3_baseline_match=base_match, l3_baseline_drift=base_drift,
+                                l3_restored=restored, l3_pre_sha=pre_state.get("sha"),
+                                l3_post_sha=post_state.get("sha"),
+                                l3_state_uncovered=(L3_STATE_UNCOVERED if restored else []))
+            except Exception as e:
+                print(f"{AMBER}backend snapshot/restore failed ({setup}): {e}{OFF}")
     return rec
-
-
-def _reenable_service(service_id):
-    """Re-enable a service via the enableService mutation over the real Tor onion (SOCKS 9050),
-    which is always up regardless of the transport under test. Best-effort backstop for addremove."""
-    try:
-        # Read the onion LIVE from the backend (authoritative), not a stale /tmp file that could
-        # point at a previous box. Fall back to /tmp only if the live read fails, and say so.
-        onion = _get_onion(retries=3) or ""
-        if not onion and os.path.exists("/tmp/onion.txt"):
-            onion = open("/tmp/onion.txt").read().strip()
-            print(f"{AMBER}addremove backstop: live onion unavailable, using possibly-stale /tmp/onion.txt{OFF}")
-        if not onion:
-            print(f"{AMBER}addremove backstop: no tor onion known, skipping re-enable{OFF}")
-            return
-        q = ('{"query":"mutation{ services{ enableService(serviceId:\\"%s\\")'
-             '{ success message } } }"}' % service_id)
-        out = subprocess.run(
-            ["curl", "-s", "--socks5-hostname", "127.0.0.1:9050", "-k",
-             "-H", f"Authorization: Bearer {DEV_TOKEN}", "-H", "Content-Type: application/json",
-             "-d", q, f"https://{onion}/graphql"],
-            capture_output=True, text=True, timeout=90).stdout
-        print(f"{GREY}addremove backstop: re-enabled {service_id} → {out[:160]}{OFF}")
-    except Exception as e:
-        print(f"{AMBER}addremove backstop failed for {service_id}: {e}{OFF}")
 
 
 def cmd_here(args):
@@ -2062,6 +2242,14 @@ def main():
     vb.add_argument("--ip", required=True, help="deployed box IP to check")
     vb.add_argument("--key", help="ssh private key path")
     vb.set_defaults(fn=cmd_verify_box)
+
+    lb = sub.add_parser("l3-baseline", help="capture/show the known-clean golden backend baseline for an L3 setup")
+    lb.add_argument("action", nargs="?", choices=["capture", "show"], default="capture")
+    lb.add_argument("--on", required=True, help="setup: vm-local|lan-setup-0a..0d|lan-setup-1|lan-setup-2|usb-0a..0c")
+    lb.add_argument("--ip", help="box IP (required for a box setup)")
+    lb.add_argument("--key", help="ssh private key path (required for a box setup)")
+    lb.add_argument("--token", help="box API token (required for a box setup)")
+    lb.set_defaults(fn=cmd_l3_baseline)
 
     s = sub.add_parser("serve")
     s.add_argument("port", nargs="?", type=int, default=8099)
