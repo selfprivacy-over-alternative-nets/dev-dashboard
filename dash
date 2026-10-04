@@ -948,7 +948,8 @@ def cmd_serve(args):
             self.send_header("Expires", "0")
             super().end_headers()
 
-    print(f"Dashboard: http://localhost:{port}/   (bind {host}; Ctrl+C to stop)")
+    print(f"Dashboard:    http://localhost:{port}/   (bind {host}; Ctrl+C to stop)")
+    print(f"Test matrix:  http://localhost:{port}/matrix.html")
     http.server.HTTPServer((host, port), NoCacheHandler).serve_forever()
 
 
