@@ -197,12 +197,29 @@ def project_repo_states(names=None):
     return out
 
 
-def resolve_lock(extra_env=None):
-    """The flake.lock governing THIS run's deploy: $FLAKE/flake.lock when --env FLAKE=… was
-    passed (installs deploy that flake), else catalog.pins_lock (the backend flake)."""
+def _self_contained(entry):
+    """A test that builds its OWN flake (spins its own throwaway VM) instead of deploying to a
+    box — an L2-style nixosTest. Its own flake.lock (not the backend's) is what pins the api /
+    manager / nixpkgs it actually builds."""
+    return bool(entry.get("cmd_by_net")) or entry.get("method") == "test-vm"
+
+
+def resolve_lock(extra_env=None, entry=None):
+    """The flake.lock that actually governs THIS run's build/deploy:
+      1. $FLAKE/flake.lock when --env FLAKE=… (installs deploy that flake);
+      2. a self-contained nixosTest's OWN flake.lock (its repo/cwd flake.lock) — e.g. L2 builds
+         the `selfprivacy-tor-tests` flake, whose lock (NOT the backend flake) pins the api /
+         manager / nixpkgs under test. Using it makes flake_pins + the pin gate check the right
+         lock, so a stale test lock can no longer record a false pass;
+      3. else catalog.pins_lock (the backend flake)."""
     for kv in (extra_env or []):
         if kv.startswith("FLAKE="):
             return os.path.join(kv.split("=", 1)[1], "flake.lock")
+    if entry is not None and _self_contained(entry):
+        rd = os.path.normpath(os.path.join(ROOT, entry.get("cwd") or entry.get("repo") or "."))
+        cand = os.path.join(rd, "flake.lock")
+        if os.path.exists(cand):
+            return cand
     try:
         rel = load_catalog().get("pins_lock")
     except Exception:
@@ -222,44 +239,53 @@ def flake_pins(lock_path=None):
     except Exception:
         return {}
     pins = {}
-    for k in ("selfprivacy-api", "nixpkgs"):
+    for k in ("selfprivacy-api", "nixpkgs", "manager"):
         rev = ((d.get("nodes", {}).get(k, {}) or {}).get("locked", {}) or {}).get("rev")
         if rev:
             pins[k] = rev[:12]
     return pins
 
 
-def api_pin_mismatch(lock_path=None):
-    """None if the local selfprivacy-api checkout CORRESPONDS to the deployed flake.lock pin,
-    else a dict describing the mismatch. 'Corresponds' = local HEAD == pinned rev AND clean.
-    Returns None when not configured/checkable, so it never blocks api-less setups."""
-    if lock_path is None:
-        lock_path = resolve_lock(None)
+def lock_input_mismatch(lock_path, node_name, repo_name):
+    """None if the local <repo_name> checkout CORRESPONDS to the <node_name> rev pinned in
+    lock_path, else a dict describing the mismatch. 'Corresponds' = local HEAD == pinned rev AND
+    clean. Returns None when not configured/checkable (e.g. the lock doesn't pin that input), so
+    it never blocks inputs this lock doesn't govern."""
+    if not lock_path or not os.path.exists(lock_path):
+        return None
     try:
-        api_rel = (load_catalog().get("project_repos") or {}).get("api")
+        rel = (load_catalog().get("project_repos") or {}).get(repo_name)
     except Exception:
-        api_rel = None
-    if not api_rel or not lock_path or not os.path.exists(lock_path):
+        rel = None
+    if not rel:
         return None
-    api = os.path.normpath(os.path.join(ROOT, api_rel))
-    if not _is_git(api):
+    repo = os.path.normpath(os.path.join(ROOT, rel))
+    if not _is_git(repo):
         return None
     try:
-        head = subprocess.check_output(["git", "-C", api, "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+        head = subprocess.check_output(["git", "-C", repo, "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
         lock = json.load(open(lock_path))
     except Exception:
         return None
-    pin = ((lock.get("nodes", {}).get("selfprivacy-api", {}) or {}).get("locked", {}) or {}).get("rev")
+    pin = ((lock.get("nodes", {}).get(node_name, {}) or {}).get("locked", {}) or {}).get("rev")
     if not pin:
         return None
-    dirty = bool(subprocess.run(["git", "-C", api, "status", "--porcelain"], capture_output=True).stdout.strip())
+    dirty = bool(subprocess.run(["git", "-C", repo, "status", "--porcelain"], capture_output=True).stdout.strip())
     if head != pin:
-        return {"kind": "rev", "pin": pin[:12], "checkout": head[:12],
-                "msg": f"flake.lock pins selfprivacy-api @ {pin[:12]} but the local api checkout is @ {head[:12]}"}
+        return {"kind": "rev", "input": node_name, "pin": pin[:12], "checkout": head[:12],
+                "msg": f"flake.lock pins {node_name} @ {pin[:12]} but the local {repo_name} checkout is @ {head[:12]}"}
     if dirty:
-        return {"kind": "dirty", "pin": pin[:12], "checkout": head[:12],
-                "msg": f"selfprivacy-api checkout @ {head[:12]} matches the pin but has UNCOMMITTED changes (the deploy builds the committed pin, not your edits)"}
+        return {"kind": "dirty", "input": node_name, "pin": pin[:12], "checkout": head[:12],
+                "msg": f"{repo_name} checkout @ {head[:12]} matches the pin but has UNCOMMITTED changes (the build uses the committed pin, not your edits)"}
     return None
+
+
+def api_pin_mismatch(lock_path=None):
+    """None if the local selfprivacy-api checkout corresponds to the flake.lock api pin, else a
+    mismatch dict. Thin wrapper over lock_input_mismatch; kept for existing callers."""
+    if lock_path is None:
+        lock_path = resolve_lock(None)
+    return lock_input_mismatch(lock_path, "selfprivacy-api", "api")
 
 
 def _env_get(extra_env, key):
@@ -605,10 +631,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     method_tag = method or entry.get("method", "-")
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
-    _lock = resolve_lock(extra_env)
+    _lock = resolve_lock(extra_env, entry)
     _repos = project_repo_states(entry_repos(entry))   # only the repos this test depends on
     _pins = flake_pins(_lock)
     _mm = api_pin_mismatch(_lock)
+    _mm_mgr = lock_input_mismatch(_lock, "manager", "manager")   # self-contained test flakes pin manager too
+    _pin_problems = [m for m in (_mm, _mm_mgr) if m]
     _dirty_repos = [r["name"] for r in _repos if r.get("dirty")]
     _pr = (load_catalog().get("project_repos") or {})
     _drift = []
@@ -626,7 +654,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if _dirty_repos else ""),
-        "repos": _repos, "pins": _pins, "pin_mismatch": _mm, "state_hash": _state_hash,
+        "repos": _repos, "pins": _pins, "pin_mismatch": _mm or _mm_mgr, "state_hash": _state_hash,
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
@@ -643,12 +671,15 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         print(f"  commit/sync them so every run shares one state, or pass --allow-dirty.")
         return None
 
-    # Pin gate: the deploy builds the selfprivacy-api rev PINNED in the flake.lock (of the flake
-    # this run deploys) — not your local api checkout. If they differ the run wouldn't exercise
-    # your api code, so the result would be mislabelled. Refuse unless --allow-dirty.
-    if entry.get("category") in ("test", "install") and _mm and not allow_dirty:
-        print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {_mm['msg']}.")
-        print(f"  bump the flake input to match (nix flake lock / update the follows) or check out the pinned rev; or pass --allow-dirty.")
+    # Pin gate: the build/deploy uses the revs PINNED in the flake.lock (of the flake this run
+    # actually builds — for a self-contained L2 test that's its OWN tests flake, not the backend)
+    # — not your local checkouts. If a pinned input (api OR manager) differs from its checkout the
+    # run wouldn't exercise your code, so the result would be mislabelled. Refuse unless
+    # --allow-dirty. (This is what catches a stale test flake.lock cache-hitting an old build.)
+    if entry.get("category") in ("test", "install") and _pin_problems and not allow_dirty:
+        for m in _pin_problems:
+            print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {m['msg']}.")
+        print(f"  bump the flake input to match (`nix flake update` in the flake under test) or check out the pinned rev; or pass --allow-dirty.")
         return None
 
     # Box-identity gate: a test that runs against the target must run against a box deployed from
@@ -760,6 +791,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         run_env["SHOT_DIR"] = shot_dir
         run_env["SHOT_SIZE"] = "1280x800"
     start = datetime.datetime.now()
+    out_lines = 0
     with open(log_path, "w") as log:
         log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
         log.flush()
@@ -769,6 +801,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             for line in proc.stdout:
                 sys.stdout.write(line)
                 log.write(line)
+                out_lines += 1
             proc.wait()
             code = proc.returncode
         except KeyboardInterrupt:
@@ -787,14 +820,22 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     screenshots = collect_screenshots(shot_dir)
     if shots:
         print(f"{GREY}captured {len(screenshots)} step screenshot(s){OFF}")
+    # Cache-hit: a self-contained nix build that produced NO output + exit 0 means nix found the
+    # derivation's output already in the store and reran nothing (no VM booted). It's still a
+    # valid pass for the CURRENT inputs (nix is content-addressed, and the pin gate above proved
+    # the lock matches the checkouts) — but flag it so a sub-second "pass" is transparent, not
+    # mistaken for a fresh VM run.
+    from_cache = bool(_self_contained(entry)) and code == 0 and out_lines == 0
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
-           "error": err, "log_path": os.path.relpath(log_path, ROOT),
+           "error": err, "from_cache": from_cache, "log_path": os.path.relpath(log_path, ROOT),
            "artifacts": {"client_log": os.path.relpath(log_path, ROOT),
                          "server_log": server_log_path, "video": video,
                          "screenshots": screenshots}}
     append_record(rec)
     col = {"pass": GREEN, "slow": AMBER, "fail": RED}.get(status, GREY)
     print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
+    if from_cache:
+        print(f"{GREY}  (cached: nix reused a prior build of this exact derivation — no VM ran this time){OFF}")
     return rec
 
 

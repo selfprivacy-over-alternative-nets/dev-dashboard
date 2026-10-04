@@ -391,7 +391,7 @@
     c.runs.forEach((r, i) => {
       h += `<details class="run" ${i === 0 ? "open" : ""} data-run="${idx}:${i}">` +
         `<summary><span class="dot ${statusClass(r.status)}"></span><b>${esc(r.status)}</b>` +
-        `<span class="rmeta">${esc(r.ts)} · ${esc(relTime(r.ts))} · ${esc(r.duration_s)}s · exit ${esc(r.exit_code)} · ${esc(r.host || "")}</span></summary>` +
+        `<span class="rmeta">${esc(r.ts)} · ${esc(relTime(r.ts))} · ${esc(r.duration_s)}s · exit ${esc(r.exit_code)}${r.from_cache ? " · ⚡cached" : ""} · ${esc(r.host || "")}</span></summary>` +
         `<div class="rbody">${r.error ? `<div class="err">${esc(r.error)}</div>` : ""}<div class="lazy muted">opening…</div></div></details>`;
     });
     const db = $("#dbody"); db.innerHTML = h;
