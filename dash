@@ -1465,13 +1465,26 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         ensure_integration_dep(app)
         os.makedirs(itdir, exist_ok=True)
         shutil.copy(test_src, injected)
-        print(f"{GREY}flutter pub get (resolving integration_test)…{OFF}")
-        _sh(f"cd '{app}' && flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get", timeout=600)
+        # Use the app flake's PINNED flutter (flutter332 — pubspec wants >=3.32.0 <3.33.0), NOT the
+        # system flutter (which may be newer and would silently re-resolve pubspec.lock → the app
+        # under test ≠ the committed deps). --enforce-lockfile makes pub REFUSE to change the lock:
+        # with the pinned toolchain it matches and nothing drifts; if it ever can't, it fails LOUD
+        # (detection) instead of testing unknown deps. So L3 "just runs" and stays honest.
+        print(f"{GREY}flutter pub get --enforce-lockfile (pinned flutter via the app flake)…{OFF}")
+        _pg = _sh(f"cd '{app}' && nix develop -c bash -c 'export FLUTTER_SUPPRESS_ANALYTICS=true; flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get --enforce-lockfile'", timeout=1800)
+        if _pg.returncode != 0:
+            print(f"{RED}pub get --enforce-lockfile FAILED{OFF}  L3.{flow}.desktop — the committed "
+                  f"pubspec.lock does not match what the pinned flutter resolves.")
+            print(f"  The app under test would NOT be the committed deps, so refusing to run (not a "
+                  f"target failure). Fix: regenerate the lock WITH the pinned toolchain")
+            print(f"  (cd '{app}' && nix develop -c flutter pub get) and commit it to the app fork, "
+                  f"then bump the Manager submodule pointer.")
+            return
         entry = {
             "id": f"L3.{flow}.desktop", "name": flow, "level": "L3",
             "client": "desktop", "networks": [net], "repo": FLUTTER_APP_DIR,
-            "budget_s": 600, "records_video": True,
-            "cmd": f"flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
+            "budget_s": 600, "records_video": True, "env": {"FLUTTER_SUPPRESS_ANALYTICS": "true"},
+            "cmd": f"nix develop -c flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
             "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
                               "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
         }
