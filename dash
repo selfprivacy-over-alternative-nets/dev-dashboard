@@ -439,10 +439,12 @@ def mark_record(run_id, **fields):
     open(DATA, "w").write("\n".join(out) + "\n")
 
 
-def repos_behind_upstream(repos):
+def repos_behind_upstream(repos, fetch=False):
     """{name: n} for each repo whose local HEAD is n commits BEHIND its tracked upstream (0 omitted).
-    Offline-safe: compares to the last-fetched remote-tracking ref (no network). Catches testing a
-    stale checkout while believing it's the latest code."""
+    With fetch=True, refresh the remote-tracking ref first (best-effort, short timeout) so the count
+    reflects the TRUE latest — not a stale last-fetch. Offline: the fetch is skipped and the compare
+    falls back to the last-known upstream (so a confirmed-behind still trips; an unverifiable one
+    doesn't). Catches testing a stale checkout while believing it's the latest code."""
     try:
         pr = (load_catalog().get("project_repos") or {})
     except Exception:
@@ -453,6 +455,12 @@ def repos_behind_upstream(repos):
         if not rel:
             continue
         repo = os.path.normpath(os.path.join(ROOT, rel))
+        if fetch:
+            try:
+                subprocess.run(["git", "-C", repo, "fetch", "--quiet"], timeout=30,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
         try:
             n = subprocess.check_output(["git", "-C", repo, "rev-list", "--count", "HEAD..@{u}"],
                                         stderr=subprocess.DEVNULL).decode().strip()
@@ -690,7 +698,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     run_id = gen_run_id()
     _lock = resolve_lock(extra_env, entry)
     _repos = project_repo_states(entry_repos(entry))   # only the repos this test depends on
-    _behind = repos_behind_upstream(_repos)            # testing a stale checkout? (warn, don't block)
+    _behind = repos_behind_upstream(_repos, fetch=True)   # testing a stale checkout? (gated below)
     _pins = flake_pins(_lock)
     _mm = api_pin_mismatch(_lock)
     _mm_mgr = lock_input_mismatch(_lock, "manager", "manager")   # self-contained test flakes pin manager too
@@ -718,12 +726,14 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
 
-    # Stale-checkout warning (not a block): a repo behind its upstream means you're testing OLD code
-    # while likely believing it's the latest. Recorded in `behind_upstream` too.
-    if _behind:
-        print(f"{AMBER}behind upstream{OFF}  {entry['id']} — local checkout is behind: " +
-              ", ".join(f"{k} by {v}" for k, v in _behind.items()) +
-              f". You may be testing non-latest code ({CYAN}git pull{OFF} to test the newest).")
+    # Stale-checkout gate: a repo BEHIND its (freshly-fetched) upstream means you'd test OLD code
+    # while believing it's the latest — refuse, since tests only ever run against the newest committed
+    # code. Recorded in `behind_upstream`. Bypass with --allow-dirty (then it's flagged as forced).
+    if entry.get("category") in ("test", "install") and _behind and not allow_dirty:
+        print(f"{RED}behind-upstream{OFF}  {entry['id']} — local checkout is behind: " +
+              ", ".join(f"{k} by {v}" for k, v in _behind.items()) + ".")
+        print(f"  you'd be testing non-latest code. {CYAN}git pull{OFF} in each, or pass --allow-dirty.")
+        return None
 
     # Clean-state gate: run tests/installs only on committed code so every run on a state shares
     # it. Checks ALL repos the test uses (so e.g. a dirty app checkout for an L3 run is caught —
@@ -918,6 +928,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             _forced.append("dirty:" + ",".join(_dirty_repos))
         if _drift:
             _forced.append("submodule-drift")
+        if _behind:
+            _forced.append("behind-upstream")
         if _pin_problems:
             _forced.append("pin-mismatch")
         if base.get("box_stale"):
