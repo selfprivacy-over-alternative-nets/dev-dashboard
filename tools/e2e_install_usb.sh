@@ -51,6 +51,24 @@ PY
   fi
 }
 
+# wifi setups (usb-0b/0c) need a wifi spec; confirm the SSID is in range without disturbing the
+# current connection (scan only). Internet-through-it can't be checked without connecting.
+wifi_preflight(){
+  [ -n "${WIFI_SSID:-}" ] || return 0
+  if command -v nmcli >/dev/null 2>&1; then
+    if nmcli -t -f SSID dev wifi list 2>/dev/null | grep -qxF "$WIFI_SSID"; then
+      echo "   wifi '$WIFI_SSID' is in range ✓ (internet via it not verified — that needs connecting)"
+    else
+      echo "   ⚠ wifi '$WIFI_SSID' is NOT visible in a scan — aborting."; return 1
+    fi
+  else
+    echo "   (nmcli unavailable — cannot scan for wifi '$WIFI_SSID'; skipping check)"
+  fi
+}
+
+say "0. preflight — setup availability (USB + wifi spec)"
+wifi_preflight || exit 1
+
 say "1. prepare the bootable installer USB on THIS device"
 echo ">>> Insert a USB stick into THIS laptop now (its contents will be ERASED)."
 read -r -p "Press ENTER when the USB is inserted (Ctrl-C to abort) ... " _ || true
@@ -66,6 +84,11 @@ echo "   ISO: $ISO"
 echo "Block devices (pick the USB — NOT your system disk):"
 lsblk -dpno NAME,SIZE,MODEL,TRAN 2>/dev/null | sed 's/^/   /'
 : "${USB_DEV:?set USB_DEV=/dev/sdX — the USB device to WRITE (this ERASES it); then re-run.}"
+[ -b "$USB_DEV" ] || { echo "USB_DEV '$USB_DEV' is not a block device — is the USB inserted? aborting."; exit 1; }
+if [ "$(lsblk -no NAME "$USB_DEV" 2>/dev/null | tail -n +2 | wc -l)" -gt 0 ]; then
+  echo "   note: $USB_DEV already has partitions (they will be erased)."
+  [ "${EMPTY_REQUIRED:-0}" = 1 ] && { echo "   EMPTY_REQUIRED=1 and the USB is not empty — aborting."; exit 1; }
+fi
 echo "About to ERASE ${USB_DEV} and write ${ISO}."
 read -r -p "Re-type the device path to confirm: " _c || true
 [ "${_c:-}" = "$USB_DEV" ] || { echo "confirmation mismatch — aborting."; exit 1; }

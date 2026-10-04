@@ -64,6 +64,23 @@ PY
   fi
 }
 
+# Setup-availability preflight for wifi setups (lan-setup-0b/0c/0d): a wifi spec must be given,
+# and we confirm the SSID is in range WITHOUT disturbing the current connection (scan only).
+# Internet-through-that-wifi can't be verified without connecting, so we don't.
+wifi_preflight(){
+  [ -n "${WIFI_SSID:-}" ] || return 0   # no wifi spec → non-wifi setup, nothing to check
+  if command -v nmcli >/dev/null 2>&1; then
+    if nmcli -t -f SSID dev wifi list 2>/dev/null | grep -qxF "$WIFI_SSID"; then
+      echo "   wifi '$WIFI_SSID' is in range ✓ (internet via it not verified — that needs connecting)"
+    else
+      echo "   ⚠ wifi '$WIFI_SSID' is NOT visible in a scan — the target likely can't use it. Aborting."
+      return 1
+    fi
+  else
+    echo "   (nmcli unavailable — cannot scan for wifi '$WIFI_SSID'; skipping check)"
+  fi
+}
+
 # Scan the LAN(s) this laptop is on for the target's NIC MAC and echo its IP ("" if not found).
 # Populates the neighbour table with a backgrounded ping sweep over each connected RFC1918 /24
 # (plus the direct-cable netboot subnet 192.168.100.0/24), then matches MAC in `ip neigh`.
@@ -147,7 +164,8 @@ else
   : "${WAIT_TARGET_S:=20}"
 fi
 
-say "0. preflight — target reachable over LAN (network mode)?"
+say "0. preflight — wifi spec (if any) + target reachable over LAN (network mode)?"
+wifi_preflight || exit 1
 _deadline=$((SECONDS + WAIT_TARGET_S)); _t0=$SECONDS
 until ssh_ok "$IP" || [ $SECONDS -ge $_deadline ]; do
   echo "   ... waiting for target at root@$IP (or MAC $MAC on the LAN) — $((SECONDS-_t0))s/${WAIT_TARGET_S}s  (Ctrl-C to abort)"
