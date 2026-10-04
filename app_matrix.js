@@ -41,7 +41,9 @@
       return `./dash run ${e.id} --on ${setup} --ip <box-ip> --env NETBOOT=<auto|off> --env TRANSPORT=<https|onion|none> --env FLAKE=<flake> --env MAC=<mac> --env KEY=<ssh-key> --env DOMAIN=<domain>`;
     let c = `./dash run ${e.id}`;
     if (net) c += ` --net ${net}`;
-    if (setup && setup !== "<setup>") c += ` --on ${setup}`;
+    // "test-vm" is a self-contained nixosTest's intrinsic method, not a setup you pass; only
+    // emit --on for real deploy setups so the hover command is the exact minimal working one.
+    if (setup && setup !== "<setup>" && setup !== "test-vm") c += ` --on ${setup}`;
     if (needsBox(e)) c += ` --ip <box-ip> --env KEY=<ssh-key>`;
     return c;
   }
