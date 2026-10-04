@@ -32,7 +32,17 @@
   const hostOf = (r) => (r.env === "ci" ? "ci" : "local");
   const netOf = (r) => (!r.transport || r.transport === "-" ? "" : r.transport);
 
-  let MODEL = null, SEL = null, CELLS = [];
+  let MODEL = null, SEL = null, CELLS = [], CAT = {};
+  const needsBox = (e) => e.level === "L2" || e.level === "L3";
+  function cmdFor(e, net, setup) {
+    if (e.category === "install" || e.level === "install")
+      return `./dash run ${e.id} --on ${setup} --ip <box-ip> --env NETBOOT=<auto|off> --env TRANSPORT=<https|onion|none> --env FLAKE=<flake> --env MAC=<mac> --env KEY=<ssh-key> --env DOMAIN=<domain>`;
+    let c = `./dash run ${e.id}`;
+    if (net) c += ` --net ${net}`;
+    if (setup && setup !== "<setup>") c += ` --on ${setup}`;
+    if (needsBox(e)) c += ` --ip <box-ip> --env KEY=<ssh-key>`;
+    return c;
+  }
 
   async function fetchFirst(paths) {
     for (const p of paths) {
@@ -42,12 +52,17 @@
   }
 
   async function load() {
-    const resTxt = await fetchFirst(["testresults/results.jsonl", "data/results.jsonl"]);
+    const [catTxt, resTxt] = await Promise.all([
+      fetchFirst(["catalog.json"]),
+      fetchFirst(["testresults/results.jsonl", "data/results.jsonl"]),
+    ]);
+    try { CAT = JSON.parse(catTxt || "{}"); } catch (e) { CAT = {}; }
     const recs = resTxt.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
     MODEL = build(recs);
     renderStates();
+    // Always show the catalog overview (every test as TODO). A selected state overlays its results.
     if (MODEL.states.length) selectState(MODEL.states[0]);
-    else $("#matrix").innerHTML = '<p class="muted" style="padding:16px">No results yet. Run a test, then <code>./dash publish</code>.</p>';
+    else { SEL = null; renderTop(); renderMatrix(); }
   }
 
   // Each run records the state of ALL config repos in `repos[]` (name/branch/commit/dirty/diff).
@@ -95,6 +110,7 @@
 
   function renderStates() {
     const host = $("#commits"); host.innerHTML = "";
+    if (!MODEL.states.length) { const d = document.createElement("div"); d.className = "repo"; d.textContent = "no runs yet — grid shows todo"; host.appendChild(d); return; }
     for (const s of MODEL.states) {
       const el = document.createElement("div");
       el.className = "commit"; el.dataset.key = s.key;
@@ -137,7 +153,17 @@
   }
 
   function renderTop() {
-    const s = SEL, top = $("#top"); top.innerHTML = "";
+    const top = $("#top"); top.innerHTML = "";
+    if (!SEL) {
+      const m = document.createElement("span"); m.className = "subj";
+      m.textContent = "Overview — no runs recorded yet; every applicable cell is ☐ todo (hover a cell for its command). Run tests, then pick a state on the left.";
+      top.append(m);
+      const lg0 = document.createElement("span"); lg0.className = "legend";
+      lg0.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
+      top.append(lg0);
+      return;
+    }
+    const s = SEL;
     const chips = document.createElement("span"); chips.className = "chips";
     chips.innerHTML = s.repos.map((x) => `<span class="chip${x.dirty ? " d" : ""}">${esc(x.name)} ${esc(x.branch || "?")}@${esc(x.commit)}</span>`).join(" ");
     top.append(chips);
@@ -170,50 +196,58 @@
       top.append(b);
     }
     const lg = document.createElement("span"); lg.className = "legend";
-    lg.textContent = "🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
+    lg.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
     top.append(lg);
   }
 
   function statusClass(s) { return s === "pass" ? "pass" : s === "fail" ? "fail" : s === "slow" ? "slow" : "na"; }
 
-  function renderMatrix() {
-    const recs = MODEL.byState.get(SEL.key) || [];
-    CELLS = [];
-    // group → test(id) → records
-    const groups = new Map();
-    for (const r of recs) {
-      const g = groupOf(r);
-      if (!groups.has(g)) groups.set(g, new Map());
-      const t = groups.get(g);
-      if (!t.has(r.id)) t.set(r.id, []);
-      t.get(r.id).push(r);
+  // Results for the SELECTED state, indexed by id|net|setup|host. Empty when no state selected.
+  function resultsIndex() {
+    const idx = new Map();
+    if (!SEL) return idx;
+    for (const r of (MODEL.byState.get(SEL.key) || [])) {
+      const k = r.id + "|" + netOf(r) + "|" + (r.method || "") + "|" + hostOf(r);
+      if (!idx.has(k)) idx.set(k, []);
+      idx.get(k).push(r);
     }
-    // setup columns = canonical + any extra method seen (legacy lan-setup-0, usb, …)
-    const extra = [...new Set(recs.map((r) => r.method).filter((m) => m && m !== "-" && !SETUPS.includes(m)))];
+    for (const a of idx.values()) a.sort((x, y) => (y.ts || "").localeCompare(x.ts || ""));
+    return idx;
+  }
+
+  // The matrix is CATALOG-driven: every test is shown as the overview (☐ todo per applicable
+  // network×setup×host), with results from the selected state overlaid on top.
+  function renderMatrix() {
+    CELLS = [];
+    const RES = resultsIndex();
+    const entries = [...(CAT.tests || []), ...(CAT.installs || [])];
+    const seen = SEL ? (MODEL.byState.get(SEL.key) || []) : [];
+    const extra = [...new Set(seen.map((r) => r.method).filter((m) => m && m !== "-" && !SETUPS.includes(m)))];
     const setupCols = [...SETUPS, ...extra];
-
+    const groups = new Map();
+    for (const e of entries) {
+      const g = e.group || e.level || e.category || "misc";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(e);
+    }
     const host = $("#matrix"); host.innerHTML = "";
-    if (!recs.length) { host.innerHTML = '<p class="muted" style="padding:16px">No runs recorded on this commit.</p>'; return; }
-
-    for (const [g, tests] of [...groups.entries()].sort()) {
+    if (!entries.length) { host.innerHTML = '<p class="muted" style="padding:16px">catalog.json has no tests.</p>'; return; }
+    for (const [g, ents] of [...groups.entries()].sort()) {
+      ents.sort((a, b) => a.id.localeCompare(b.id));
       const gd = document.createElement("details"); gd.className = "group"; gd.open = true;
-      const ids = [...tests.keys()];
       const gsum = document.createElement("summary");
-      gsum.innerHTML = `<span class="caret">▶</span><span>${esc(g)}</span><span class="count">${ids.length} test${ids.length === 1 ? "" : "s"}</span>`;
-      const gcmd = mkCmdBtn("run group"); attachCmd(gcmd, `./dash run ${ids.join(" ")}`); gsum.appendChild(gcmd);
+      gsum.innerHTML = `<span class="caret">▶</span><span>${esc(g)}</span><span class="count">${ents.length}</span>`;
+      const gcmd = mkCmdBtn("run group"); attachCmd(gcmd, `./dash run ${ents.map((e) => e.id).join(" ")}`); gsum.appendChild(gcmd);
       gd.appendChild(gsum);
-
-      for (const [id, trecs] of [...tests.entries()].sort()) {
+      for (const e of ents) {
         const td = document.createElement("details"); td.className = "test";
         const tsum = document.createElement("summary");
-        const roll = rollup(trecs);
-        tsum.innerHTML = `<span class="caret">▶</span><span class="tname">${esc(id)}</span>`;
-        const tcmd = mkCmdBtn("run test"); attachCmd(tcmd, `./dash run ${id}`); tsum.appendChild(tcmd);
-        const r = document.createElement("span"); r.className = "roll"; r.innerHTML = roll; tsum.appendChild(r);
+        tsum.innerHTML = `<span class="caret">▶</span><span class="tname">${esc(e.id)}</span>`;
+        const tcmd = mkCmdBtn("run"); attachCmd(tcmd, cmdFor(e, (e.networks || [])[0] || "", "<setup>")); tsum.appendChild(tcmd);
+        const built = buildGrid(e, setupCols, RES);
+        const roll = document.createElement("span"); roll.className = "roll"; roll.innerHTML = built.counts; tsum.appendChild(roll);
         td.appendChild(tsum);
-
-        const wrap = document.createElement("div"); wrap.className = "mtx";
-        wrap.appendChild(buildGrid(id, trecs, setupCols));
+        const wrap = document.createElement("div"); wrap.className = "mtx"; wrap.appendChild(built.el);
         td.appendChild(wrap);
         gd.appendChild(td);
       }
@@ -221,47 +255,39 @@
     }
   }
 
-  function rollup(recs) {
-    let p = 0, f = 0, s = 0;
-    const seen = new Map(); // latest per net|setup|host
-    for (const r of recs) {
-      const k = netOf(r) + "|" + (r.method || "") + "|" + hostOf(r);
-      const cur = seen.get(k);
-      if (!cur || (r.ts || "") > (cur.ts || "")) seen.set(k, r);
-    }
-    for (const r of seen.values()) { if (r.status === "pass") p++; else if (r.status === "fail") f++; else if (r.status === "slow") s++; }
-    return `<span title="pass">🟢${p}</span> <span title="fail">🔴${f}</span> <span title="slow">🟠${s}</span>`;
-  }
-
-  function buildGrid(id, recs, setupCols) {
-    // bucket: net|setup|host → runs[] (newest first)
-    const buckets = new Map();
-    let anyNet = false;
-    for (const r of recs) {
-      const net = netOf(r); if (net) anyNet = true;
-      const k = net + "|" + (r.method || "") + "|" + hostOf(r);
-      if (!buckets.has(k)) buckets.set(k, []);
-      buckets.get(k).push(r);
-    }
-    for (const arr of buckets.values()) arr.sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
-
-    const rows = anyNet ? NETWORKS : [["", "(no network)"]];
+  function buildGrid(e, setupCols, RES) {
+    const supported = new Set(e.networks || []);
+    const hasNet = supported.size > 0;
+    const isInstall = e.category === "install" || e.level === "install";
+    const rows = hasNet ? NETWORKS : [["", isInstall ? "(deploy)" : "(any)"]];
+    let p = 0, f = 0, s = 0, todo = 0;
     const tbl = document.createElement("table"); tbl.className = "grid";
     let head = '<thead><tr><th class="net"></th>';
-    for (const s of setupCols) head += `<th>${esc(s)}</th>`;
+    for (const col of setupCols) head += `<th>${esc(col)}</th>`;
     head += "</tr></thead>";
     let body = "<tbody>";
     for (const [nk, nlabel] of rows) {
       body += `<tr><th class="net">${esc(nlabel)}</th>`;
-      for (const s of setupCols) {
-        body += "<td><span class=\"cell\">";
+      for (const col of setupCols) {
+        body += '<td><span class="cell">';
         for (const [hk, hl] of HOSTS) {
-          const runs = buckets.get(nk + "|" + s + "|" + hk) || [];
-          if (!runs.length) { body += `<span class="dot na" title="${esc(hl)}: N/A"></span>`; continue; }
-          const idx = CELLS.push({ id, net: nk, setup: s, host: hk, runs }) - 1;
-          const st = statusClass(runs[0].status);
-          const n = runs.length > 1 ? `<span class="n">${runs.length}</span>` : "";
-          body += `<span class="dot ${st}" data-cell="${idx}" title="${esc(hl)}: ${esc(runs[0].status)} · ${esc(relTime(runs[0].ts))} · click for history">${n}</span>`;
+          const runs = RES.get(e.id + "|" + nk + "|" + col + "|" + hk) || [];
+          if (runs.length) {
+            const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs, cmd: cmdFor(e, nk, col) }) - 1;
+            const st = statusClass(runs[0].status);
+            if (st === "pass") p++; else if (st === "fail") f++; else if (st === "slow") s++;
+            const n = runs.length > 1 ? `<span class="n">${runs.length}</span>` : "";
+            body += `<span class="dot ${st}" data-cell="${idx}" title="${esc(hl)}: ${esc(runs[0].status)} · ${esc(relTime(runs[0].ts))} · click for history">${n}</span>`;
+          } else {
+            const applicable = (!hasNet || supported.has(nk)) && (!isInstall || col === e.method);
+            if (applicable) {
+              todo++;
+              const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
+              body += `<span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span>`;
+            } else {
+              body += `<span class="dot na" title="${esc(hl)}: N/A"></span>`;
+            }
+          }
         }
         body += "</span></td>";
       }
@@ -269,10 +295,17 @@
     }
     body += "</tbody>";
     tbl.innerHTML = head + body;
-    tbl.addEventListener("click", (e) => {
-      const d = e.target.closest(".dot[data-cell]"); if (d) openCell(+d.dataset.cell);
+    tbl.addEventListener("mouseover", (ev) => {
+      const d = ev.target.closest(".dot[data-cell]"); if (!d) return;
+      const c = CELLS[+d.dataset.cell]; if (c && c.cmd) showPop(d, `<button class="copy" data-cmd="${esc(c.cmd)}">copy</button><pre>${esc(c.cmd)}</pre>`);
     });
-    return tbl;
+    tbl.addEventListener("mouseout", (ev) => { if (ev.target.closest(".dot[data-cell]")) popTimer = setTimeout(() => { pop.style.display = "none"; }, 300); });
+    tbl.addEventListener("click", (ev) => {
+      const d = ev.target.closest(".dot[data-cell]"); if (!d) return;
+      const c = CELLS[+d.dataset.cell]; if (c && c.runs.length) openCell(+d.dataset.cell);
+    });
+    const counts = `<span title="pass">🟢${p}</span> <span title="fail">🔴${f}</span> <span title="slow">🟠${s}</span> <span title="todo">☐${todo}</span>`;
+    return { el: tbl, counts };
   }
 
   // ---- shared hover/click popover (commands with copy, dirty-state details, …) ----
