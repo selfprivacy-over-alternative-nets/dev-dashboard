@@ -272,6 +272,11 @@
   // Which qualifiers get an amber RING on a circle: the per-run "nature" ones (forced/manual/cached/
   // substituted/behind). NOT flaky — flakiness is the green/red SEQUENCE in the stack, not a ring.
   function ringQualifiers(r) { return qualifiers(r).filter((q) => q !== "flaky"); }
+  // The exact build closure recorded for a run (req 92): a self-contained test's derivation path, or a
+  // box run's running-system store path — the full build identity (every transitive input), beyond the
+  // 3 pins. Two runs on the same code state with different closures = a transitive input changed.
+  const closureOf = (r) => r.closure || r.drv || "";
+  const closureShort = (c) => String(c).replace("/nix/store/", "");
 
   // Results for the SELECTED state, grouped by test id. Empty when no state selected.
   function resultsByTest() {
@@ -432,6 +437,11 @@
     const cmd = `./dash run ${c.id}` + (c.net ? ` --net ${c.net}` : "") + ` --on ${c.setup}`;
     let h = `<div style="position:relative;margin-bottom:10px"><button class="copy" style="position:absolute;top:0;right:0" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button><pre style="white-space:pre-wrap;margin:0;padding-right:48px">${esc(cmd)}</pre></div>`;
     h += `<p class="muted">${c.runs.length} run(s) on ${esc(SEL.repo)}@${esc(SEL.commit)}, newest first:</p>`;
+    // Closure-divergence: same code state (sidebar key = repo commits) but >1 distinct build closure
+    // means a transitive input changed between runs — the collision req 92 guards against, surfaced.
+    const _cls = [...new Set(c.runs.map(closureOf).filter(Boolean))];
+    if (_cls.length > 1)
+      h += `<p class="err">⚠ ${_cls.length} distinct build closures across these runs on the same code state — a transitive input changed (same commits, different actual build).</p>`;
     c.runs.forEach((r, i) => {
       h += `<details class="run" ${i === focus ? "open" : ""} data-run="${idx}:${i}">` +
         `<summary><span class="dot ${statusClass(r.status)}"></span><b>${esc(r.status)}</b>` +
@@ -452,6 +462,9 @@
   async function fillRun(box, r) {
     const a = r.artifacts || {};
     let h = "";
+    // build closure identity (req 92) — the exact derivation / running-system, beyond the pins.
+    const cl = closureOf(r);
+    if (cl) h += `<p class="muted">closure: <code>${esc(closureShort(cl))}</code>${r.state_id ? ` · id <code>${esc(r.state_id)}</code>` : ""}</p>`;
     // log
     const logPath = r.log_path || a.client_log;
     if (logPath && !IS_PAGES) {

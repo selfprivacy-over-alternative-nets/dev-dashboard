@@ -254,6 +254,20 @@ def guard_file_hits(repo_names, guard_paths):
     return hits
 
 
+def drv_of(cmd, run_dir):
+    """The derivation path a self-contained build resolves to — the EXACT build-closure identity: it
+    captures EVERY transitive input, not just the 3 recorded pins (api/nixpkgs/manager), so two builds
+    that differ only in some transitive input can't collide on one state key (req 92). Extracts the
+    flake attr (the first '#'-bearing token) from the cmd and runs `nix eval <attr>.drvPath`. Returns
+    '' if there's no attr or the eval fails. A dirty tree yields a dirty-suffixed drv (honest)."""
+    attr = next((t for t in cmd.split() if "#" in t), "")
+    if not attr:
+        return ""
+    r = _sh(f"cd '{run_dir}' && nix eval \"{attr}.drvPath\" --raw", timeout=240)
+    out = (r.stdout or "").strip().splitlines()[-1] if (r.stdout or "").strip() else ""
+    return out if out.endswith(".drv") else ""
+
+
 def resolve_lock(extra_env=None, entry=None):
     """The flake.lock that actually governs THIS run's build/deploy:
       1. $FLAKE/flake.lock when --env FLAKE=… (installs deploy that flake);
@@ -900,6 +914,10 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             _live = read_box_live(_bip, _bkey)
             if _live:
                 base["box_live"] = _live
+                # The box's actual running-system store path IS the closure identity for a box run
+                # (the exact built system, beyond the 3 pins; req 92).
+                if _live.get("system"):
+                    base["closure"] = _live["system"]
                 _baseline = _stamp.get("system")
                 if _baseline and _live.get("system") and _live["system"] != _baseline:
                     _bd = _bd + [f"running system {_live['system'][:28]}… ≠ stamped {str(_baseline)[:28]}… "
@@ -966,6 +984,20 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                "log_path": "", "artifacts": {"client_log": "", "server_log": "", "video": "", "screenshots": []}}
         append_record(rec)
         return rec
+
+    # Full-closure identity (req 92): for a self-contained VM build (L1/L2), resolve the derivation
+    # path — the exact build closure (every transitive input), not just the 3 pins. Fold a short hash
+    # of it into `state_id` so two builds that differ in a transitive input can't collide on one id.
+    if _self_contained(entry) or entry.get("level") in ("L1", "L2"):
+        _drv = drv_of(cmd, run_dir)
+        base["drv"] = _drv
+        if _drv:
+            base["closure"] = _drv
+            base["state_id"] = f"{_state_hash}+{hashlib.sha256(_drv.encode()).hexdigest()[:8]}"
+            print(f"{GREY}closure {os.path.basename(_drv)}{OFF}")
+        else:
+            print(f"{AMBER}note{OFF}  {entry['id']} — could not resolve a build closure (nix eval); "
+                  f"recording pins only (no drv closure id).")
 
     log_path = os.path.join(LOGS, run_id + ".log")
     os.makedirs(LOGS, exist_ok=True)
@@ -1779,7 +1811,11 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
                          retries=retries, target=target, state_key=state_key)
     if rec:
         extra = {k: base[k] for k in ("box_stamp", "box_live", "box_stale", "box_state_hash",
-                                      "repos", "pins") if k in base}
+                                      "repos", "pins", "closure") if k in base}
+        # For a box run the closure identity is the box's running-system store path (req 92).
+        if base.get("closure"):
+            _sk = base.get("box_state_hash") or base.get("state_hash") or ""
+            extra["state_id"] = f"{_sk}+{hashlib.sha256(base['closure'].encode()).hexdigest()[:8]}"
         if extra:
             mark_record(rec["run_id"], **extra)
             rec.update(extra)
