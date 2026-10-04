@@ -163,15 +163,31 @@ def _is_git(repo):
     return subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True).returncode == 0
 
 
-def project_repo_states():
-    """git_state for every repo in catalog.project_repos — the full 'config under test'
-    (all repos a run uses, not just the primary entry.repo). Each gets a `name`."""
+# Which project repos each test actually depends on — scopes the state key AND the clean gate.
+# Per-entry "repos" wins; else default by level/category; None → all project repos.
+DEFAULT_REPOS = {
+    "L1": ["api"],
+    "L2": ["tests", "manager", "api"],
+    "L3": ["app", "manager", "api"],
+    "install": ["manager", "api"],
+}
+
+
+def entry_repos(entry):
+    return entry.get("repos") or DEFAULT_REPOS.get(entry.get("level") or entry.get("category"))
+
+
+def project_repo_states(names=None):
+    """git_state for repos in catalog.project_repos — only `names` (the test's repos) if given,
+    else all. Each gets a `name`. This is the 'config under test' the run actually depends on."""
     try:
         cat = load_catalog()
     except Exception:
         return []
     out = []
     for name, rel in (cat.get("project_repos") or {}).items():
+        if names is not None and name not in names:
+            continue
         repo = os.path.normpath(os.path.join(ROOT, rel))
         if not _is_git(repo):
             continue
@@ -181,17 +197,28 @@ def project_repo_states():
     return out
 
 
-def flake_pins():
-    """{'selfprivacy-api': rev, 'nixpkgs': rev} from catalog.pins_lock — the DEPLOYED
-    versions (these come from the flake.lock, NOT the local api checkout)."""
+def resolve_lock(extra_env=None):
+    """The flake.lock governing THIS run's deploy: $FLAKE/flake.lock when --env FLAKE=… was
+    passed (installs deploy that flake), else catalog.pins_lock (the backend flake)."""
+    for kv in (extra_env or []):
+        if kv.startswith("FLAKE="):
+            return os.path.join(kv.split("=", 1)[1], "flake.lock")
     try:
         rel = load_catalog().get("pins_lock")
     except Exception:
         rel = None
-    if not rel:
+    return os.path.normpath(os.path.join(ROOT, rel)) if rel else None
+
+
+def flake_pins(lock_path=None):
+    """{'selfprivacy-api': rev, 'nixpkgs': rev} from a flake.lock — the DEPLOYED versions (from
+    the lock, NOT the local api checkout). lock_path defaults to catalog.pins_lock."""
+    if lock_path is None:
+        lock_path = resolve_lock(None)
+    if not lock_path or not os.path.exists(lock_path):
         return {}
     try:
-        d = json.load(open(os.path.normpath(os.path.join(ROOT, rel))))
+        d = json.load(open(lock_path))
     except Exception:
         return {}
     pins = {}
@@ -202,28 +229,24 @@ def flake_pins():
     return pins
 
 
-def api_pin_mismatch():
-    """None if the local selfprivacy-api checkout CORRESPONDS to the flake.lock pin (what the
-    deploy actually builds), else a dict describing the mismatch. 'Corresponds' = local HEAD ==
-    pinned rev AND the checkout is clean. Returns None when not configured/checkable, so it
-    never blocks setups that don't involve the api."""
+def api_pin_mismatch(lock_path=None):
+    """None if the local selfprivacy-api checkout CORRESPONDS to the deployed flake.lock pin,
+    else a dict describing the mismatch. 'Corresponds' = local HEAD == pinned rev AND clean.
+    Returns None when not configured/checkable, so it never blocks api-less setups."""
+    if lock_path is None:
+        lock_path = resolve_lock(None)
     try:
-        cat = load_catalog()
+        api_rel = (load_catalog().get("project_repos") or {}).get("api")
     except Exception:
-        return None
-    api_rel = (cat.get("project_repos") or {}).get("api")
-    lock_rel = cat.get("pins_lock")
-    if not api_rel or not lock_rel:
+        api_rel = None
+    if not api_rel or not lock_path or not os.path.exists(lock_path):
         return None
     api = os.path.normpath(os.path.join(ROOT, api_rel))
     if not _is_git(api):
         return None
     try:
         head = subprocess.check_output(["git", "-C", api, "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
-    except Exception:
-        return None
-    try:
-        lock = json.load(open(os.path.normpath(os.path.join(ROOT, lock_rel))))
+        lock = json.load(open(lock_path))
     except Exception:
         return None
     pin = ((lock.get("nodes", {}).get("selfprivacy-api", {}) or {}).get("locked", {}) or {}).get("rev")
@@ -509,6 +532,11 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     method_tag = method or entry.get("method", "-")
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
+    _lock = resolve_lock(extra_env)
+    _repos = project_repo_states(entry_repos(entry))   # only the repos this test depends on
+    _pins = flake_pins(_lock)
+    _mm = api_pin_mismatch(_lock)
+    _dirty_repos = [r["name"] for r in _repos if r.get("dirty")]
     base = {
         "run_id": run_id, "ts": now_iso(), "env": "ci" if is_ci() else "local",
         "host": socket.gethostname(), "category": entry.get("category", "test"),
@@ -516,29 +544,28 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "client": entry.get("client", "-"), "transport": net_tag,
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
-        "config_label": config_label or ("dirty" if gs["dirty"] else ""),
-        "repos": project_repo_states(), "pins": flake_pins(), "pin_mismatch": api_pin_mismatch(),
+        "config_label": config_label or ("dirty" if _dirty_repos else ""),
+        "repos": _repos, "pins": _pins, "pin_mismatch": _mm,
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
 
-    # Clean-state gate: run tests/installs only on committed code, so every run on a given
-    # commit shares one state. Results live in the separate testresults repo, so they never
-    # dirty the code repo — only real code edits trip this. Override with --allow-dirty.
-    if entry.get("category") in ("test", "install") and gs["dirty"] and not allow_dirty:
-        print(f"{RED}dirty{OFF}  {entry['id']} — {gs['repo']} @ {gs['commit']} has uncommitted changes.")
-        print(f"  commit {gs['repo']} first so every run shares one state, or pass --allow-dirty.")
+    # Clean-state gate: run tests/installs only on committed code so every run on a state shares
+    # it. Checks ALL repos the test uses (so e.g. a dirty app checkout for an L3 run is caught —
+    # not just the primary repo). Results live in the separate testresults repo, so they never
+    # dirty the code. Override with --allow-dirty.
+    if entry.get("category") in ("test", "install") and _dirty_repos and not allow_dirty:
+        print(f"{RED}dirty{OFF}  {entry['id']} — uncommitted changes in: {', '.join(_dirty_repos)}.")
+        print(f"  commit them so every run shares one state, or pass --allow-dirty.")
         return None
 
-    # Pin gate: the deploy builds the selfprivacy-api rev PINNED in the flake.lock — not your
-    # local api checkout. If they differ, the run wouldn't exercise your api code at all, so the
-    # result would be mislabelled. Refuse unless --allow-dirty.
-    if entry.get("category") in ("test", "install") and not allow_dirty:
-        _mm = api_pin_mismatch()
-        if _mm:
-            print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {_mm['msg']}.")
-            print(f"  bump the flake input to match (nix flake lock / update the follows) or check out the pinned rev; or pass --allow-dirty.")
-            return None
+    # Pin gate: the deploy builds the selfprivacy-api rev PINNED in the flake.lock (of the flake
+    # this run deploys) — not your local api checkout. If they differ the run wouldn't exercise
+    # your api code, so the result would be mislabelled. Refuse unless --allow-dirty.
+    if entry.get("category") in ("test", "install") and _mm and not allow_dirty:
+        print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {_mm['msg']}.")
+        print(f"  bump the flake input to match (nix flake lock / update the follows) or check out the pinned rev; or pass --allow-dirty.")
+        return None
 
     # Preflight: for an actual install, refuse up-front (with a fix) if the
     # requested setup (--on) isn't feasible, instead of half-running.
@@ -738,11 +765,38 @@ def cmd_report(args):
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
         "artifacts": {"client_log": "", "server_log": "", "video": ""},
-        "repos": project_repo_states(), "pins": flake_pins(), "pin_mismatch": api_pin_mismatch(),
+        "repos": project_repo_states(entry_repos(e)), "pins": flake_pins(), "pin_mismatch": api_pin_mismatch(),
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
     }
     append_record(rec)
     print(f"recorded {args.status} for {args.id} ({fmt_dur(args.duration)})")
+
+
+def cmd_verify_box(args):
+    """Read /etc/dev-test-build.json from a deployed box and compare to the CURRENT code pins.
+    Answers: does this already-deployed box correspond to the code state you'd be testing?"""
+    ssho = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=8"]
+    if args.key:
+        ssho += ["-i", os.path.expanduser(args.key)]
+    try:
+        raw = subprocess.check_output(ssho + [f"root@{args.ip}", "cat /etc/dev-test-build.json"], stderr=subprocess.DEVNULL).decode()
+        stamp = json.loads(raw)
+    except Exception as e:
+        sys.exit(f"{RED}could not read /etc/dev-test-build.json from root@{args.ip}{OFF} — box unreachable or not stamped (deployed before stamping existed). {e}")
+    want = flake_pins()  # current catalog-default deployed pins
+    diffs = []
+    for k in ("selfprivacy-api", "nixpkgs"):
+        w = want.get(k)
+        if w and not str(stamp.get(k, "")).startswith(w):
+            diffs.append(f"{k}: box={str(stamp.get(k, '?'))[:12]} vs code={w}")
+    print(f"box root@{args.ip} deployed_at {stamp.get('deployed_at', '?')} from flake {stamp.get('flake', '?')}")
+    if diffs:
+        print(f"{RED}MISMATCH{OFF} — the box runs a DIFFERENT state than the current code:")
+        for d in diffs:
+            print("  " + d)
+        print("  redeploy the box before testing, so results reflect the current code.")
+        sys.exit(1)
+    print(f"{GREEN}MATCH{OFF} — box corresponds to current code pins ({', '.join(f'{k}={v}' for k, v in want.items())}).")
 
 
 def cmd_serve(args):
@@ -1508,6 +1562,11 @@ def main():
     rp.add_argument("--env")
     rp.add_argument("--host")
     rp.set_defaults(fn=cmd_report)
+
+    vb = sub.add_parser("verify-box")
+    vb.add_argument("--ip", required=True, help="deployed box IP to check")
+    vb.add_argument("--key", help="ssh private key path")
+    vb.set_defaults(fn=cmd_verify_box)
 
     s = sub.add_parser("serve")
     s.add_argument("port", nargs="?", type=int, default=8099)

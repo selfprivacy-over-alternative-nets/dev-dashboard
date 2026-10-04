@@ -256,6 +256,17 @@ ssh $SSHO "root@$IP" '
   systemctl reload nginx 2>/dev/null || systemctl restart nginx || true
   sleep 2'
 
+say "3b. stamp the box with its build identity (so later runs can check box-vs-code)"
+# What this box was deployed FROM: the flake's pinned api/nixpkgs. Read later by
+# `dash verify-box` to refuse testing a stale box (see dev-dashboard dash).
+API_PIN=$(python3 -c "import json;print(json.load(open('$FLAKE/flake.lock'))['nodes']['selfprivacy-api']['locked']['rev'])" 2>/dev/null || echo unknown)
+NIXPKGS_PIN=$(python3 -c "import json;print(json.load(open('$FLAKE/flake.lock'))['nodes']['nixpkgs']['locked']['rev'])" 2>/dev/null || echo unknown)
+STAMPED_AT=$(date -u +%FT%TZ 2>/dev/null || echo unknown)
+ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json" <<EOF2
+{"flake":"$FLAKE","selfprivacy-api":"$API_PIN","nixpkgs":"$NIXPKGS_PIN","deployed_at":"$STAMPED_AT"}
+EOF2
+echo "   stamped: api=${API_PIN:0:12} nixpkgs=${NIXPKGS_PIN:0:12}"
+
 say "4. read freshly-deployed identity from the target"
 TOKEN=$(ssh $SSHO "root@$IP" 'jq -r .api.token /etc/selfprivacy/secrets.json')
 ONION=$(ssh $SSHO "root@$IP" 'cat /var/lib/tor/hidden_service/hostname 2>/dev/null || true')
