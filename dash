@@ -210,6 +210,50 @@ def _self_contained(entry):
     return bool(entry.get("cmd_by_net")) or entry.get("method") == "test-vm"
 
 
+def nix_sandbox():
+    """The host's nix `sandbox` setting ('true' | 'false' | 'relaxed' | ''). Anything other than
+    'true' means a nix build may read host state — so a 'hermetic' nixosTest VM build could reflect
+    more than the committed code. Best-effort; '' if nix can't be queried."""
+    v = (_sh("nix config show sandbox", timeout=15).stdout or "").strip()
+    if not v:
+        for line in (_sh("nix show-config", timeout=20).stdout or "").splitlines():
+            if line.startswith("sandbox ") or line.startswith("sandbox="):
+                v = line.split("=", 1)[-1].strip()
+                break
+    return v
+
+
+def guard_file_hits(repo_names, guard_paths):
+    """Find build-affecting files (catalog `guard_paths`, e.g. users.nix/.env/flake.local.nix) that are
+    present in a repo under test AND gitignored — so they're INVISIBLE to `git status` and the clean-
+    state gate can't see them, yet they can change the build (req 91). A tracked guard file is part of
+    the committed state; an untracked one already trips the dirty gate — neither is a hidden input, so
+    only gitignored+present ones are returned. [{repo,path,sha}]."""
+    hits = []
+    pr = (load_catalog().get("project_repos") or {})
+    for name in (repo_names or list(pr)):
+        rel = pr.get(name)
+        if not rel:
+            continue
+        repo = os.path.normpath(os.path.join(ROOT, rel))
+        if not os.path.isdir(repo):
+            continue
+        for gp in guard_paths:
+            fp = os.path.join(repo, gp)
+            if not os.path.isfile(fp):
+                continue
+            ignored = subprocess.run(["git", "-C", repo, "check-ignore", "-q", gp],
+                                     capture_output=True).returncode == 0
+            if not ignored:
+                continue    # tracked ⇒ in the committed state; untracked ⇒ caught by the dirty gate
+            try:
+                sha = hashlib.sha256(open(fp, "rb").read()).hexdigest()[:8]
+            except Exception:
+                sha = "?"
+            hits.append({"repo": name, "path": gp, "sha": sha})
+    return hits
+
+
 def resolve_lock(extra_env=None, entry=None):
     """The flake.lock that actually governs THIS run's build/deploy:
       1. $FLAKE/flake.lock when --env FLAKE=… (installs deploy that flake);
@@ -794,6 +838,41 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         print(f"  bump the flake input to match (`nix flake update` in the flake under test) or check out the pinned rev; or pass --allow-dirty.")
         return None
 
+    # Hidden-input guard (req 91): build-affecting files `git status` can't see. A guard_path that is
+    # gitignored + present is INVISIBLE to the clean-state gate yet can change the build, so a random
+    # person's clean checkout would build something different. Recorded (`guard_files`) + warned; not a
+    # hard refuse (a present file may be legitimately required) — surfaced for a human to judge.
+    _guard_hits = guard_file_hits(entry_repos(entry), load_catalog().get("guard_paths") or []) if _gated else []
+    base["guard_files"] = _guard_hits
+    for _h in _guard_hits:
+        print(f"{AMBER}guard-file{OFF}  {entry['id']} — {_h['repo']}/{_h['path']} is gitignored + present "
+              f"(sha {_h['sha']}); INVISIBLE to `git status`, yet it can change the build. Recorded.")
+
+    # Nix hermeticity gate: an L1/L2 nixosTest builds + boots a VM that must come ONLY from the
+    # committed code. A disabled sandbox or an --impure build can leak host state into that "hermetic"
+    # VM → a pass wouldn't prove the committed code ran. Refuse unless --allow-dirty (then flagged
+    # forced). Scoped to the self-contained VM builds; L3 (host flutter) / installs are inherently not
+    # a hermetic VM build, so the host sandbox setting doesn't change what they prove.
+    _herm_scope = _self_contained(entry) or entry.get("level") in ("L1", "L2")
+    _sandbox = nix_sandbox() if _herm_scope else ""
+    _impure = ("--impure" in cmd) if _herm_scope else False
+    _herm_problems = []
+    if _herm_scope:
+        if _sandbox and _sandbox != "true":
+            _herm_problems.append(f"nix sandbox={_sandbox} (non-hermetic build)")
+        if _impure:
+            _herm_problems.append("--impure in the build command")
+    base["nix_sandbox"] = _sandbox
+    base["impure"] = _impure
+    base["hermetic"] = (not _herm_problems) if _herm_scope else None
+    base["hermetic_problems"] = _herm_problems
+    if _herm_problems and not allow_dirty:
+        for m in _herm_problems:
+            print(f"{RED}non-hermetic{OFF}  {entry['id']} — {m}.")
+        print(f"  a self-contained VM build must be hermetic so the result reflects only the committed "
+              f"code. Set `sandbox = true` in nix.conf / drop --impure, or pass --allow-dirty.")
+        return None
+
     # Box-identity gate: a test that runs against the target must run against a box deployed from
     # the CURRENT code. Read the box's /etc/dev-test-build.json; record it as the source of truth
     # (box_stamp + box_stale) and refuse if the box is unreachable/unstamped/stale — unless
@@ -967,6 +1046,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             _forced.append("behind-upstream")
         if _pin_problems:
             _forced.append("pin-mismatch")
+        if base.get("hermetic_problems"):
+            _forced.append("non-hermetic")
         if base.get("box_stale"):
             _forced.append("stale-box")
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,

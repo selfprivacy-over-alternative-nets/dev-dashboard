@@ -6,6 +6,7 @@
     "tests": "../selfprivacy-tor-tests"
   },
   "pins_lock": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend/flake.lock",
+  "guard_paths": ["users.nix", ".env", ".envrc", "flake.local.nix", "local.nix", "secrets.nix"],
   "networks": [
     "tor",
     "chutney",
