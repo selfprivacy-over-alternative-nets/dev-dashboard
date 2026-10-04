@@ -770,6 +770,41 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
 
     net_tag = net or "-"
     method_tag = method or entry.get("method", "-")
+
+    # Fast, args-only short-circuits BEFORE any git fetch / lock reads / SSH (the slow per-entry work,
+    # esp. repos_behind_upstream(fetch=True) which runs `git fetch` on every repo). A no-op (@todo /
+    # @manual) or an @flutter run whose args can't possibly work (no --on, a box setup missing
+    # --ip/--key/--token, chutney on a box) must fail instantly, not after a minute of git I/O. The
+    # authoritative box checks (SSH reachability, live onion/domain, stamp identity) still run later for
+    # valid args — these only reject the obviously-doomed arg combos.
+    if cmd == "@todo":
+        print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
+        return None
+    if cmd == "@manual":
+        print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
+        print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
+        return None
+    if cmd == "@flutter":
+        if entry.get("client") == "android" or entry["id"].endswith(".android"):
+            print(f"{AMBER}android L3 not supported by this runner yet{OFF}  {entry['id']}")
+            return None
+        if method_tag in (None, "", "-"):
+            print(f"{RED}no setup{OFF}  {entry['id']} — --on is required (vm-local | lan-setup-0a..0d | "
+                  f"lan-setup-1 | lan-setup-2 | usb-0a..0c).")
+            return None
+        if _setup_backend_kind(method_tag) == "box":
+            _miss = [n for n, v in (("--ip", ip or _env_get(extra_env, "IP")),
+                                    ("--key", _env_get(extra_env, "KEY")),
+                                    ("--token", _env_get(extra_env, "API_TOKEN"))) if not v]
+            if _miss:
+                print(f"{RED}missing args{OFF}  {entry['id']} on {method_tag} runs against a box; "
+                      f"required: {', '.join(_miss)} (a box's API token is per-box + secret, never defaulted).")
+                return None
+            if net == "chutney":
+                print(f"{RED}N/A{OFF}  {entry['id']} — chutney is vm-local only; a box uses tor|https. "
+                      f"Use --net tor|https.")
+                return None
+
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
     _lock = resolve_lock(extra_env, entry)
@@ -802,15 +837,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
 
-    # @todo / @manual are pure no-ops (no record, nothing runs) — short-circuit BEFORE the gates so a
-    # dirty tree doesn't mask an entry that simply isn't automated yet / is a manual click-through.
-    if cmd == "@todo":
-        print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
-        return None
-    if cmd == "@manual":
-        print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
-        print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
-        return None
+    # (@todo / @manual and the args-only @flutter preconditions already short-circuited above, before
+    # any git fetch — see the fast block right after method_tag.)
 
     # Which runs are gated for integrity: installs (category) AND tests (identified by `level`: L1/L2/
     # L3). Catalog test entries carry no `category`, so keying only on category silently skipped the
