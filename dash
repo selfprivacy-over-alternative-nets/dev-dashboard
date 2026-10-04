@@ -285,6 +285,10 @@ def _ssh_base(key):
     return o
 
 
+def ssh_reachable(ip, key):
+    return subprocess.run(_ssh_base(key) + [f"root@{ip}", "true"], capture_output=True).returncode == 0
+
+
 def read_box_stamp(ip, key):
     """The /etc/dev-test-build.json a box was deployed with, or None if unreachable/unstamped."""
     try:
@@ -651,9 +655,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         if not _bip or not _bkey:
             print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target; pass --ip <box> and --env KEY=<ssh key>.")
             return None
+        if not ssh_reachable(_bip, _bkey):
+            print(f"{RED}box-unreachable{OFF}  {entry['id']} — root@{_bip} not reachable over SSH (box down / wrong IP / wrong key).")
+            return None
         _stamp = read_box_stamp(_bip, _bkey)
         if _stamp is None:
-            print(f"{RED}box-unreachable{OFF}  {entry['id']} — can't read /etc/dev-test-build.json from root@{_bip} (box down or not stamped — (re)deploy it first).")
+            print(f"{RED}box-not-stamped{OFF}  {entry['id']} — root@{_bip} is reachable but has no /etc/dev-test-build.json; (re)deploy it to stamp its build identity.")
             return None
         _bd = box_pin_diffs(_stamp, _pins)
         if _bd:
@@ -872,9 +879,11 @@ def cmd_report(args):
 def cmd_verify_box(args):
     """Read /etc/dev-test-build.json from a deployed box and compare to the CURRENT code pins.
     Answers: does this already-deployed box correspond to the code state you'd be testing?"""
+    if not ssh_reachable(args.ip, args.key):
+        sys.exit(f"{RED}unreachable{OFF} — root@{args.ip} not reachable over SSH (box down / wrong IP / wrong key).")
     stamp = read_box_stamp(args.ip, args.key)
     if stamp is None:
-        sys.exit(f"{RED}could not read /etc/dev-test-build.json from root@{args.ip}{OFF} — box unreachable or not stamped (deployed before stamping existed).")
+        sys.exit(f"{RED}not-stamped{OFF} — root@{args.ip} is reachable but has no /etc/dev-test-build.json (deployed before stamping; redeploy to stamp it).")
     want = flake_pins()  # current catalog-default deployed pins
     diffs = box_pin_diffs(stamp, want)
     print(f"box root@{args.ip} deployed_at {stamp.get('deployed_at', '?')} from flake {stamp.get('flake', '?')}")
