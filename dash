@@ -159,6 +159,49 @@ def git_state(repo_rel):
     return {"repo": name, "branch": branch, "commit": commit, "subject": subject, "dirty": dirty, "diff_hash": diff_hash}
 
 
+def _is_git(repo):
+    return subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True).returncode == 0
+
+
+def project_repo_states():
+    """git_state for every repo in catalog.project_repos — the full 'config under test'
+    (all repos a run uses, not just the primary entry.repo). Each gets a `name`."""
+    try:
+        cat = load_catalog()
+    except Exception:
+        return []
+    out = []
+    for name, rel in (cat.get("project_repos") or {}).items():
+        repo = os.path.normpath(os.path.join(ROOT, rel))
+        if not _is_git(repo):
+            continue
+        st = git_state(rel)
+        st["name"] = name
+        out.append(st)
+    return out
+
+
+def flake_pins():
+    """{'selfprivacy-api': rev, 'nixpkgs': rev} from catalog.pins_lock — the DEPLOYED
+    versions (these come from the flake.lock, NOT the local api checkout)."""
+    try:
+        rel = load_catalog().get("pins_lock")
+    except Exception:
+        rel = None
+    if not rel:
+        return {}
+    try:
+        d = json.load(open(os.path.normpath(os.path.join(ROOT, rel))))
+    except Exception:
+        return {}
+    pins = {}
+    for k in ("selfprivacy-api", "nixpkgs"):
+        rev = ((d.get("nodes", {}).get(k, {}) or {}).get("locked", {}) or {}).get("rev")
+        if rev:
+            pins[k] = rev[:12]
+    return pins
+
+
 def gen_run_id():
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     return f"{stamp}-{os.urandom(2).hex()}"
@@ -437,6 +480,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if gs["dirty"] else ""),
+        "repos": project_repo_states(), "pins": flake_pins(),
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
@@ -647,6 +691,7 @@ def cmd_report(args):
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
         "artifacts": {"client_log": "", "server_log": "", "video": ""},
+        "repos": project_repo_states(), "pins": flake_pins(),
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
     }
     append_record(rec)

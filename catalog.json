@@ -1,4 +1,11 @@
 {
+  "project_repos": {
+    "app": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/flutter-app/selfprivacy.org.app",
+    "manager": "../Manager-Ubuntu-SelfPrivacy-Over-Tor",
+    "api": "../selfprivacy-api",
+    "tests": "../selfprivacy-tor-tests"
+  },
+  "pins_lock": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend/flake.lock",
   "networks": [
     "tor",
     "chutney",

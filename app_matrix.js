@@ -45,83 +45,88 @@
     const resTxt = await fetchFirst(["testresults/results.jsonl", "data/results.jsonl"]);
     const recs = resTxt.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
     MODEL = build(recs);
-    renderCommits();
-    if (MODEL.commits.length) selectCommit(MODEL.commits[0]);
+    renderStates();
+    if (MODEL.states.length) selectState(MODEL.states[0]);
     else $("#matrix").innerHTML = '<p class="muted" style="padding:16px">No results yet. Run a test, then <code>./dash publish</code>.</p>';
   }
 
+  // Each run records the state of ALL config repos in `repos[]` (name/branch/commit/dirty/diff).
+  // Older records carry only the single top-level repo/commit → treated as a 1-repo state.
+  function reposList(r) {
+    if (Array.isArray(r.repos) && r.repos.length)
+      return r.repos.map((x) => ({ name: x.name || x.repo || "?", repo: x.repo || x.name || "?", branch: x.branch || "", commit: x.commit || "?", dirty: !!x.dirty, diff: x.diff_hash || x.diff || "" }));
+    return [{ name: r.repo || "?", repo: r.repo || "?", branch: r.branch || "", commit: r.commit || "?", dirty: !!r.dirty, diff: r.diff_hash || "" }];
+  }
+  const stateKeyOf = (r) => reposList(r).map((x) => x.name + ":" + x.commit).sort().join("|");
+
+  // A "state" = one combination of all repo commits — i.e. exactly what was under test.
   function build(recs) {
-    const cmap = new Map();
+    const smap = new Map(), byState = new Map();
     for (const r of recs) {
-      const key = (r.repo || "?") + "@" + (r.commit || "?");
-      let c = cmap.get(key);
-      if (!c) { c = { key, repo: r.repo || "?", branch: r.branch || "", commit: r.commit || "?", subject: r.subject || "", ts: r.ts || "", dirty: false, n: 0 }; cmap.set(key, c); }
-      c.n++;
-      if ((r.ts || "") > c.ts) c.ts = r.ts;
-      if (r.dirty) c.dirty = true;
-      if (!c.subject && r.subject) c.subject = r.subject;
-      if (!c.branch && r.branch) c.branch = r.branch;
+      const list = reposList(r), key = stateKeyOf(r);
+      if (!byState.has(key)) byState.set(key, []);
+      byState.get(key).push(r);
+      let s = smap.get(key);
+      if (!s) { s = { key, repos: list, pins: r.pins || null, ts: r.ts || "", dirty: false, n: 0 }; smap.set(key, s); }
+      s.n++;
+      if ((r.ts || "") > s.ts) s.ts = r.ts;
+      if (list.some((x) => x.dirty)) s.dirty = true;
+      if (r.pins && !s.pins) s.pins = r.pins;
+      if (list.length > s.repos.length) s.repos = list;   // keep the richest snapshot for the combo
     }
-    const commits = [...cmap.values()].sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
-    const byCommit = new Map();
-    for (const r of recs) {
-      const k = (r.repo || "?") + "@" + (r.commit || "?");
-      if (!byCommit.has(k)) byCommit.set(k, []);
-      byCommit.get(k).push(r);
-    }
-    return { commits, byCommit };
+    const states = [...smap.values()].sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+    return { states, byState };
   }
 
-  function renderCommits() {
-    // group commits by repo → branch, preserving the (newest-first) order
+  function renderStates() {
     const host = $("#commits"); host.innerHTML = "";
-    const seenRepo = new Set(), seenBranch = new Set();
-    for (const c of MODEL.commits) {
-      if (!seenRepo.has(c.repo)) { seenRepo.add(c.repo); const d = document.createElement("div"); d.className = "repo"; d.textContent = c.repo; host.appendChild(d); }
-      const bk = c.repo + "/" + (c.branch || "?");
-      if (!seenBranch.has(bk)) { seenBranch.add(bk); const d = document.createElement("div"); d.className = "branch"; d.textContent = "⎇ " + (c.branch || "(unknown branch)"); host.appendChild(d); }
+    for (const s of MODEL.states) {
       const el = document.createElement("div");
-      el.className = "commit"; el.dataset.key = c.key;
-      el.innerHTML = `<span class="sha">${esc(c.commit)}</span>${c.dirty ? ' <span class="dirty" title="a run on this commit saw uncommitted changes">⚠ dirty</span>' : ""}` +
-        `<span class="subj">${esc(c.subject || "(no subject)")}</span>` +
-        `<span class="meta">${esc(relTime(c.ts))} · ${c.n} run${c.n === 1 ? "" : "s"}</span>`;
-      el.onclick = () => selectCommit(c);
+      el.className = "commit"; el.dataset.key = s.key;
+      const chips = s.repos.map((x) => `<span class="chip${x.dirty ? " d" : ""}" title="${esc(x.name)} @ ${esc(x.branch || "?")}${x.dirty ? " · dirty" : ""}">${esc(x.name)}:${esc(x.commit)}</span>`).join(" ");
+      el.innerHTML = `<div class="chips">${chips}${s.dirty ? ' <span class="dirty">⚠</span>' : ""}</div>` +
+        `<span class="meta">${esc(relTime(s.ts))} · ${s.n} run${s.n === 1 ? "" : "s"}</span>`;
+      el.onclick = () => selectState(s);
       host.appendChild(el);
     }
   }
 
-  function selectCommit(c) {
-    SEL = c;
-    for (const el of document.querySelectorAll(".commit")) el.classList.toggle("sel", el.dataset.key === c.key);
+  function selectState(s) {
+    SEL = s;
+    for (const el of document.querySelectorAll(".commit")) el.classList.toggle("sel", el.dataset.key === s.key);
     renderTop(); renderMatrix();
   }
 
-  function dirtyDetailsHtml() {
-    const recs = (MODEL.byCommit.get(SEL.key) || []).filter((r) => r.dirty);
-    if (!recs.length) return `<div class="muted">No dirty runs recorded on this commit.</div>`;
-    const m = new Map();
-    for (const r of recs) {
-      const k = (r.repo || "?") + "|" + (r.branch || "?") + "|" + (r.diff_hash || "?");
-      let e = m.get(k);
-      if (!e) { e = { repo: r.repo || "?", branch: r.branch || "(unknown branch)", diff: r.diff_hash || "?", ids: new Set(), ts: "" }; m.set(k, e); }
-      e.ids.add(r.id); if ((r.ts || "") > e.ts) e.ts = r.ts;
-    }
-    let h = `<div class="poptitle">Uncommitted changes recorded during runs on <code>${esc(SEL.commit)}</code>:</div><ul class="dirtylist">`;
-    for (const e of m.values())
-      h += `<li><b>${esc(e.repo)}</b> @ <span class="br">${esc(e.branch)}</span> · diff <code>${esc(e.diff)}</code> — ${e.ids.size} test(s): ${esc([...e.ids].join(", "))} <span class="muted">(${esc(relTime(e.ts))})</span></li>`;
+  // All repos of the selected combination (clean AND dirty) + deployed flake.lock pins.
+  function configDetailsHtml() {
+    const s = SEL;
+    let h = `<div class="poptitle">Config under test — all repos used:</div><ul class="dirtylist">`;
+    for (const x of s.repos)
+      h += `<li><b>${esc(x.name)}</b> @ <span class="br">${esc(x.branch || "(unknown branch)")}</span> · <code>${esc(x.commit)}</code> ` +
+        (x.dirty ? `<span class="dirty">⚠ dirty (diff ${esc(x.diff || "?")})</span>` : `<span class="muted">clean</span>`) + `</li>`;
     h += `</ul>`;
+    if (s.pins && Object.keys(s.pins).length)
+      h += `<div class="poptitle" style="margin-top:8px">Deployed versions (flake.lock pins):</div><ul class="dirtylist">` +
+        Object.entries(s.pins).map(([k, v]) => `<li>${esc(k)} · <code>${esc(v)}</code></li>`).join("") + `</ul>`;
     return h;
   }
 
   function renderTop() {
-    const c = SEL, top = $("#top"); top.innerHTML = "";
-    const sha = document.createElement("span"); sha.className = "sha"; sha.textContent = `${c.repo} @ ${c.commit}`;
-    const subj = document.createElement("span"); subj.className = "subj"; subj.textContent = c.subject || "";
-    top.append(sha, subj);
-    if (c.dirty) {
-      const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help";
-      w.textContent = "⚠ dirty state";
-      attachPop(w, dirtyDetailsHtml);   // hover or click → which repo/branch/diff was dirty
+    const s = SEL, top = $("#top"); top.innerHTML = "";
+    const chips = document.createElement("span"); chips.className = "chips";
+    chips.innerHTML = s.repos.map((x) => `<span class="chip${x.dirty ? " d" : ""}">${esc(x.name)} ${esc(x.branch || "?")}@${esc(x.commit)}</span>`).join(" ");
+    top.append(chips);
+    if (s.pins && Object.keys(s.pins).length) {
+      const p = document.createElement("span"); p.className = "pins";
+      p.textContent = "deployed: " + Object.entries(s.pins).map(([k, v]) => `${k.replace("selfprivacy-", "")}@${String(v).slice(0, 8)}`).join(" · ");
+      top.append(p);
+    }
+    const info = document.createElement("span"); info.className = "cmdbtn"; info.style.cursor = "help"; info.textContent = "ⓘ config";
+    attachPop(info, configDetailsHtml);  // hover/click → every repo+branch+commit used (even clean) + pins
+    top.append(info);
+    if (s.dirty) {
+      const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help"; w.textContent = "⚠ dirty state";
+      attachPop(w, configDetailsHtml);
       top.append(w);
     }
     const lg = document.createElement("span"); lg.className = "legend";
@@ -132,7 +137,7 @@
   function statusClass(s) { return s === "pass" ? "pass" : s === "fail" ? "fail" : s === "slow" ? "slow" : "na"; }
 
   function renderMatrix() {
-    const recs = MODEL.byCommit.get(SEL.key) || [];
+    const recs = MODEL.byState.get(SEL.key) || [];
     CELLS = [];
     // group → test(id) → records
     const groups = new Map();
