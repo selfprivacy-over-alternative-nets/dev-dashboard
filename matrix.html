@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SelfPrivacy · test matrix</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --fg:#e6e8ee; --dim:#9aa3b2;
+    --green:#2ec27e; --red:#e5484d; --amber:#f5a623; --grey:#4a5160; --accent:#5b8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent)}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .app{display:grid;grid-template-columns:270px 1fr;height:100vh}
+  /* sidebar: branches + commits */
+  .side{border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+  .side h1{font-size:13px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);color:var(--dim);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+  .repo{padding:8px 12px 2px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .branch{padding:4px 12px 2px;color:var(--accent);font-size:11px}
+  .commit{display:block;padding:7px 12px 7px 18px;border-left:3px solid transparent;cursor:pointer;border-bottom:1px solid #20242e}
+  .commit:hover{background:var(--panel2)}
+  .commit.sel{border-left-color:var(--accent);background:var(--panel2)}
+  .commit .sha{font-family:ui-monospace,monospace;color:var(--fg)}
+  .commit .subj{color:var(--dim);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .commit .meta{color:var(--grey);font-size:11px}
+  .commit .dirty{color:var(--amber)}
+  /* main */
+  .main{overflow:auto;padding:0 0 120px}
+  .top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+  .top .sha{font-family:ui-monospace,monospace;color:var(--fg)}
+  .top .subj{color:var(--dim)}
+  .top .warn{color:#111;background:var(--amber);padding:2px 8px;border-radius:4px;font-weight:600}
+  .legend{color:var(--dim);margin-left:auto}
+  details.group{border-bottom:1px solid var(--line)}
+  details.group>summary{padding:10px 16px;font-weight:600;cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center}
+  details.group>summary::-webkit-details-marker{display:none}
+  .caret{color:var(--dim);width:12px;display:inline-block}
+  details[open]>summary .caret{transform:rotate(90deg)}
+  .count{color:var(--dim);font-weight:400}
+  details.test{margin:0 0 0 14px;border-left:1px solid var(--line)}
+  details.test>summary{padding:7px 16px;cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center}
+  details.test>summary::-webkit-details-marker{display:none}
+  .tname{font-family:ui-monospace,monospace}
+  .cmdbtn{color:var(--dim);cursor:help;border:1px solid var(--line);border-radius:4px;padding:0 6px;font-size:11px}
+  .roll{margin-left:auto;display:flex;gap:4px;align-items:center}
+  /* matrix table */
+  .mtx{overflow:auto;padding:4px 16px 14px 30px}
+  table.grid{border-collapse:collapse;font-size:12px}
+  table.grid th,table.grid td{border:1px solid var(--line);padding:3px 6px;text-align:center;white-space:nowrap}
+  table.grid th.net{text-align:right;color:var(--dim);font-weight:600;position:sticky;left:0;background:var(--bg)}
+  table.grid thead th{color:var(--dim);font-weight:600;font-size:11px}
+  .cell{display:inline-flex;gap:5px;align-items:center;justify-content:center}
+  .dot{width:13px;height:13px;border-radius:50%;display:inline-block;cursor:pointer;border:1px solid #0006;position:relative}
+  .dot.pass{background:var(--green)} .dot.fail{background:var(--red)} .dot.slow{background:var(--amber)}
+  .dot.na{background:transparent;border:1px dashed var(--grey);cursor:default}
+  .dot .n{position:absolute;top:-7px;right:-7px;font-size:9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:0 3px;color:var(--dim)}
+  .hk{color:var(--grey);font-size:10px}
+  /* command hover popover */
+  #pop{position:fixed;z-index:50;max-width:70vw;background:#0b0d11;border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:none;box-shadow:0 8px 30px #000a}
+  #pop pre{margin:0;white-space:pre-wrap;color:var(--fg);padding-right:48px}
+  #pop .copy{position:absolute;top:6px;right:6px;background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px}
+  /* detail drawer */
+  #drawer{position:fixed;top:0;right:0;width:min(680px,92vw);height:100vh;background:var(--panel);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .15s;overflow:auto;z-index:40;box-shadow:-10px 0 40px #0008}
+  #drawer.open{transform:none}
+  #drawer header{position:sticky;top:0;background:var(--panel);padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+  #drawer header .x{margin-left:auto;cursor:pointer;color:var(--dim);font-size:18px}
+  #drawer .body{padding:12px 16px}
+  .run{border:1px solid var(--line);border-radius:6px;margin:0 0 8px;overflow:hidden}
+  .run>summary{padding:8px 10px;cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center}
+  .run>summary::-webkit-details-marker{display:none}
+  .run .rmeta{color:var(--dim);font-size:11px;margin-left:auto}
+  .run .rbody{padding:8px 10px;border-top:1px solid var(--line);background:var(--panel2)}
+  .run pre.log{max-height:360px;overflow:auto;background:#0b0d11;padding:8px;border-radius:4px;white-space:pre-wrap}
+  .shots{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .shots a img{height:84px;border:1px solid var(--line);border-radius:4px;display:block}
+  .err{color:var(--red)}
+  .muted{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side"><h1>branches · commits</h1><div id="commits"></div></aside>
+  <main class="main">
+    <div class="top" id="top"></div>
+    <div id="matrix"></div>
+  </main>
+</div>
+<div id="pop"></div>
+<div id="drawer"><header><b id="dtitle"></b><span class="x" onclick="document.getElementById('drawer').classList.remove('open')">✕</span></header><div class="body" id="dbody"></div></div>
+<script src="app_matrix.js"></script>
+</body>
+</html>

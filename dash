@@ -45,9 +45,13 @@ def scrub(text):
     return _ONION_RE.sub("<onion>", text or "")
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(ROOT, "data", "results.jsonl")
-LOGS = os.path.join(ROOT, "logs")
-MEDIA = os.path.join(ROOT, "media")
+# Results live in the separate `testresults` repo when it's cloned here (so result commits
+# stay out of the code/dashboard repos and never dirty the code state); else fall back to local.
+_TR = os.path.join(ROOT, "testresults")
+RESULTS_ROOT = _TR if os.path.isdir(_TR) else ROOT
+DATA = os.path.join(_TR, "results.jsonl") if RESULTS_ROOT == _TR else os.path.join(ROOT, "data", "results.jsonl")
+LOGS = os.path.join(RESULTS_ROOT, "logs")
+MEDIA = os.path.join(RESULTS_ROOT, "media")
 CATALOG = os.path.join(ROOT, "catalog.json")
 
 GREEN, AMBER, RED, GREY, BOLD, OFF = "\033[32m", "\033[33m", "\033[31m", "\033[90m", "\033[1m", "\033[0m"
@@ -146,12 +150,13 @@ def git_state(repo_rel):
             return default
 
     commit = g(["rev-parse", "--short", "HEAD"], "unknown")
+    branch = g(["rev-parse", "--abbrev-ref", "HEAD"], "")
     subject = g(["log", "-1", "--format=%s"], "")
     porcelain = g(["status", "--porcelain"])
     diff = g(["diff", "HEAD"])
     dirty = bool(porcelain)
     diff_hash = hashlib.sha256((porcelain + diff).encode()).hexdigest()[:8] if dirty else ""
-    return {"repo": name, "commit": commit, "subject": subject, "dirty": dirty, "diff_hash": diff_hash}
+    return {"repo": name, "branch": branch, "commit": commit, "subject": subject, "dirty": dirty, "diff_hash": diff_hash}
 
 
 def gen_run_id():
@@ -407,19 +412,20 @@ def missing_local_cmd(cmd, run_dir):
     return None
 
 
-def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None):
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None, allow_dirty=False):
     cmd = entry.get("cmd", "")
+    nets = entry.get("networks") or []
+    # --net is REQUIRED for any net-bearing test (no implicit "first net" default).
+    if nets and not net:
+        print(f"{RED}error{OFF}  {entry['id']} — --net is required (one of: {'/'.join(nets)}); no implicit default")
+        return None
     if entry.get("cmd_by_net"):
-        if not net:
-            print(f"{AMBER}skip{OFF}  {entry['id']} — needs --net ({'/'.join(entry['cmd_by_net'])})")
-            return None
         cmd = entry["cmd_by_net"].get(net, "")
         if not cmd:
-            print(f"{AMBER}skip{OFF}  {entry['id']} — no command for net={net}")
+            print(f"{RED}error{OFF}  {entry['id']} — no command for --net {net} (have: {'/'.join(entry['cmd_by_net'])})")
             return None
 
-    nets = entry.get("networks") or []
-    net_tag = net or (nets[0] if len(nets) == 1 else "-")
+    net_tag = net or "-"
     method_tag = method or entry.get("method", "-")
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
@@ -431,9 +437,17 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if gs["dirty"] else ""),
-        **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
+        **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
+
+    # Clean-state gate: run tests/installs only on committed code, so every run on a given
+    # commit shares one state. Results live in the separate testresults repo, so they never
+    # dirty the code repo — only real code edits trip this. Override with --allow-dirty.
+    if entry.get("category") in ("test", "install") and gs["dirty"] and not allow_dirty:
+        print(f"{RED}dirty{OFF}  {entry['id']} — {gs['repo']} @ {gs['commit']} has uncommitted changes.")
+        print(f"  commit {gs['repo']} first so every run shares one state, or pass --allow-dirty.")
+        return None
 
     # Preflight: for an actual install, refuse up-front (with a fix) if the
     # requested setup (--on) isn't feasible, instead of half-running.
@@ -599,7 +613,7 @@ def cmd_run(args):
     print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
     results = [run_entry(e, args.config, net=args.net, method=args.on,
                          record=args.record, server_log=args.server_log,
-                         ip=args.ip, extra_env=args.env) for e in entries]
+                         ip=args.ip, extra_env=args.env, allow_dirty=args.allow_dirty) for e in entries]
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
     print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → data/results.jsonl")
@@ -633,7 +647,7 @@ def cmd_report(args):
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
         "artifacts": {"client_log": "", "server_log": "", "video": ""},
-        **{k: gs[k] for k in ("repo", "commit", "subject", "dirty", "diff_hash")},
+        **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
     }
     append_record(rec)
     print(f"recorded {args.status} for {args.id} ({fmt_dur(args.duration)})")
@@ -659,12 +673,20 @@ def cmd_serve(args):
 
 
 def cmd_publish(args):
-    msg = args.message or f"data: results @ {now_iso()}"
-    subprocess.run(["git", "-C", ROOT, "add", "data", "logs", "catalog.json"], check=False)
-    r = subprocess.run(["git", "-C", ROOT, "commit", "-m", msg], capture_output=True, text=True)
-    print(r.stdout or r.stderr)
-    push = subprocess.run(["git", "-C", ROOT, "push"], capture_output=True, text=True)
-    print(push.stdout or push.stderr)
+    msg = args.message or f"results @ {now_iso()}"
+    # Prefer the separate testresults repo (results committed there, not in the code/dashboard repo).
+    if os.path.isdir(os.path.join(_TR, ".git")):
+        subprocess.run(["git", "-C", _TR, "add", "results.jsonl", "logs", "media"], check=False)
+        r = subprocess.run(["git", "-C", _TR, "commit", "-m", msg], capture_output=True, text=True)
+        print(r.stdout or r.stderr)
+        push = subprocess.run(["git", "-C", _TR, "push"], capture_output=True, text=True)
+        print(push.stdout or push.stderr)
+    else:
+        subprocess.run(["git", "-C", ROOT, "add", "data", "logs", "catalog.json"], check=False)
+        r = subprocess.run(["git", "-C", ROOT, "commit", "-m", msg], capture_output=True, text=True)
+        print(r.stdout or r.stderr)
+        push = subprocess.run(["git", "-C", ROOT, "push"], capture_output=True, text=True)
+        print(push.stdout or push.stderr)
 
 
 def cmd_demo(args):
@@ -1370,6 +1392,7 @@ def main():
     r.add_argument("--ip", help="override the target IP for install runs (else the per-setup default; if unreachable the e2e auto-discovers the box on the LAN by MAC)")
     r.add_argument("--env", action="append", metavar="KEY=VAL",
                    help="set/override an env var for the run (repeatable): --env DOMAIN=example.com --env MAC=aa:bb:...")
+    r.add_argument("--allow-dirty", action="store_true", help="run even if the target code repo has uncommitted changes (default: refuse)")
     r.set_defaults(fn=cmd_run)
 
     w = sub.add_parser("wrap")

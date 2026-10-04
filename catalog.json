@@ -417,7 +417,6 @@
       "budget_s": 900,
       "desc": "ONE command: auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, wipes+installs via nixos-anywhere (no reboot — network-boot-first would loop back into the installer), then verifies the install ON DISK. A live service verify (https/.onion) needs the box on an internet network, so it hands off: move the box to router R (or set disk-boot), power-cycle, then run the verifier. Installer IP 192.168.100.50.",
       "cwd": ".",
-      "env": {"IP": "192.168.100.50", "NETBOOT": "auto"},
       "cmd": "tools/e2e_install_native_ethernet.sh",
       "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },
@@ -434,7 +433,6 @@
       "budget_s": 900,
       "desc": "Laptop on R's wifi, target wired to R. Requires R configured for netboot (preflight blocks otherwise).",
       "cwd": ".",
-      "env": {"IP": "192.168.1.167"},
       "cmd": "tools/e2e_install_native_ethernet.sh",
       "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },
@@ -451,7 +449,6 @@
       "budget_s": 900,
       "desc": "Laptop + target both on R's wifi. Requires R configured for netboot (preflight blocks otherwise).",
       "cwd": ".",
-      "env": {"IP": "192.168.1.167"},
       "cmd": "tools/e2e_install_native_ethernet.sh",
       "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
     },

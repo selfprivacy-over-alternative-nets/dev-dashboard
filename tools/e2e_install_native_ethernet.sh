@@ -16,15 +16,18 @@
 # Public DNS A records (api/cloud/... -> LAN IP) live at the DNS host, so they survive the wipe.
 set -euo pipefail
 
-FLAKE=${FLAKE:-/home/a/git/personal/selfprivacy/pcname-deploy}
-IP=${IP:-192.168.1.167}                       # target's static LAN IP (final system)
-MAC=${MAC:-d8:cb:8a:7c:0a:f4}                 # target NIC MAC (for kexec-IP-change fallback)
-KEY=${KEY:-$HOME/.ssh/pcname_ed25519}
-DOMAIN=${DOMAIN:-weersurf.nl}
-EXTRA=${EXTRA:-$FLAKE/state/extra}
-NETBOOT=${NETBOOT:-off}                        # auto = (re)start the direct-cable netboot server ourselves (one-command install)
-NETBOOT_SCRIPT=${NETBOOT_SCRIPT:-$HOME/netboot/start-netboot-server.sh}
-WAIT_TARGET_S=${WAIT_TARGET_S:-}              # seconds to wait for the target at step 0 (default set below per NETBOOT)
+# All user-facing args are REQUIRED (no implicit defaults): the written command is the
+# whole truth on any network/device. Omitting one fails fast telling you what to set.
+FLAKE=${FLAKE:?required: path to deploy flake, e.g. FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy}
+IP=${IP:?required: target IP, e.g. IP=192.168.100.50 (lan-setup-0 direct-cable installer) or IP=192.168.1.167 (via router R)}
+MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
+KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
+DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=weersurf.nl}
+NETBOOT=${NETBOOT:?required: auto (start the direct-cable netboot server) or off}
+TRANSPORT=${TRANSPORT:?required: https (public, from anywhere) | onion | none (install-only, skip live verify)}
+EXTRA=${EXTRA:-$FLAKE/state/extra}             # derived from FLAKE (override only if non-standard)
+NETBOOT_SCRIPT=${NETBOOT_SCRIPT:-$HOME/netboot/start-netboot-server.sh}  # internal
+WAIT_TARGET_S=${WAIT_TARGET_S:-}               # internal timeout (default set below per NETBOOT)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
 export NIX_CONFIG='experimental-features = nix-command flakes'
@@ -176,7 +179,7 @@ if [ "$NETBOOT" = auto ]; then
   say "install.native-ethernet [lan-setup-0]: INSTALL VERIFIED ON DISK"
 
   # Install-only when non-interactive or explicitly requested (TRANSPORT=none): hand off and stop.
-  if [ ! -t 0 ] || [ "${TRANSPORT:-https}" = none ]; then
+  if [ ! -t 0 ] || [ "$TRANSPORT" = none ]; then
     cat <<EOM
 The install is complete; the injected identity (secrets.json + LE cert) is on disk.
 A live/service verify needs the box on a network WITH INTERNET (a direct cable has none):
@@ -269,7 +272,7 @@ else
   echo "   keepassxc-cli not installed — skipping (install it to capture credentials)."
 fi
 
-TRANSPORT=${TRANSPORT:-https}   # https = PUBLIC, from anywhere (the real requirement); or onion
+# TRANSPORT is required + validated at the top.
 ensure_internet || { echo "!! target has no internet access — cannot run the live $TRANSPORT verify"; exit 1; }
 say "5. VERIFY over transport=$TRANSPORT"
 # Public https also needs (box/router side): api.$DOMAIN -> the box's PUBLIC IP, and :443
