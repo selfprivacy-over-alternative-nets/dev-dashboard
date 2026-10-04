@@ -85,6 +85,8 @@
       if ((r.ts || "") > s.ts) s.ts = r.ts;
       if (list.some((x) => x.dirty)) s.dirty = true;
       if (r.pins && !s.pins) s.pins = r.pins;
+      if (r.box_stamp) s.fromBox = true;        // server identity recorded from the box stamp
+      if (r.box_stale) s.staleBox = true;       // a run ran against a box ≠ the code (forced)
       if (list.length > s.repos.length) s.repos = list;   // keep the richest snapshot for the combo
     }
     const states = [...smap.values()].sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
@@ -98,7 +100,10 @@
       el.className = "commit"; el.dataset.key = s.key;
       const chips = s.repos.map((x) => `<span class="chip${x.dirty ? " d" : ""}" title="${esc(x.name)} @ ${esc(x.branch || "?")}${x.dirty ? " · dirty" : ""}">${esc(x.name)}:${esc(x.commit)}</span>`).join(" ");
       const pm = pinMismatch(s);
-      el.innerHTML = `<div class="chips">${chips}${s.dirty ? ' <span class="dirty">⚠</span>' : ""}${pm ? ' <span class="dirty" title="api checkout ≠ deployed pin">≠pin</span>' : ""}</div>` +
+      el.innerHTML = `<div class="chips">${chips}${s.dirty ? ' <span class="dirty">⚠</span>' : ""}` +
+        `${pm ? ' <span class="dirty" title="api checkout ≠ deployed pin">≠pin</span>' : ""}` +
+        `${s.staleBox ? ' <span class="dirty" title="a run ran against a box that did not match the code">⚠ stale-box</span>' : ""}` +
+        `${s.fromBox ? ' <span class="chip" title="server state recorded from the box stamp (source of truth)">📌 box</span>' : ""}</div>` +
         `<span class="meta">${esc(relTime(s.ts))} · ${s.n} run${s.n === 1 ? "" : "s"}</span>`;
       el.onclick = () => selectState(s);
       host.appendChild(el);
@@ -122,6 +127,8 @@
     if (s.pins && Object.keys(s.pins).length)
       h += `<div class="poptitle" style="margin-top:8px">Deployed versions (flake.lock pins):</div><ul class="dirtylist">` +
         Object.entries(s.pins).map(([k, v]) => `<li>${esc(k)} · <code>${esc(v)}</code></li>`).join("") + `</ul>`;
+    if (s.fromBox) h += `<div class="poptitle" style="margin-top:8px">📌 server state recorded from the box's /etc/dev-test-build.json (the device — source of truth).</div>`;
+    if (s.staleBox) h += `<div class="poptitle err" style="margin-top:8px">⚠ a run here ran against a box whose deployed state did NOT match the code (forced with --allow-dirty).</div>`;
     const pm = pinMismatch(s);
     if (pm) h += `<div class="poptitle err" style="margin-top:8px">⚠ api checkout ≠ deployed pin: ` +
       (pm.kind === "dirty" ? `checkout <code>${esc(pm.checkout)}</code> matches the pin but was DIRTY` : `checkout <code>${esc(pm.checkout)}</code> vs deployed pin <code>${esc(pm.pin)}</code>`) +
@@ -151,6 +158,16 @@
       const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help"; w.textContent = "⚠ api ≠ pin";
       attachPop(w, configDetailsHtml);
       top.append(w);
+    }
+    if (s.staleBox) {
+      const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help"; w.textContent = "⚠ stale-box";
+      attachPop(w, configDetailsHtml);
+      top.append(w);
+    }
+    if (s.fromBox) {
+      const b = document.createElement("span"); b.className = "pins"; b.title = "server state recorded from the box's stamp (source of truth)";
+      b.textContent = "📌 from box stamp";
+      top.append(b);
     }
     const lg = document.createElement("span"); lg.className = "legend";
     lg.textContent = "🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";

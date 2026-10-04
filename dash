@@ -650,38 +650,43 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         return None
 
     # Box-identity gate: a test that runs against the target must run against a box deployed from
-    # the CURRENT code. Read the box's /etc/dev-test-build.json and refuse if it's stale/unreachable.
-    if needs_box(entry) and not allow_dirty:
+    # the CURRENT code. Read the box's /etc/dev-test-build.json; record it as the source of truth
+    # (box_stamp + box_stale) and refuse if the box is unreachable/unstamped/stale — unless
+    # --allow-dirty forces the run (in which case the staleness is still recorded, not hidden).
+    if needs_box(entry):
         _bip = ip or _env_get(extra_env, "IP")
         _bkey = _env_get(extra_env, "KEY")
-        if not _bip or not _bkey:
-            print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target; pass --ip <box> and --env KEY=<ssh key>.")
-            return None
-        if not ssh_reachable(_bip, _bkey):
-            print(f"{RED}box-unreachable{OFF}  {entry['id']} — root@{_bip} not reachable over SSH (box down / wrong IP / wrong key).")
-            return None
-        _stamp = read_box_stamp(_bip, _bkey)
+        _reach = bool(_bip and _bkey) and ssh_reachable(_bip, _bkey)
+        _stamp = read_box_stamp(_bip, _bkey) if _reach else None
         if _stamp is None:
-            print(f"{RED}box-not-stamped{OFF}  {entry['id']} — root@{_bip} is reachable but has no /etc/dev-test-build.json; (re)deploy it to stamp its build identity.")
-            return None
-        _bd = box_pin_diffs(_stamp, _pins)
-        if _bd:
-            print(f"{RED}stale-box{OFF}  {entry['id']} — the deployed box ≠ the current code:")
-            for _d in _bd:
-                print(f"    {_d}")
-            print(f"  redeploy the box before testing, or pass --allow-dirty.")
-            return None
-        base["box_stamp"] = _stamp
-        # Record what the BOX actually runs (its stamp = source of truth) as the server-side
-        # state, plus the local client repo(s) — not the workstation's server checkout.
-        _server = _stamp.get("repos") or []
-        if _server:
-            _snames = {s.get("name") for s in _server}
-            _client = [r for r in _repos if r.get("name") not in _snames]
-            base["repos"] = _server + _client
-            if _stamp.get("pins"):
-                base["pins"] = _stamp["pins"]
-            base["box_state_hash"] = _stamp.get("state_hash")
+            if not allow_dirty:
+                if not _bip or not _bkey:
+                    print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target; pass --ip <box> and --env KEY=<ssh key>.")
+                elif not _reach:
+                    print(f"{RED}box-unreachable{OFF}  {entry['id']} — root@{_bip} not reachable over SSH (box down / wrong IP / wrong key).")
+                else:
+                    print(f"{RED}box-not-stamped{OFF}  {entry['id']} — root@{_bip} is reachable but has no /etc/dev-test-build.json; (re)deploy it to stamp its build identity.")
+                return None
+        else:
+            base["box_stamp"] = _stamp
+            _bd = box_pin_diffs(_stamp, _pins)
+            base["box_stale"] = bool(_bd)
+            # Record what the BOX actually runs (its stamp = source of truth) as the server-side
+            # state, plus the local client repo(s) — not the workstation's server checkout.
+            _server = _stamp.get("repos") or []
+            if _server:
+                _snames = {s.get("name") for s in _server}
+                _client = [r for r in _repos if r.get("name") not in _snames]
+                base["repos"] = _server + _client
+                if _stamp.get("pins"):
+                    base["pins"] = _stamp["pins"]
+                base["box_state_hash"] = _stamp.get("state_hash")
+            if _bd and not allow_dirty:
+                print(f"{RED}stale-box{OFF}  {entry['id']} — the deployed box ≠ the current code:")
+                for _d in _bd:
+                    print(f"    {_d}")
+                print(f"  redeploy the box before testing, or pass --allow-dirty.")
+                return None
 
     # Preflight: for an actual install, refuse up-front (with a fix) if the
     # requested setup (--on) isn't feasible, instead of half-running.
