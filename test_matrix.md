@@ -71,15 +71,16 @@ Via router R instead of a direct cable (target already on R, no netboot):
 ### D1 — read-only suite on that one box (order-free)  [🟢]
 ```sh
 ./dash run L1.onion-routing
-./dash run L2.backend --net https
+./dash run L2.backend --net https --on lan-setup-1 --ip 192.168.1.167 --env KEY=/home/a/.ssh/pcname_ed25519
 ./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop \
-           L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --net https --on lan-setup-1
+           L3.nextcloud.desktop L3.users.desktop L3.menus.desktop \
+           --net https --on lan-setup-1 --ip 192.168.1.167 --env KEY=/home/a/.ssh/pcname_ed25519
 ```
 
 ### D3 — service add/remove, on its OWN fresh box  [🟡⟳]
 ```sh
 # (install a fresh box first, as D0/router above), then:
-./dash run L3.addremove.desktop --net https --on lan-setup-1
+./dash run L3.addremove.desktop --net https --on lan-setup-1 --ip 192.168.1.167 --env KEY=/home/a/.ssh/pcname_ed25519
 ```
 
 | id | scope | group |

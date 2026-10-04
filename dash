@@ -262,6 +262,73 @@ def api_pin_mismatch(lock_path=None):
     return None
 
 
+def _env_get(extra_env, key):
+    for kv in (extra_env or []):
+        if kv.startswith(key + "="):
+            return kv.split("=", 1)[1]
+    return None
+
+
+def needs_box(entry):
+    """True if the test runs against a deployed target box, so the box's deployment identity
+    must match the current code. Per-entry `needs_box` wins; else default: L2/L3 tests do."""
+    if "needs_box" in entry:
+        return bool(entry["needs_box"])
+    return entry.get("level") in ("L2", "L3")
+
+
+def _ssh_base(key):
+    o = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+         "-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
+    if key:
+        o += ["-i", os.path.expanduser(key)]
+    return o
+
+
+def read_box_stamp(ip, key):
+    """The /etc/dev-test-build.json a box was deployed with, or None if unreachable/unstamped."""
+    try:
+        raw = subprocess.check_output(_ssh_base(key) + [f"root@{ip}", "cat /etc/dev-test-build.json"], stderr=subprocess.DEVNULL).decode()
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def box_pin_diffs(stamp, want):
+    """List of 'k: box=X vs code=Y' where the box's deployed pin != the current code pin."""
+    out = []
+    for k in ("selfprivacy-api", "nixpkgs"):
+        w = want.get(k)
+        if w and not str(stamp.get(k, "")).startswith(w):
+            out.append(f"{k}: box={str(stamp.get(k, '?'))[:12]} vs code={w}")
+    return out
+
+
+def submodule_drift(rel):
+    """If `rel` is a git submodule whose working checkout differs from the superproject's
+    recorded pointer, return a message; else None. (So 'manager clean' can't hide an app
+    checkout that doesn't match manager's recorded gitlink.)"""
+    if not rel:
+        return None
+    repo = os.path.normpath(os.path.join(ROOT, rel))
+    if not _is_git(repo):
+        return None
+    try:
+        sup = subprocess.check_output(["git", "-C", repo, "rev-parse", "--show-superproject-working-tree"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        return None
+    if not sup:
+        return None
+    subrel = os.path.relpath(repo, sup)
+    try:
+        out = subprocess.check_output(["git", "-C", sup, "submodule", "status", "--", subrel], stderr=subprocess.DEVNULL).decode()
+    except Exception:
+        return None
+    if out and out[0] in "+-U":
+        return f"{subrel}: checkout {out[1:11].strip()} differs from {os.path.basename(sup)}'s recorded submodule pointer"
+    return None
+
+
 def gen_run_id():
     stamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     return f"{stamp}-{os.urandom(2).hex()}"
@@ -537,6 +604,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     _pins = flake_pins(_lock)
     _mm = api_pin_mismatch(_lock)
     _dirty_repos = [r["name"] for r in _repos if r.get("dirty")]
+    _pr = (load_catalog().get("project_repos") or {})
+    _drift = []
+    for _n in (entry_repos(entry) or list(_pr)):
+        _d = submodule_drift(_pr.get(_n))
+        if _d:
+            _drift.append(_d)
     base = {
         "run_id": run_id, "ts": now_iso(), "env": "ci" if is_ci() else "local",
         "host": socket.gethostname(), "category": entry.get("category", "test"),
@@ -554,9 +627,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # it. Checks ALL repos the test uses (so e.g. a dirty app checkout for an L3 run is caught —
     # not just the primary repo). Results live in the separate testresults repo, so they never
     # dirty the code. Override with --allow-dirty.
-    if entry.get("category") in ("test", "install") and _dirty_repos and not allow_dirty:
-        print(f"{RED}dirty{OFF}  {entry['id']} — uncommitted changes in: {', '.join(_dirty_repos)}.")
-        print(f"  commit them so every run shares one state, or pass --allow-dirty.")
+    if entry.get("category") in ("test", "install") and (_dirty_repos or _drift) and not allow_dirty:
+        if _dirty_repos:
+            print(f"{RED}dirty{OFF}  {entry['id']} — uncommitted changes in: {', '.join(_dirty_repos)}.")
+        for _d in _drift:
+            print(f"{RED}submodule-drift{OFF}  {entry['id']} — {_d}.")
+        print(f"  commit/sync them so every run shares one state, or pass --allow-dirty.")
         return None
 
     # Pin gate: the deploy builds the selfprivacy-api rev PINNED in the flake.lock (of the flake
@@ -566,6 +642,27 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {_mm['msg']}.")
         print(f"  bump the flake input to match (nix flake lock / update the follows) or check out the pinned rev; or pass --allow-dirty.")
         return None
+
+    # Box-identity gate: a test that runs against the target must run against a box deployed from
+    # the CURRENT code. Read the box's /etc/dev-test-build.json and refuse if it's stale/unreachable.
+    if needs_box(entry) and not allow_dirty:
+        _bip = ip or _env_get(extra_env, "IP")
+        _bkey = _env_get(extra_env, "KEY")
+        if not _bip or not _bkey:
+            print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target; pass --ip <box> and --env KEY=<ssh key>.")
+            return None
+        _stamp = read_box_stamp(_bip, _bkey)
+        if _stamp is None:
+            print(f"{RED}box-unreachable{OFF}  {entry['id']} — can't read /etc/dev-test-build.json from root@{_bip} (box down or not stamped — (re)deploy it first).")
+            return None
+        _bd = box_pin_diffs(_stamp, _pins)
+        if _bd:
+            print(f"{RED}stale-box{OFF}  {entry['id']} — the deployed box ≠ the current code:")
+            for _d in _bd:
+                print(f"    {_d}")
+            print(f"  redeploy the box before testing, or pass --allow-dirty.")
+            return None
+        base["box_stamp"] = _stamp
 
     # Preflight: for an actual install, refuse up-front (with a fix) if the
     # requested setup (--on) isn't feasible, instead of half-running.
@@ -775,20 +872,11 @@ def cmd_report(args):
 def cmd_verify_box(args):
     """Read /etc/dev-test-build.json from a deployed box and compare to the CURRENT code pins.
     Answers: does this already-deployed box correspond to the code state you'd be testing?"""
-    ssho = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=8"]
-    if args.key:
-        ssho += ["-i", os.path.expanduser(args.key)]
-    try:
-        raw = subprocess.check_output(ssho + [f"root@{args.ip}", "cat /etc/dev-test-build.json"], stderr=subprocess.DEVNULL).decode()
-        stamp = json.loads(raw)
-    except Exception as e:
-        sys.exit(f"{RED}could not read /etc/dev-test-build.json from root@{args.ip}{OFF} — box unreachable or not stamped (deployed before stamping existed). {e}")
+    stamp = read_box_stamp(args.ip, args.key)
+    if stamp is None:
+        sys.exit(f"{RED}could not read /etc/dev-test-build.json from root@{args.ip}{OFF} — box unreachable or not stamped (deployed before stamping existed).")
     want = flake_pins()  # current catalog-default deployed pins
-    diffs = []
-    for k in ("selfprivacy-api", "nixpkgs"):
-        w = want.get(k)
-        if w and not str(stamp.get(k, "")).startswith(w):
-            diffs.append(f"{k}: box={str(stamp.get(k, '?'))[:12]} vs code={w}")
+    diffs = box_pin_diffs(stamp, want)
     print(f"box root@{args.ip} deployed_at {stamp.get('deployed_at', '?')} from flake {stamp.get('flake', '?')}")
     if diffs:
         print(f"{RED}MISMATCH{OFF} — the box runs a DIFFERENT state than the current code:")
