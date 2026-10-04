@@ -271,10 +271,12 @@ def _env_get(extra_env, key):
 
 def needs_box(entry):
     """True if the test runs against a deployed target box, so the box's deployment identity
-    must match the current code. Per-entry `needs_box` wins; else default: L2/L3 tests do."""
+    must match the current code. Per-entry `needs_box` wins; else default: L3 tests do (they
+    run the Flutter app against a deployed box). L1/L2 are self-contained nixosTests that spin
+    their own throwaway VM, so they need no external box (matches the dashboard's needsBox)."""
     if "needs_box" in entry:
         return bool(entry["needs_box"])
-    return entry.get("level") in ("L2", "L3")
+    return entry.get("level") == "L3"
 
 
 def _ssh_base(key):
