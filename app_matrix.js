@@ -66,6 +66,23 @@
     const m = run.method;
     return (m && m !== "-" && cols.includes(m)) ? m : cols[0];
   }
+  // Hover text: what a group (= level) tests, straight from the catalog `levels`.
+  function groupDesc(g) {
+    return (CAT.levels && CAT.levels[g]) ||
+      (g === "install"
+        ? "Install — provision a real backend onto a device/VM via a setup method, then verify it is reachable and correct."
+        : "");
+  }
+  // Hover text for a ⚪ N/A cell: why this network isn't exercised here. Roadmap transports
+  // (catalog `future_networks`, e.g. Yggdrasil/Hyphanet) aren't implemented yet; otherwise the
+  // transport works but this particular test doesn't cover it.
+  function naReason(e, nk, nlabel) {
+    const future = new Set(CAT.future_networks || []);
+    const base = String(nk).split("+")[0];
+    if (future.has(nk) || future.has(base))
+      return `${nlabel} transport isn't implemented yet — on the roadmap (catalog future_networks).`;
+    return `N/A — ${e.id} doesn't exercise ${nlabel} (its networks: ${(e.networks || []).join(", ") || "none"}).`;
+  }
 
   async function fetchFirst(paths) {
     for (const p of paths) {
@@ -256,13 +273,13 @@
       ents.sort((a, b) => a.id.localeCompare(b.id));
       const gd = document.createElement("details"); gd.className = "group"; gd.open = true;
       const gsum = document.createElement("summary");
-      gsum.innerHTML = `<span class="caret">▶</span><span>${esc(g)}</span><span class="count">${ents.length}</span>`;
+      gsum.innerHTML = `<span class="caret">▶</span><span title="${esc(groupDesc(g))}">${esc(g)}</span><span class="count">${ents.length}</span>`;
       const gcmd = mkCmdBtn("run group"); attachCmd(gcmd, `./dash run ${ents.map((e) => e.id).join(" ")}`); gsum.appendChild(gcmd);
       gd.appendChild(gsum);
       for (const e of ents) {
         const td = document.createElement("details"); td.className = "test";
         const tsum = document.createElement("summary");
-        tsum.innerHTML = `<span class="caret">▶</span><span class="tname">${esc(e.id)}</span>`;
+        tsum.innerHTML = `<span class="caret">▶</span><span class="tname" title="${esc(e.desc || "")}">${esc(e.id)}</span>`;
         const tcmd = mkCmdBtn("run"); attachCmd(tcmd, cmdFor(e, (e.networks || [])[0] || "", "<setup>")); tsum.appendChild(tcmd);
         const built = buildGrid(e, RES.get(e.id) || []);
         const roll = document.createElement("span"); roll.className = "roll"; roll.innerHTML = built.counts; tsum.appendChild(roll);
@@ -294,6 +311,9 @@
     const tbl = document.createElement("table"); tbl.className = "grid";
     let head = '<thead><tr><th class="net"></th>';
     for (const col of cols) head += `<th>${esc(col)}</th>`;
+    // sub-header: each setup column holds two dots (local, then CI) — label the split.
+    head += '</tr><tr><th class="net"></th>';
+    for (const col of cols) head += `<th class="sub">local · ci</th>`;
     head += "</tr></thead>";
     let body = "<tbody>";
     for (const [nk, nlabel] of rows) {
@@ -315,7 +335,7 @@
               const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
               body += `<span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span>`;
             } else {
-              body += `<span class="dot na" title="${esc(hl)}: N/A"></span>`;
+              body += `<span class="dot na" title="${esc(naReason(e, nk, nlabel))}"></span>`;
             }
           }
         }
