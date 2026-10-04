@@ -199,7 +199,7 @@
       m.textContent = "Overview — no runs recorded yet; every applicable cell is ☐ todo (hover a cell for its command). Run tests, then pick a state on the left.";
       top.append(m);
       const lg0 = document.createElement("span"); lg0.className = "legend";
-      lg0.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
+      lg0.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified (forced/manual/cached/substituted/flaky/behind)   (L=local · C=CI)";
       top.append(lg0);
       return;
     }
@@ -236,11 +236,26 @@
       top.append(b);
     }
     const lg = document.createElement("span"); lg.className = "legend";
-    lg.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
+    lg.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified (forced/manual/cached/substituted/flaky/behind)   (L=local · C=CI)";
     top.append(lg);
   }
 
   function statusClass(s) { return s === "pass" ? "pass" : s === "fail" ? "fail" : s === "slow" ? "slow" : "na"; }
+
+  // Trust qualifiers on a run: things that make a "pass" NOT a clean, fresh, automated, verified
+  // run against the latest committed code. A qualified dot gets an amber ring so it's never mistaken
+  // for a clean pass; hover/drawer spell out why.
+  function qualifiers(r) {
+    const q = [];
+    if (r.source === "manual") q.push("✍manual");
+    if (r.forced) q.push("⚠forced" + (r.forced_reasons && r.forced_reasons.length ? `(${r.forced_reasons.join(";")})` : ""));
+    if (r.from_cache) q.push("⚡cached");
+    if (r.substituted) q.push("⬇substituted");
+    if (r.flaky) q.push("flaky");
+    if (r.behind_upstream && Object.keys(r.behind_upstream).length)
+      q.push("⬆behind:" + Object.entries(r.behind_upstream).map(([k, v]) => `${k}-${v}`).join(","));
+    return q;
+  }
 
   // Results for the SELECTED state, grouped by test id. Empty when no state selected.
   function resultsByTest() {
@@ -327,7 +342,8 @@
             const st = statusClass(rr[0].status);
             if (st === "pass") p++; else if (st === "fail") f++; else if (st === "slow") s++;
             const n = rr.length > 1 ? `<span class="n">${rr.length}</span>` : "";
-            body += `<span class="dot ${st}" data-cell="${idx}" title="${esc(hl)}: ${esc(rr[0].status)} · ${esc(relTime(rr[0].ts))} · click for history">${n}</span>`;
+            const q = qualifiers(rr[0]);
+            body += `<span class="dot ${st}${q.length ? " q" : ""}" data-cell="${idx}" title="${esc(hl)}: ${esc(rr[0].status)}${q.length ? " [" + esc(q.join(" ")) + "]" : ""} · ${esc(relTime(rr[0].ts))} · click for history">${n}</span>`;
           } else {
             const applicable = !hasNet || supported.has(nk);
             if (applicable) {
@@ -391,7 +407,7 @@
     c.runs.forEach((r, i) => {
       h += `<details class="run" ${i === 0 ? "open" : ""} data-run="${idx}:${i}">` +
         `<summary><span class="dot ${statusClass(r.status)}"></span><b>${esc(r.status)}</b>` +
-        `<span class="rmeta">${esc(r.ts)} · ${esc(relTime(r.ts))} · ${esc(r.duration_s)}s · exit ${esc(r.exit_code)}${r.from_cache ? " · ⚡cached" : ""} · ${esc(r.host || "")}</span></summary>` +
+        `<span class="rmeta">${esc(r.ts)} · ${esc(relTime(r.ts))} · ${esc(r.duration_s)}s · exit ${esc(r.exit_code)}${qualifiers(r).length ? " · " + esc(qualifiers(r).join(" · ")) : ""} · ${esc(r.host || "")}</span></summary>` +
         `<div class="rbody">${r.error ? `<div class="err">${esc(r.error)}</div>` : ""}<div class="lazy muted">opening…</div></div></details>`;
     });
     const db = $("#dbody"); db.innerHTML = h;

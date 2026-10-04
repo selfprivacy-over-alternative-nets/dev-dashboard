@@ -116,6 +116,15 @@ fi
 
 say "4. stamp the box with its build identity"
 printf '%s' "$(stamp_json)" | ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json"
+# Record the running-system BASELINE so a later run can detect a box rebuilt/edited since install.
+ssh $SSHO "root@$IP" 'python3 - <<PY
+import json, subprocess
+d = json.load(open("/etc/dev-test-build.json"))
+d["system"] = subprocess.check_output(["readlink","-f","/run/current-system"]).decode().strip()
+try: d["nixos_version"] = subprocess.check_output(["nixos-version"]).decode().strip()
+except Exception: pass
+json.dump(d, open("/etc/dev-test-build.json","w"))
+PY' || echo "   (warning: could not record running-system baseline)"
 echo "   stamped."
 
 say "5. VERIFY over transport=$TRANSPORT"

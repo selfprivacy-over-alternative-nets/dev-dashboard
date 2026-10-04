@@ -307,6 +307,16 @@ ssh $SSHO "root@$IP" '
 say "3b. stamp the box with its FULL build identity (so later runs can check box-vs-code)"
 STAMP=$(stamp_json)
 printf '%s' "$STAMP" | ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json"
+# Record the running-system BASELINE into the stamp (readlink on the box, post-switch) so a later
+# run can detect a box nixos-rebuilt/hand-edited since install — the stamp alone is only a claim.
+ssh $SSHO "root@$IP" 'python3 - <<PY
+import json, subprocess
+d = json.load(open("/etc/dev-test-build.json"))
+d["system"] = subprocess.check_output(["readlink","-f","/run/current-system"]).decode().strip()
+try: d["nixos_version"] = subprocess.check_output(["nixos-version"]).decode().strip()
+except Exception: pass
+json.dump(d, open("/etc/dev-test-build.json","w"))
+PY' || echo "   (warning: could not record running-system baseline in the stamp)"
 echo "   stamped: $(printf '%s' "$STAMP" | python3 -c "import sys,json;d=json.load(sys.stdin);print('state_hash='+str(d.get('state_hash','?'))+' pins='+str(d.get('pins',{})))" 2>/dev/null || echo written)"
 
 say "4. read freshly-deployed identity from the target"

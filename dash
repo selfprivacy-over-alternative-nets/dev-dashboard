@@ -336,6 +336,22 @@ def box_pin_diffs(stamp, want):
     return out
 
 
+def read_box_live(ip, key):
+    """MEASURE the box's ACTUAL running system (not the install-time stamp, which is only a claim):
+    the /run/current-system store path + nixos-version. None if unreachable. Lets the gate catch a
+    box that was nixos-rebuilt / hand-edited AFTER it was stamped — the stamp wouldn't change, but
+    the running closure would."""
+    try:
+        out = subprocess.check_output(
+            _ssh_base(key) + [f"root@{ip}",
+                              "printf '%s\\n%s' \"$(readlink -f /run/current-system)\" \"$(nixos-version 2>/dev/null)\""],
+            stderr=subprocess.DEVNULL).decode().splitlines()
+        return {"system": (out[0].strip() if out else ""),
+                "nixos_version": (out[1].strip() if len(out) > 1 else "")}
+    except Exception:
+        return None
+
+
 def submodule_drift(rel):
     """If `rel` is a git submodule whose working checkout differs from the superproject's
     recorded pointer, return a message; else None. (So 'manager clean' can't hide an app
@@ -404,6 +420,47 @@ def drop_record(run_id):
         return
     kept = [l for l in open(DATA) if l.strip() and json.loads(l).get("run_id") != run_id]
     open(DATA, "w").write("".join(kept))
+
+
+def mark_record(run_id, **fields):
+    """Update an already-appended record in place (by run_id) with extra fields — used to RETAIN a
+    transient retry attempt marked flaky, instead of deleting it (so real-but-intermittent failures
+    aren't silently hidden; the cell headline is still the later pass, flaky fails live in history)."""
+    if not run_id or not os.path.exists(DATA):
+        return
+    out = []
+    for l in open(DATA):
+        if not l.strip():
+            continue
+        r = json.loads(l)
+        if r.get("run_id") == run_id:
+            r.update(fields)
+        out.append(json.dumps(r))
+    open(DATA, "w").write("\n".join(out) + "\n")
+
+
+def repos_behind_upstream(repos):
+    """{name: n} for each repo whose local HEAD is n commits BEHIND its tracked upstream (0 omitted).
+    Offline-safe: compares to the last-fetched remote-tracking ref (no network). Catches testing a
+    stale checkout while believing it's the latest code."""
+    try:
+        pr = (load_catalog().get("project_repos") or {})
+    except Exception:
+        pr = {}
+    out = {}
+    for r in repos:
+        rel = pr.get(r.get("name"))
+        if not rel:
+            continue
+        repo = os.path.normpath(os.path.join(ROOT, rel))
+        try:
+            n = subprocess.check_output(["git", "-C", repo, "rev-list", "--count", "HEAD..@{u}"],
+                                        stderr=subprocess.DEVNULL).decode().strip()
+            if n and n != "0":
+                out[r["name"]] = int(n)
+        except Exception:
+            pass
+    return out
 
 
 def summarize_error(log_path):
@@ -633,6 +690,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     run_id = gen_run_id()
     _lock = resolve_lock(extra_env, entry)
     _repos = project_repo_states(entry_repos(entry))   # only the repos this test depends on
+    _behind = repos_behind_upstream(_repos)            # testing a stale checkout? (warn, don't block)
     _pins = flake_pins(_lock)
     _mm = api_pin_mismatch(_lock)
     _mm_mgr = lock_input_mismatch(_lock, "manager", "manager")   # self-contained test flakes pin manager too
@@ -654,10 +712,18 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "backend": entry.get("backend", "-"), "method": method_tag,
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if _dirty_repos else ""),
+        "source": "automated", "behind_upstream": _behind,
         "repos": _repos, "pins": _pins, "pin_mismatch": _mm or _mm_mgr, "state_hash": _state_hash,
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
+
+    # Stale-checkout warning (not a block): a repo behind its upstream means you're testing OLD code
+    # while likely believing it's the latest. Recorded in `behind_upstream` too.
+    if _behind:
+        print(f"{AMBER}behind upstream{OFF}  {entry['id']} — local checkout is behind: " +
+              ", ".join(f"{k} by {v}" for k, v in _behind.items()) +
+              f". You may be testing non-latest code ({CYAN}git pull{OFF} to test the newest).")
 
     # Clean-state gate: run tests/installs only on committed code so every run on a state shares
     # it. Checks ALL repos the test uses (so e.g. a dirty app checkout for an L3 run is caught —
@@ -703,6 +769,19 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         else:
             base["box_stamp"] = _stamp
             _bd = box_pin_diffs(_stamp, _pins)
+            # MEASURE the box's running system (don't just trust the stamp, which is an install-time
+            # claim): catch a box nixos-rebuilt / hand-edited after install — the stamp wouldn't
+            # change, but /run/current-system would.
+            _live = read_box_live(_bip, _bkey)
+            if _live:
+                base["box_live"] = _live
+                _baseline = _stamp.get("system")
+                if _baseline and _live.get("system") and _live["system"] != _baseline:
+                    _bd = _bd + [f"running system {_live['system'][:28]}… ≠ stamped {str(_baseline)[:28]}… "
+                                 f"(box rebuilt/edited since install)"]
+                elif not _baseline:
+                    print(f"{GREY}note{OFF}  {entry['id']} — box stamp has no running-system baseline; "
+                          f"redeploy to enable drift detection.")
             base["box_stale"] = bool(_bd)
             # Record what the BOX actually runs (its stamp = source of truth) as the server-side
             # state, plus the local client repo(s) — not the workstation's server checkout.
@@ -792,6 +871,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         run_env["SHOT_SIZE"] = "1280x800"
     start = datetime.datetime.now()
     out_lines = 0
+    subst = False
     with open(log_path, "w") as log:
         log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
         log.flush()
@@ -802,6 +882,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                 sys.stdout.write(line)
                 log.write(line)
                 out_lines += 1
+                if "copying path" in line or "substituting" in line or "will be fetched" in line:
+                    subst = True
             proc.wait()
             code = proc.returncode
         except KeyboardInterrupt:
@@ -826,8 +908,24 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # the lock matches the checkouts) — but flag it so a sub-second "pass" is transparent, not
     # mistaken for a fresh VM run.
     from_cache = bool(_self_contained(entry)) and code == 0 and out_lines == 0
+    # Substituted: the output was FETCHED from a binary cache ("copying path …") — built on another
+    # machine, not run here. Still a valid deterministic pass, but not a local execution.
+    substituted = bool(_self_contained(entry)) and code == 0 and subst and not from_cache
+    # Forced: the run was pushed past a gate with --allow-dirty — must never look like a clean pass.
+    _forced = []
+    if allow_dirty:
+        if _dirty_repos:
+            _forced.append("dirty:" + ",".join(_dirty_repos))
+        if _drift:
+            _forced.append("submodule-drift")
+        if _pin_problems:
+            _forced.append("pin-mismatch")
+        if base.get("box_stale"):
+            _forced.append("stale-box")
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
-           "error": err, "from_cache": from_cache, "log_path": os.path.relpath(log_path, ROOT),
+           "error": err, "from_cache": from_cache, "substituted": substituted,
+           "forced": bool(_forced), "forced_reasons": _forced,
+           "log_path": os.path.relpath(log_path, ROOT),
            "artifacts": {"client_log": os.path.relpath(log_path, ROOT),
                          "server_log": server_log_path, "video": video,
                          "screenshots": screenshots}}
@@ -836,6 +934,10 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
     if from_cache:
         print(f"{GREY}  (cached: nix reused a prior build of this exact derivation — no VM ran this time){OFF}")
+    if substituted:
+        print(f"{GREY}  (substituted: output fetched from a binary cache — built elsewhere, not run here){OFF}")
+    if _forced:
+        print(f"{AMBER}  FORCED past: {', '.join(_forced)} (--allow-dirty) — recorded as a forced run, not a clean pass{OFF}")
     return rec
 
 
@@ -946,6 +1048,7 @@ def cmd_report(args):
         "backend": e.get("backend", "-"), "method": args.on or e.get("method", "-"),
         "records_video": bool(e.get("records_video")),
         "config_label": args.config or "", "status": args.status,
+        "source": "manual",   # self-attested (click-through/video), NOT an automated+verified run
         "duration_s": round(float(args.duration), 1), "exit_code": 0 if args.status == "pass" else 1,
         "error": scrub(args.error or ""), "log_path": "",
         "artifacts": {"client_log": "", "server_log": "", "video": ""},
@@ -1512,7 +1615,10 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
             if is_tor and is_transient and attempt < max_attempts:
                 print(f"{AMBER}transient {net} connection failure{OFF} — retrying "
                       f"(attempt {attempt + 1}/{max_attempts})…")
-                drop_record(rec["run_id"])           # don't leave a flaky-fail on the board
+                # Keep the attempt (marked flaky), don't delete it — a 'transient' marker can be a
+                # REAL intermittent bug; hiding it would misrepresent reliability. The cell headline
+                # is still the later pass; flaky fails live in the run history.
+                mark_record(rec["run_id"], flaky=True, flaky_reason=f"transient {net} failure, retried")
                 if net == "tor":
                     _kick_vm_tor()                   # chutney HS is host-side; nothing to kick
                 _onion_reachable(address, tries=20, socks_port=socks_port)  # re-warm before next launch
@@ -1541,9 +1647,12 @@ def _reenable_service(service_id):
     """Re-enable a service via the enableService mutation over the real Tor onion (SOCKS 9050),
     which is always up regardless of the transport under test. Best-effort backstop for addremove."""
     try:
-        onion = ""
-        if os.path.exists("/tmp/onion.txt"):
+        # Read the onion LIVE from the backend (authoritative), not a stale /tmp file that could
+        # point at a previous box. Fall back to /tmp only if the live read fails, and say so.
+        onion = _get_onion(retries=3) or ""
+        if not onion and os.path.exists("/tmp/onion.txt"):
             onion = open("/tmp/onion.txt").read().strip()
+            print(f"{AMBER}addremove backstop: live onion unavailable, using possibly-stale /tmp/onion.txt{OFF}")
         if not onion:
             print(f"{AMBER}addremove backstop: no tor onion known, skipping re-enable{OFF}")
             return
