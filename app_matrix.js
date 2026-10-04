@@ -44,7 +44,9 @@
     // "test-vm" is a self-contained nixosTest's intrinsic method, not a setup you pass; only
     // emit --on for real deploy setups so the hover command is the exact minimal working one.
     if (setup && setup !== "<setup>" && setup !== "test-vm") c += ` --on ${setup}`;
-    if (needsBox(e)) c += ` --ip <box-ip> --env KEY=<ssh-key>`;
+    // L3 against a box needs the box reach args; vm-local resolves the VM onion + dev token itself.
+    if (needsBox(e) && setup && setup !== "vm-local" && setup !== "test-vm")
+      c += ` --ip <box-ip> --key <ssh-key> --token <api-token>`;
     return c;
   }
   const isInstall = (e) => e.category === "install" || e.level === "install";
@@ -66,6 +68,14 @@
     const m = run.method;
     return (m && m !== "-" && cols.includes(m)) ? m : cols[0];
   }
+  // A (network, setup) combo can be inapplicable even when the network is one the test supports:
+  // chutney is a laptop-local private Tor network, so it only applies to vm-local (a box is reached
+  // over tor/https). Mirrors dash's resolve_backend_target, which rejects chutney on a box.
+  function netSetupOK(nk, setup) {
+    const base = String(nk).split("+")[0];   // chutney+https → chutney
+    if (base === "chutney" && setup && setup !== "vm-local") return false;
+    return true;
+  }
   // Hover text: what a group (= level) tests, straight from the catalog `levels`.
   function groupDesc(g) {
     return (CAT.levels && CAT.levels[g]) ||
@@ -76,11 +86,14 @@
   // Hover text for a ⚪ N/A cell: why this network isn't exercised here. Roadmap transports
   // (catalog `future_networks`, e.g. Yggdrasil/Hyphanet) aren't implemented yet; otherwise the
   // transport works but this particular test doesn't cover it.
-  function naReason(e, nk, nlabel) {
+  function naReason(e, nk, nlabel, setup) {
     const future = new Set(CAT.future_networks || []);
     const base = String(nk).split("+")[0];
     if (future.has(nk) || future.has(base))
       return `${nlabel} transport isn't implemented yet — on the roadmap (catalog future_networks).`;
+    const supported = new Set(e.networks || []);
+    if (base === "chutney" && setup && setup !== "vm-local" && supported.has(nk))
+      return `${nlabel} is a laptop-local private Tor network (vm-local only); ${setup} is a box, reached over tor/https.`;
     return `N/A — ${e.id} doesn't exercise ${nlabel} (its networks: ${(e.networks || []).join(", ") || "none"}).`;
   }
 
@@ -358,13 +371,13 @@
             const xp = rr.length > 1 ? `<button class="xpand" title="${rr.length} runs — expand history (newest on top)">▾</button>` : "";
             body += `<span class="runstack">${stack}${xp}</span>`;
           } else {
-            const applicable = !hasNet || supported.has(nk);
+            const applicable = (!hasNet || supported.has(nk)) && netSetupOK(nk, col);
             if (applicable) {
               todo++;
               const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
               body += `<span class="runstack"><span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span></span>`;
             } else {
-              body += `<span class="runstack"><span class="dot na" title="${esc(naReason(e, nk, nlabel))}"></span></span>`;
+              body += `<span class="runstack"><span class="dot na" title="${esc(naReason(e, nk, nlabel, col))}"></span></span>`;
             }
           }
         }
