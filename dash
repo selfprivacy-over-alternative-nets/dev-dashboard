@@ -305,6 +305,18 @@ def needs_box(entry):
     return entry.get("level") == "L3"
 
 
+def _setup_backend_kind(setup):
+    """Which kind of backend a `--on <setup>` names: an external physical 'box' (reached over the LAN
+    via SSH key) vs the local 'vm' (VirtualBox on this host, or the self-contained test-VM). L3 against
+    a box must pass the box-identity gate + needs --ip/--key/--token; L3 on vm-local does not (the VM
+    is local and has no deploy stamp). Fine setup variants (lan-setup-0a..0d / usb-0a..0c) all resolve
+    to the same reach, so match by prefix."""
+    s = (setup or "").strip()
+    if s.startswith("lan-setup-") or s.startswith("usb-") or s == "usb" or s == "native-ethernet":
+        return "box"
+    return "vm"   # vm-local, test-vm, "-", or unset
+
+
 def _ssh_base(key):
     o = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
          "-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
@@ -726,10 +738,28 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
     }
 
-    # Stale-checkout gate: a repo BEHIND its (freshly-fetched) upstream means you'd test OLD code
-    # while believing it's the latest — refuse, since tests only ever run against the newest committed
-    # code. Recorded in `behind_upstream`. Bypass with --allow-dirty (then it's flagged as forced).
-    if entry.get("category") in ("test", "install") and _behind and not allow_dirty:
+    # @todo / @manual are pure no-ops (no record, nothing runs) — short-circuit BEFORE the gates so a
+    # dirty tree doesn't mask an entry that simply isn't automated yet / is a manual click-through.
+    if cmd == "@todo":
+        print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
+        return None
+    if cmd == "@manual":
+        print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
+        print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
+        return None
+
+    # Which runs are gated for integrity: installs (category) AND tests (identified by `level`: L1/L2/
+    # L3). Catalog test entries carry no `category`, so keying only on category silently skipped the
+    # clean-state / pin / behind-upstream gates for every test — they only ever fired for installs.
+    # A test must run on committed, in-sync, latest code too (reqs 42-45, 77-79, 88). `_no_gate` is set
+    # by the L3 inner recorder, whose outer run_entry already gated this run.
+    _gated = (entry.get("category") in ("test", "install") or bool(entry.get("level"))) \
+        and not entry.get("_no_gate")
+
+    # Stale-checkout gate: a repo BEHIND its (freshly-fetched) upstream means you'd test OLD code while
+    # believing it's the latest — refuse, since tests only ever run against the newest committed code.
+    # Recorded in `behind_upstream`. Bypass with --allow-dirty (then it's flagged as forced).
+    if _gated and _behind and not allow_dirty:
         print(f"{RED}behind-upstream{OFF}  {entry['id']} — local checkout is behind: " +
               ", ".join(f"{k} by {v}" for k, v in _behind.items()) + ".")
         print(f"  you'd be testing non-latest code. {CYAN}git pull{OFF} in each, or pass --allow-dirty.")
@@ -739,7 +769,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # it. Checks ALL repos the test uses (so e.g. a dirty app checkout for an L3 run is caught —
     # not just the primary repo). Results live in the separate testresults repo, so they never
     # dirty the code. Override with --allow-dirty.
-    if entry.get("category") in ("test", "install") and (_dirty_repos or _drift) and not allow_dirty:
+    if _gated and (_dirty_repos or _drift) and not allow_dirty:
         if _dirty_repos:
             print(f"{RED}dirty{OFF}  {entry['id']} — uncommitted changes in: {', '.join(_dirty_repos)}.")
         for _d in _drift:
@@ -752,7 +782,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # — not your local checkouts. If a pinned input (api OR manager) differs from its checkout the
     # run wouldn't exercise your code, so the result would be mislabelled. Refuse unless
     # --allow-dirty. (This is what catches a stale test flake.lock cache-hitting an old build.)
-    if entry.get("category") in ("test", "install") and _pin_problems and not allow_dirty:
+    if _gated and _pin_problems and not allow_dirty:
         for m in _pin_problems:
             print(f"{RED}pin-mismatch{OFF}  {entry['id']} — {m['msg']}.")
         print(f"  bump the flake input to match (`nix flake update` in the flake under test) or check out the pinned rev; or pass --allow-dirty.")
@@ -762,7 +792,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # the CURRENT code. Read the box's /etc/dev-test-build.json; record it as the source of truth
     # (box_stamp + box_stale) and refuse if the box is unreachable/unstamped/stale — unless
     # --allow-dirty forces the run (in which case the staleness is still recorded, not hidden).
-    if needs_box(entry):
+    if needs_box(entry) and _setup_backend_kind(method_tag) == "box":
         _bip = ip or _env_get(extra_env, "IP")
         _bkey = _env_get(extra_env, "KEY")
         _reach = bool(_bip and _bkey) and ssh_reachable(_bip, _bkey)
@@ -770,7 +800,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         if _stamp is None:
             if not allow_dirty:
                 if not _bip or not _bkey:
-                    print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target; pass --ip <box> and --env KEY=<ssh key>.")
+                    print(f"{RED}no-box{OFF}  {entry['id']} — runs against the target box; pass --ip <box> --key <ssh key> (and --token <api token> for L3).")
                 elif not _reach:
                     print(f"{RED}box-unreachable{OFF}  {entry['id']} — root@{_bip} not reachable over SSH (box down / wrong IP / wrong key).")
                 else:
@@ -820,13 +850,12 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                 print(f"  {line}")
             return None
 
-    if cmd == "@todo":
-        print(f"{GREY}todo{OFF}  {entry['id']}  — automated test not written yet (no record appended)")
-        return None
-    if cmd == "@manual":
-        print(f"{AMBER}manual{OFF}  {entry['id']}  — run it, then log with:")
-        print(f"  ./dash report {entry['id']} --status pass --duration <seconds> [--config ..]")
-        return None
+    if cmd == "@flutter":
+        # L3 desktop flow: not a shell command. Resolve the backend target from the setup/args and
+        # drive the Flutter app against it, recording the real setup as the method (so the result
+        # lands in the correct matrix column). Gates above (clean-state/pin/behind/box-identity) have
+        # already run for this catalog entry; the inner recorder does not re-gate.
+        return _dispatch_l3(entry, net, method_tag, ip, extra_env, allow_dirty, base)
 
     repo_dir = os.path.normpath(os.path.join(ROOT, entry["repo"])) if entry.get("repo") else ROOT
     # Where the command actually runs. Defaults to the repo dir so repo-relative cmds
@@ -1010,6 +1039,14 @@ def select(args):
 
 def cmd_run(args):
     entries = select(args)
+    # Fold the dedicated box args into the env channel the gates/dispatch already read (KEY for the
+    # box-identity gate + server logs; API_TOKEN for the L3 app). Keeps run_entry's signature stable.
+    env = list(args.env or [])
+    if getattr(args, "key", None):
+        env.append(f"KEY={args.key}")
+    if getattr(args, "token", None):
+        env.append(f"API_TOKEN={args.token}")
+    args.env = env
     print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
     results = [run_entry(e, args.config, net=args.net, method=args.on,
                          record=args.record, server_log=args.server_log,
@@ -1528,24 +1565,147 @@ def _stop_chutney():
     _sh("pkill -f 'chutney/net/nodes'")
 
 
-def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="providers", retries=None):
+def resolve_backend_target(setup, net, ip, key, token):
+    """Resolve HOW to reach the L3 backend for `--on <setup>` over transport `net`. Returns a target
+    dict or None (after a fail-fast error). kind=="vm" → the local VirtualBox VM (address/token
+    resolved by the VM code path). kind=="box" → a deployed physical box reached over the LAN: requires
+    --ip/--key/--token (a box's API token is per-box + secret, so it can't be defaulted — reproducibility
+    reqs 1-6), and its onion / https domain are read LIVE from the box (req 89), never from stale local
+    state. chutney is vm-local only; a box exposes tor (real onion) or https (public domain)."""
+    kind = _setup_backend_kind(setup)
+    if kind == "vm":
+        return {"kind": "vm", "setup": setup or "vm-local", "token": token or DEV_TOKEN,
+                "socks": CHUTNEY_SOCKS if net == "chutney" else 9050}
+    missing = [name for name, val in (("--ip", ip), ("--key", key), ("--token", token)) if not val]
+    if missing:
+        print(f"{RED}missing args{OFF}  L3 on {setup} runs against a physical box; required: "
+              f"{', '.join(missing)} (a box's API token is per-box + secret, so it can't be defaulted).")
+        return None
+    if net == "chutney":
+        print(f"{RED}N/A{OFF}  chutney is a laptop-local private Tor network (vm-local only); a box "
+              f"exposes tor (real onion) or https (public domain). Use --net tor|https.")
+        return None
+    key = os.path.expanduser(key)
+    if not os.path.exists(key):
+        print(f"{RED}no key{OFF}  --key {key} does not exist.")
+        return None
+    if not ssh_reachable(ip, key):
+        print(f"{RED}box-unreachable{OFF}  root@{ip} not reachable over SSH (box down / wrong IP / wrong key).")
+        return None
+    base = _ssh_base(key) + [f"root@{ip}"]
+    tgt = {"kind": "box", "setup": setup, "ip": ip, "key": key, "token": token, "socks": 9050,
+           "onion": None, "https_domain": None,
+           "server_log_cmd": " ".join(base) + " 'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'"}
+    if net == "tor":
+        onion = subprocess.run(base + ["cat /var/lib/tor/hidden_service/hostname"],
+                               capture_output=True, text=True, timeout=20).stdout.strip()
+        if not onion.endswith(".onion"):
+            print(f"{RED}no onion{OFF}  box {ip} has no published hidden service "
+                  f"(/var/lib/tor/hidden_service/hostname). Is tor up on the box?")
+            return None
+        tgt["onion"] = onion
+        print(f"{GREY}box onion (live): {onion}{OFF}")
+    if net == "https":
+        raw = subprocess.run(base + ["cat /etc/nixos/userdata.json"],
+                             capture_output=True, text=True, timeout=20).stdout
+        try:
+            domain = json.loads(raw).get("domain", "")
+        except Exception:
+            domain = ""
+        if not domain:
+            print(f"{RED}no domain{OFF}  couldn't read `domain` from the box's /etc/nixos/userdata.json.")
+            return None
+        tgt["https_domain"] = f"api.{domain}"
+        print(f"{GREY}box https domain (live): api.{domain}{OFF}")
+    return tgt
+
+
+def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
+    """Dispatch an L3 `@flutter` catalog entry: resolve the backend target from the setup/args and
+    drive the recorded Flutter flow against it. Called by run_entry AFTER its gates (clean-state / pin /
+    behind-upstream / box-identity) have run for this entry — the inner recorder does not re-gate.
+    Merges the box provenance the outer gate computed (stamp / live / box repos+pins) onto the run."""
+    if entry.get("client") == "android" or entry["id"].endswith(".android"):
+        print(f"{AMBER}android L3 not supported by this runner yet{OFF}  {entry['id']}")
+        return None
+    if setup in (None, "", "-"):
+        print(f"{RED}no setup{OFF}  {entry['id']} — --on is required (vm-local | lan-setup-0a..0d | "
+              f"lan-setup-1 | lan-setup-2 | usb-0a..0c).")
+        return None
+    flow = entry["id"].split(".")[1]        # L3.<flow>.desktop
+    key = _env_get(extra_env, "KEY")
+    token = _env_get(extra_env, "API_TOKEN")
+    target = resolve_backend_target(setup, net, ip, key, token)
+    if not target:
+        return None
+    pf = {"tor": _port_open("127.0.0.1", 9050)}
+    if target["kind"] == "box":
+        address = target["onion"] if net != "https" else None
+        socks = target["socks"]
+    elif net == "chutney":
+        address, socks = _ensure_chutney()
+        if not address:
+            print(f"{RED}chutney backend not ready{OFF} — see /tmp/chutney_up.log.")
+            return None
+    elif net == "tor":
+        address, socks = _get_onion(retries=25), 9050
+        if not address:
+            print(f"{RED}no VM onion{OFF} — the vm-local backend isn't up/published. "
+                  f"Deploy it first (./dash run install.vm-local …).")
+            return None
+    else:  # vm https — run_l3_flutter resolves theory7 itself
+        address, socks = None, None
+    retries = 1 if flow == "addremove" else None
+    rec = run_l3_flutter(address, target["token"], pf, net=net, socks_port=socks, flow=flow,
+                         retries=retries, target=target)
+    if rec:
+        extra = {k: base[k] for k in ("box_stamp", "box_live", "box_stale", "box_state_hash",
+                                      "repos", "pins") if k in base}
+        if extra:
+            mark_record(rec["run_id"], **extra)
+            rec.update(extra)
+    return rec
+
+
+def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="providers", retries=None,
+                   target=None):
     """Run an AUTOMATED L3 desktop flow test, recorded, over transport `net`
     (tor | chutney | https). `flow` selects which dashboard-owned test to run
     (flutter/<flow>_flow_test.dart — providers/connect/login/services/nextcloud/menus/addremove).
     The test lives in the dashboard repo and is injected into the app for the run, then the Manager
     repo is restored byte-for-byte. For tor/chutney the app dials an .onion over SOCKS; for https it
-    dials the same backend over clearnet HTTPS via an SSH tunnel."""
+    dials the same backend over clearnet HTTPS.
+
+    `target` (from resolve_backend_target) selects the backend: None or kind=="vm" → the local
+    VirtualBox VM (localhost:2222, SSH tunnel for https, theory7 + mkcert for the cert) — the legacy
+    path, unchanged. kind=="box" → a deployed physical box reached over the LAN: the app dials the
+    box's live onion (real Tor, SOCKS 9050) or its public https domain (system-trust LE cert, no
+    tunnel/CA); server logs come over the box's SSH key. The recorded `method` is the real setup."""
+    is_box = bool(target and target.get("kind") == "box")
+    setup = (target or {}).get("setup") or "vm-local"
+    rec = None
     app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
     test_src = os.path.join(ROOT, "flutter", f"{flow}_flow_test.dart")
     if not os.path.exists(test_src):
         print(f"{RED}missing {test_src}{OFF}")
-        return
+        return None
     is_tor = net in ("tor", "chutney")     # onion transports (SOCKS + Tor flakiness/retry)
-    _ensure_api_nix_path()                 # backend needs nix for Services on ANY transport
-    if net == "https":
-        # Trusted real domain (theory7.weersurf.nl) via Caddy+mkcert — NOT the old self-signed nip.io
-        # onion-adjacent hack. App connects to https://<domain>/graphql (HTTPS_APEX) and validates the
-        # cert against the mkcert CA (HTTPS_CA), so a bad cert fails red.
+    if not is_box:
+        _ensure_api_nix_path()             # VM backend needs nix for Services on ANY transport
+                                           # (a box already has it provisioned at install)
+    if net == "https" and is_box:
+        # Box over PUBLIC clearnet HTTPS: the app dials the box's real public domain (e.g.
+        # api.weersurf.nl) and validates its Let's Encrypt cert against the SYSTEM trust store — no
+        # SSH tunnel, no mkcert CA. A bad/expired cert fails red.
+        address = target["https_domain"]
+        dart_defines = (f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token} "
+                        f"--dart-define=HTTPS_APEX=1")
+        print(f"{GREY}box https: dialing https://{address}/graphql (system-trust LE cert){OFF}")
+    elif net == "https":
+        # VM over clearnet HTTPS: trusted real domain (theory7.weersurf.nl) via Caddy+mkcert + an SSH
+        # tunnel to the VM nginx — NOT the old self-signed nip.io hack. App connects to
+        # https://<domain>/graphql (HTTPS_APEX) and validates the cert against the mkcert CA
+        # (HTTPS_CA), so a bad cert fails red.
         address, ca = _ensure_theory7()
         dart_defines = (f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=HTTPS_APEX=1")
@@ -1564,9 +1724,11 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         # hostUnreachable, which integration_test treats as a fatal uncaught error).
         if have_socks:
             if not _onion_reachable(address, tries=6, socks_port=socks_port):
-                if net == "tor":
+                if net == "tor" and not is_box:
                     print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
                     _kick_vm_tor()
+                elif net == "tor" and is_box:
+                    print(f"{GREY}box onion not answering yet — waiting for a fresh descriptor (not kicking the box's tor)…{OFF}")
                 _onion_reachable(address, tries=30, socks_port=socks_port)
         dart_defines = (f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=SOCKS_PORT={socks_port}")
@@ -1595,13 +1757,22 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
             print(f"  (cd '{app}' && nix develop -c flutter pub get) and commit it to the app fork, "
                   f"then bump the Manager submodule pointer.")
             return
+        # server logs come from wherever the backend runs: the box over its SSH key, else the VM.
+        if is_box:
+            _slog = (" ".join(_ssh_base(target["key"])) + f" root@{target['ip']} "
+                     "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'")
+        else:
+            _slog = ("sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
+                     "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'")
         entry = {
             "id": f"L3.{flow}.desktop", "name": flow, "level": "L3",
             "client": "desktop", "networks": [net], "repo": FLUTTER_APP_DIR,
+            # Inner recorder only — the outer run_entry already ran the gates for this run; don't
+            # re-gate (_no_gate ⇒ clean-state/pin/behind skipped; needs_box False ⇒ no box gate).
+            "needs_box": False, "_no_gate": True,
             "budget_s": 600, "records_video": True, "env": {"FLUTTER_SUPPRESS_ANALYTICS": "true"},
             "cmd": f"nix develop -c flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
-            "server_log_cmd": "sshpass -p '' ssh -o StrictHostKeyChecking=no -p 2222 root@localhost "
-                              "'journalctl -u selfprivacy-api -u nginx -n 200 --no-pager'",
+            "server_log_cmd": _slog,
         }
         # Retry on TRANSIENT Tor failures only. The app's reload() timer throws uncaught on a
         # cold-circuit `hostUnreachable`, and integration_test fails on ANY uncaught async error
@@ -1616,7 +1787,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         # blind re-run would re-trigger the backend mutation and confuse the service state).
         max_attempts = retries if retries else (3 if is_tor else 1)
         for attempt in range(1, max_attempts + 1):
-            rec = run_entry(entry, net=net, method="vm-local", record=True, shots=True)
+            rec = run_entry(entry, net=net, method=setup, record=True, shots=True)
             if not rec or rec.get("status") == "pass":
                 break
             log_txt = ""
@@ -1631,8 +1802,9 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
                 # REAL intermittent bug; hiding it would misrepresent reliability. The cell headline
                 # is still the later pass; flaky fails live in the run history.
                 mark_record(rec["run_id"], flaky=True, flaky_reason=f"transient {net} failure, retried")
-                if net == "tor":
-                    _kick_vm_tor()                   # chutney HS is host-side; nothing to kick
+                if net == "tor" and not is_box:
+                    _kick_vm_tor()                   # chutney HS is host-side; nothing to kick;
+                                                     # a box's tor is remote — don't restart it
                 _onion_reachable(address, tries=20, socks_port=socks_port)  # re-warm before next launch
             else:
                 break                                # a real failure (or out of attempts) — keep it
@@ -1650,9 +1822,16 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         for f, content in backup.items():
             open(os.path.join(app, f), "w").write(content)
         # addremove MUTATES the shared backend (disables a service in userdata). Re-enable it over the
-        # always-available real Tor onion so the backend is left clean for the other flows.
-        if flow == "addremove":
+        # always-available real Tor onion so the backend is left clean for the other flows. The
+        # backstop currently targets the VM's onion/dev-token; for a box it would hit the wrong
+        # backend, so skip it there — the universal per-flow snapshot/restore (Track 2 item 1b) will
+        # replace this with a target-aware restore.
+        if flow == "addremove" and not is_box:
             _reenable_service("jitsi-meet")
+        elif flow == "addremove" and is_box:
+            print(f"{AMBER}addremove backstop skipped for box {setup}{OFF} — target-aware restore "
+                  f"lands in Track 2 item 1b; re-enable the service manually if needed.")
+    return rec
 
 
 def _reenable_service(service_id):
@@ -1848,6 +2027,8 @@ def main():
     r.add_argument("--record", action="store_true", help="screen-record the client UI (local media)")
     r.add_argument("--server-log", help="shell cmd to fetch backend logs after the run (e.g. ssh ... journalctl)")
     r.add_argument("--ip", help="override the target IP for install runs (else the per-setup default; if unreachable the e2e auto-discovers the box on the LAN by MAC)")
+    r.add_argument("--key", help="ssh private key path for a box target (required for L3/install on lan-setup-*/usb-*; injected as env KEY=)")
+    r.add_argument("--token", help="API token of the box backend (required for L3 on a box; per-box + secret, never defaulted; injected as env API_TOKEN=)")
     r.add_argument("--env", action="append", metavar="KEY=VAL",
                    help="set/override an env var for the run (repeatable): --env DOMAIN=example.com --env MAC=aa:bb:...")
     r.add_argument("--allow-dirty", action="store_true", help="run even if the target code repo has uncommitted changes (default: refuse)")
