@@ -859,7 +859,7 @@ def cmd_run(args):
                          ip=args.ip, extra_env=args.env, allow_dirty=args.allow_dirty) for e in entries]
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
-    print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → data/results.jsonl")
+    print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → {os.path.relpath(DATA, ROOT)}")
     print("View:  ./dash serve   Publish:  ./dash publish")
 
 

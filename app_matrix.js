@@ -33,7 +33,9 @@
   const netOf = (r) => (!r.transport || r.transport === "-" ? "" : r.transport);
 
   let MODEL = null, SEL = null, CELLS = [], CAT = {};
-  const needsBox = (e) => e.level === "L2" || e.level === "L3";
+  // L3 runs the Flutter app against an external deployed box (needs --ip/--key). L1/L2 are
+  // self-contained nixosTests that spin their own VM.
+  const needsBox = (e) => e.level === "L3";
   function cmdFor(e, net, setup) {
     if (e.category === "install" || e.level === "install")
       return `./dash run ${e.id} --on ${setup} --ip <box-ip> --env NETBOOT=<auto|off> --env TRANSPORT=<https|onion|none> --env FLAKE=<flake> --env MAC=<mac> --env KEY=<ssh-key> --env DOMAIN=<domain>`;
@@ -42,6 +44,25 @@
     if (setup && setup !== "<setup>") c += ` --on ${setup}`;
     if (needsBox(e)) c += ` --ip <box-ip> --env KEY=<ssh-key>`;
     return c;
+  }
+  const isInstall = (e) => e.category === "install" || e.level === "install";
+  // Which setup columns a test's grid shows:
+  //  - explicit per-entry `setups`                       → those;
+  //  - an entry with a declared `method` (installs, or   → just that method (e.g. "test-vm"
+  //    self-contained nixosTests like L2 "test-vm")         for L2, "lan-setup-0" for installs);
+  //  - L3 runs the app against a box deployed per setup  → all deploy SETUPS;
+  //  - otherwise a self-contained nixosTest (L1)         → a single "test-vm" column.
+  function setupsFor(e) {
+    if (Array.isArray(e.setups) && e.setups.length) return e.setups;
+    if (e.method) return [e.method];
+    if (e.level === "L3") return SETUPS;
+    return ["test-vm"];
+  }
+  // Which column a run lands in: its --on setup if it's one of the columns, else the test's
+  // primary column (so a self-contained run recorded with method "-" still shows).
+  function colOf(run, cols) {
+    const m = run.method;
+    return (m && m !== "-" && cols.includes(m)) ? m : cols[0];
   }
 
   async function fetchFirst(paths) {
@@ -202,28 +223,25 @@
 
   function statusClass(s) { return s === "pass" ? "pass" : s === "fail" ? "fail" : s === "slow" ? "slow" : "na"; }
 
-  // Results for the SELECTED state, indexed by id|net|setup|host. Empty when no state selected.
-  function resultsIndex() {
+  // Results for the SELECTED state, grouped by test id. Empty when no state selected.
+  function resultsByTest() {
     const idx = new Map();
     if (!SEL) return idx;
     for (const r of (MODEL.byState.get(SEL.key) || [])) {
-      const k = r.id + "|" + netOf(r) + "|" + (r.method || "") + "|" + hostOf(r);
-      if (!idx.has(k)) idx.set(k, []);
-      idx.get(k).push(r);
+      if (!idx.has(r.id)) idx.set(r.id, []);
+      idx.get(r.id).push(r);
     }
-    for (const a of idx.values()) a.sort((x, y) => (y.ts || "").localeCompare(x.ts || ""));
     return idx;
   }
 
   // The matrix is CATALOG-driven: every test is shown as the overview (☐ todo per applicable
-  // network×setup×host), with results from the selected state overlaid on top.
+  // network×setup×host), with results from the selected state overlaid on top. Columns are
+  // PER TEST (setupsFor): self-contained nixosTests (L1/L2) get a single "test-vm" column,
+  // L3 gets the deploy setups, an install gets its own method.
   function renderMatrix() {
     CELLS = [];
-    const RES = resultsIndex();
+    const RES = resultsByTest();
     const entries = [...(CAT.tests || []), ...(CAT.installs || [])];
-    const seen = SEL ? (MODEL.byState.get(SEL.key) || []) : [];
-    const extra = [...new Set(seen.map((r) => r.method).filter((m) => m && m !== "-" && !SETUPS.includes(m)))];
-    const setupCols = [...SETUPS, ...extra];
     const groups = new Map();
     for (const e of entries) {
       const g = e.group || e.level || e.category || "misc";
@@ -244,7 +262,7 @@
         const tsum = document.createElement("summary");
         tsum.innerHTML = `<span class="caret">▶</span><span class="tname">${esc(e.id)}</span>`;
         const tcmd = mkCmdBtn("run"); attachCmd(tcmd, cmdFor(e, (e.networks || [])[0] || "", "<setup>")); tsum.appendChild(tcmd);
-        const built = buildGrid(e, setupCols, RES);
+        const built = buildGrid(e, RES.get(e.id) || []);
         const roll = document.createElement("span"); roll.className = "roll"; roll.innerHTML = built.counts; tsum.appendChild(roll);
         td.appendChild(tsum);
         const wrap = document.createElement("div"); wrap.className = "mtx"; wrap.appendChild(built.el);
@@ -255,31 +273,41 @@
     }
   }
 
-  function buildGrid(e, setupCols, RES) {
+  function buildGrid(e, runs) {
     const supported = new Set(e.networks || []);
     const hasNet = supported.size > 0;
-    const isInstall = e.category === "install" || e.level === "install";
-    const rows = hasNet ? NETWORKS : [["", isInstall ? "(deploy)" : "(any)"]];
+    const cols = setupsFor(e);
+    // bucket this test's runs into the grid by net|column|host (newest first). colOf maps a
+    // setup-less run (method "-", e.g. a self-contained L1/L2 nixosTest) to the primary column,
+    // so a recorded pass always lands in a cell instead of being orphaned.
+    const buckets = new Map();
+    for (const r of runs) {
+      const k = netOf(r) + "|" + colOf(r, cols) + "|" + hostOf(r);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(r);
+    }
+    for (const a of buckets.values()) a.sort((x, y) => (y.ts || "").localeCompare(x.ts || ""));
+    const rows = hasNet ? NETWORKS : [["", isInstall(e) ? "(deploy)" : "(any)"]];
     let p = 0, f = 0, s = 0, todo = 0;
     const tbl = document.createElement("table"); tbl.className = "grid";
     let head = '<thead><tr><th class="net"></th>';
-    for (const col of setupCols) head += `<th>${esc(col)}</th>`;
+    for (const col of cols) head += `<th>${esc(col)}</th>`;
     head += "</tr></thead>";
     let body = "<tbody>";
     for (const [nk, nlabel] of rows) {
       body += `<tr><th class="net">${esc(nlabel)}</th>`;
-      for (const col of setupCols) {
+      for (const col of cols) {
         body += '<td><span class="cell">';
         for (const [hk, hl] of HOSTS) {
-          const runs = RES.get(e.id + "|" + nk + "|" + col + "|" + hk) || [];
-          if (runs.length) {
-            const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs, cmd: cmdFor(e, nk, col) }) - 1;
-            const st = statusClass(runs[0].status);
+          const rr = buckets.get(nk + "|" + col + "|" + hk) || [];
+          if (rr.length) {
+            const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: rr, cmd: cmdFor(e, nk, col) }) - 1;
+            const st = statusClass(rr[0].status);
             if (st === "pass") p++; else if (st === "fail") f++; else if (st === "slow") s++;
-            const n = runs.length > 1 ? `<span class="n">${runs.length}</span>` : "";
-            body += `<span class="dot ${st}" data-cell="${idx}" title="${esc(hl)}: ${esc(runs[0].status)} · ${esc(relTime(runs[0].ts))} · click for history">${n}</span>`;
+            const n = rr.length > 1 ? `<span class="n">${rr.length}</span>` : "";
+            body += `<span class="dot ${st}" data-cell="${idx}" title="${esc(hl)}: ${esc(rr[0].status)} · ${esc(relTime(rr[0].ts))} · click for history">${n}</span>`;
           } else {
-            const applicable = (!hasNet || supported.has(nk)) && (!isInstall || col === e.method);
+            const applicable = !hasNet || supported.has(nk);
             if (applicable) {
               todo++;
               const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
