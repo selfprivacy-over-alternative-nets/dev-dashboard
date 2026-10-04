@@ -470,9 +470,10 @@
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "Target installed from a bootable USB installer to its internal disk (manual boot).",
-      "cmd": "@manual",
-      "run": "# @manual: write the installer image to a USB stick, boot the target from it, then:\n#   ./dash report install.usb --status pass --duration <seconds>"
+      "desc": "ONE chain: prepare a bootable installer USB on this device -> you boot+install it on the target -> stamp + verify. Prompts guide the manual steps.",
+      "cwd": ".",
+      "cmd": "tools/e2e_install_usb.sh",
+      "run": "# ONE-CHAIN usb install+verify (prompts for inserting/writing the USB and confirming the target install):\nUSB_DEV=/dev/sdX IP=192.168.1.167 MAC=d8:cb:8a:7c:0a:f4 KEY=~/.ssh/pcname_ed25519 DOMAIN=weersurf.nl TRANSPORT=https \\\n  FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy dev-dashboard/tools/e2e_install_usb.sh"
     }
   ]
 }

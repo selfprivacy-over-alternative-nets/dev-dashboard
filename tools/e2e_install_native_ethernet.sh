@@ -34,6 +34,36 @@ export NIX_CONFIG='experimental-features = nix-command flakes'
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ssh_ok(){ ssh $SSHO -o BatchMode=yes "root@$1" true 2>/dev/null; }
 
+# The box build-identity JSON to stamp onto the target. Prefers the FULL identity dash passes
+# via $DEV_TEST_STAMP (repos/branches/commits + dirtiness + pins); falls back to reading
+# $FLAKE/flake.lock when run standalone. Surfaces api/nixpkgs at top level for verify-box.
+stamp_json(){
+  if [ -n "${DEV_TEST_STAMP:-}" ]; then
+    DEV_TEST_STAMP="$DEV_TEST_STAMP" FLAKE="$FLAKE" python3 - <<'PY'
+import os, json, datetime
+d = json.loads(os.environ["DEV_TEST_STAMP"])
+d["flake"] = os.environ.get("FLAKE", "")
+d["deployed_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+for k, v in (d.get("pins") or {}).items():
+    d.setdefault(k, v)
+print(json.dumps(d))
+PY
+  else
+    FLAKE="$FLAKE" python3 - <<'PY'
+import os, json, datetime
+f = os.environ["FLAKE"]
+try:
+    nodes = json.load(open(f + "/flake.lock")).get("nodes", {})
+    pins = {k: (nodes.get(k, {}).get("locked", {}) or {}).get("rev", "unknown") for k in ("selfprivacy-api", "nixpkgs")}
+except Exception:
+    pins = {}
+d = {"flake": f, "pins": pins, "deployed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+d.update(pins)
+print(json.dumps(d))
+PY
+  fi
+}
+
 # Scan the LAN(s) this laptop is on for the target's NIC MAC and echo its IP ("" if not found).
 # Populates the neighbour table with a backgrounded ping sweep over each connected RFC1918 /24
 # (plus the direct-cable netboot subnet 192.168.100.0/24), then matches MAC in `ip neigh`.
@@ -256,16 +286,10 @@ ssh $SSHO "root@$IP" '
   systemctl reload nginx 2>/dev/null || systemctl restart nginx || true
   sleep 2'
 
-say "3b. stamp the box with its build identity (so later runs can check box-vs-code)"
-# What this box was deployed FROM: the flake's pinned api/nixpkgs. Read later by
-# `dash verify-box` to refuse testing a stale box (see dev-dashboard dash).
-API_PIN=$(python3 -c "import json;print(json.load(open('$FLAKE/flake.lock'))['nodes']['selfprivacy-api']['locked']['rev'])" 2>/dev/null || echo unknown)
-NIXPKGS_PIN=$(python3 -c "import json;print(json.load(open('$FLAKE/flake.lock'))['nodes']['nixpkgs']['locked']['rev'])" 2>/dev/null || echo unknown)
-STAMPED_AT=$(date -u +%FT%TZ 2>/dev/null || echo unknown)
-ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json" <<EOF2
-{"flake":"$FLAKE","selfprivacy-api":"$API_PIN","nixpkgs":"$NIXPKGS_PIN","deployed_at":"$STAMPED_AT"}
-EOF2
-echo "   stamped: api=${API_PIN:0:12} nixpkgs=${NIXPKGS_PIN:0:12}"
+say "3b. stamp the box with its FULL build identity (so later runs can check box-vs-code)"
+STAMP=$(stamp_json)
+printf '%s' "$STAMP" | ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json"
+echo "   stamped: $(printf '%s' "$STAMP" | python3 -c "import sys,json;d=json.load(sys.stdin);print('state_hash='+str(d.get('state_hash','?'))+' pins='+str(d.get('pins',{})))" 2>/dev/null || echo written)"
 
 say "4. read freshly-deployed identity from the target"
 TOKEN=$(ssh $SSHO "root@$IP" 'jq -r .api.token /etc/selfprivacy/secrets.json')
