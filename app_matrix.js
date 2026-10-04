@@ -96,13 +96,37 @@
     renderTop(); renderMatrix();
   }
 
+  function dirtyDetailsHtml() {
+    const recs = (MODEL.byCommit.get(SEL.key) || []).filter((r) => r.dirty);
+    if (!recs.length) return `<div class="muted">No dirty runs recorded on this commit.</div>`;
+    const m = new Map();
+    for (const r of recs) {
+      const k = (r.repo || "?") + "|" + (r.branch || "?") + "|" + (r.diff_hash || "?");
+      let e = m.get(k);
+      if (!e) { e = { repo: r.repo || "?", branch: r.branch || "(unknown branch)", diff: r.diff_hash || "?", ids: new Set(), ts: "" }; m.set(k, e); }
+      e.ids.add(r.id); if ((r.ts || "") > e.ts) e.ts = r.ts;
+    }
+    let h = `<div class="poptitle">Uncommitted changes recorded during runs on <code>${esc(SEL.commit)}</code>:</div><ul class="dirtylist">`;
+    for (const e of m.values())
+      h += `<li><b>${esc(e.repo)}</b> @ <span class="br">${esc(e.branch)}</span> · diff <code>${esc(e.diff)}</code> — ${e.ids.size} test(s): ${esc([...e.ids].join(", "))} <span class="muted">(${esc(relTime(e.ts))})</span></li>`;
+    h += `</ul>`;
+    return h;
+  }
+
   function renderTop() {
-    const c = SEL;
-    $("#top").innerHTML =
-      `<span class="sha">${esc(c.repo)} @ ${esc(c.commit)}</span>` +
-      `<span class="subj">${esc(c.subject || "")}</span>` +
-      (c.dirty ? `<span class="warn" title="A run here recorded dirty=true — results may not reflect a clean commit">⚠ dirty state</span>` : "") +
-      `<span class="legend">🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A &nbsp; (L=local · C=CI)</span>`;
+    const c = SEL, top = $("#top"); top.innerHTML = "";
+    const sha = document.createElement("span"); sha.className = "sha"; sha.textContent = `${c.repo} @ ${c.commit}`;
+    const subj = document.createElement("span"); subj.className = "subj"; subj.textContent = c.subject || "";
+    top.append(sha, subj);
+    if (c.dirty) {
+      const w = document.createElement("span"); w.className = "warn"; w.style.cursor = "help";
+      w.textContent = "⚠ dirty state";
+      attachPop(w, dirtyDetailsHtml);   // hover or click → which repo/branch/diff was dirty
+      top.append(w);
+    }
+    const lg = document.createElement("span"); lg.className = "legend";
+    lg.textContent = "🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A   (L=local · C=CI)";
+    top.append(lg);
   }
 
   function statusClass(s) { return s === "pass" ? "pass" : s === "fail" ? "fail" : s === "slow" ? "slow" : "na"; }
@@ -206,23 +230,27 @@
     return tbl;
   }
 
-  // ---- command hover popover (with copy top-right) ----
+  // ---- shared hover/click popover (commands with copy, dirty-state details, …) ----
   const pop = $("#pop"); let popTimer = null;
   function mkCmdBtn(label) { const b = document.createElement("span"); b.className = "cmdbtn"; b.textContent = "⌘ " + label; return b; }
-  function attachCmd(el, cmd) {
-    el.addEventListener("mouseenter", () => {
-      clearTimeout(popTimer);
-      pop.innerHTML = `<button class="copy">copy</button><pre>${esc(cmd)}</pre>`;
-      pop.querySelector(".copy").onclick = () => { navigator.clipboard.writeText(cmd).then(() => { pop.querySelector(".copy").textContent = "copied ✓"; }); };
-      const r = el.getBoundingClientRect();
-      pop.style.display = "block";
-      pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 12) + "px";
-      pop.style.top = (r.bottom + 6) + "px";
-    });
-    el.addEventListener("mouseleave", () => { popTimer = setTimeout(() => { pop.style.display = "none"; }, 250); });
+  function showPop(el, html) {
+    clearTimeout(popTimer);
+    pop.innerHTML = html;
+    const r = el.getBoundingClientRect();
+    pop.style.display = "block";
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12)) + "px";
+    pop.style.top = (r.bottom + 6) + "px";
   }
+  function attachPop(el, html) {
+    const get = () => (typeof html === "function" ? html() : html);
+    el.addEventListener("mouseenter", () => showPop(el, get()));
+    el.addEventListener("click", (e) => { e.preventDefault(); showPop(el, get()); });
+    el.addEventListener("mouseleave", () => { popTimer = setTimeout(() => { pop.style.display = "none"; }, 300); });
+  }
+  function attachCmd(el, cmd) { attachPop(el, `<button class="copy" data-cmd="${esc(cmd)}">copy</button><pre>${esc(cmd)}</pre>`); }
   pop.addEventListener("mouseenter", () => clearTimeout(popTimer));
   pop.addEventListener("mouseleave", () => { pop.style.display = "none"; });
+  pop.addEventListener("click", (e) => { const b = e.target.closest(".copy"); if (b && b.dataset.cmd != null) { navigator.clipboard.writeText(b.dataset.cmd); b.textContent = "copied ✓"; } });
 
   // ---- detail drawer: a config's run history on this commit ----
   function openCell(idx) {
