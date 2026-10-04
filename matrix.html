@@ -52,12 +52,19 @@
   table.grid th.net{text-align:right;color:var(--dim);font-weight:600;position:sticky;left:0;background:var(--bg)}
   table.grid thead th{color:var(--dim);font-weight:600;font-size:11px}
   table.grid thead th.sub{color:var(--grey);font-weight:400;font-size:9px;letter-spacing:.3px}
-  .cell{display:inline-flex;gap:5px;align-items:center;justify-content:center}
+  .cell{display:inline-flex;gap:5px;align-items:flex-start;justify-content:center}
+  /* each host is a vertical stack of per-run circles, newest on top. Collapsed shows only the
+     newest; the ▾ handle toggles .open to reveal the full chronological sequence (flakiness). */
+  .runstack{display:inline-flex;flex-direction:column;align-items:center;gap:3px;vertical-align:top}
+  .runstack .dot:not(:first-child){display:none}
+  .runstack.open .dot{display:inline-block}
+  .xpand{cursor:pointer;background:none;border:0;color:var(--dim);font-size:9px;line-height:1;padding:0;margin-top:1px}
+  .runstack.open .xpand{transform:rotate(180deg)}
   .dot{width:13px;height:13px;border-radius:50%;display:inline-block;cursor:pointer;border:1px solid #0006;position:relative}
   .dot.pass{background:var(--green)} .dot.fail{background:var(--red)} .dot.slow{background:var(--amber)}
   .dot.na{background:transparent;border:1px dashed var(--grey);cursor:default}
   .dot.todo{background:transparent;border:1px solid var(--accent);border-radius:2px}
-  .dot.q{box-shadow:0 0 0 2px var(--amber)}  /* qualified: forced/manual/cached/substituted/flaky/behind — not a clean pass */
+  .dot.q{box-shadow:0 0 0 2px var(--amber)}  /* per-run qualifier ring: forced/manual/cached/substituted/behind (NOT flaky — that's the sequence) */
   .dot .n{position:absolute;top:-7px;right:-7px;font-size:9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:0 3px;color:var(--dim)}
   .hk{color:var(--grey);font-size:10px}
   /* command hover popover */

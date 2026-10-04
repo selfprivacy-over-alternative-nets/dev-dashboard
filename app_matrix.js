@@ -199,7 +199,7 @@
       m.textContent = "Overview — no runs recorded yet; every applicable cell is ☐ todo (hover a cell for its command). Run tests, then pick a state on the left.";
       top.append(m);
       const lg0 = document.createElement("span"); lg0.className = "legend";
-      lg0.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified (forced/manual/cached/substituted/flaky/behind)   (L=local · C=CI)";
+      lg0.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified run (forced/manual/cached/substituted/behind) · ▾ expands a config's runs (newest top→oldest bottom; the green/red sequence = flakiness)   (L=local · C=CI)";
       top.append(lg0);
       return;
     }
@@ -236,7 +236,7 @@
       top.append(b);
     }
     const lg = document.createElement("span"); lg.className = "legend";
-    lg.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified (forced/manual/cached/substituted/flaky/behind)   (L=local · C=CI)";
+    lg.textContent = "☐ todo · 🟢 pass · 🔴 fail · 🟠 slow · ⚪ N/A · ⭕ring=qualified run (forced/manual/cached/substituted/behind) · ▾ expands a config's runs (newest top→oldest bottom; the green/red sequence = flakiness)   (L=local · C=CI)";
     top.append(lg);
   }
 
@@ -256,6 +256,9 @@
       q.push("⬆behind:" + Object.entries(r.behind_upstream).map(([k, v]) => `${k}-${v}`).join(","));
     return q;
   }
+  // Which qualifiers get an amber RING on a circle: the per-run "nature" ones (forced/manual/cached/
+  // substituted/behind). NOT flaky — flakiness is the green/red SEQUENCE in the stack, not a ring.
+  function ringQualifiers(r) { return qualifiers(r).filter((q) => q !== "flaky"); }
 
   // Results for the SELECTED state, grouped by test id. Empty when no state selected.
   function resultsByTest() {
@@ -339,19 +342,29 @@
           const rr = buckets.get(nk + "|" + col + "|" + hk) || [];
           if (rr.length) {
             const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: rr, cmd: cmdFor(e, nk, col) }) - 1;
-            const st = statusClass(rr[0].status);
+            const st = statusClass(rr[0].status);   // headline = latest run → the rollup counts
             if (st === "pass") p++; else if (st === "fail") f++; else if (st === "slow") s++;
-            const n = rr.length > 1 ? `<span class="n">${rr.length}</span>` : "";
-            const q = qualifiers(rr[0]);
-            body += `<span class="dot ${st}${q.length ? " q" : ""}" data-cell="${idx}" title="${esc(hl)}: ${esc(rr[0].status)}${q.length ? " [" + esc(q.join(" ")) + "]" : ""} · ${esc(relTime(rr[0].ts))} · click for history">${n}</span>`;
+            // ONE circle PER RUN, newest first (top). Collapsed (CSS) shows only the first; the ▾
+            // handle expands the stack in place so flakiness reads as the green/red sequence
+            // (bottom = oldest → top = newest). Each circle → that run's log/media. Per-run nature
+            // qualifiers (forced/manual/cached/substituted/behind) ring their own circle; flakiness
+            // is the sequence itself, not a ring.
+            let stack = "";
+            rr.forEach((r, ri) => {
+              const rq = ringQualifiers(r), aq = qualifiers(r);
+              const ttl = `${hl}: ${r.status}${aq.length ? " [" + aq.join(" ") + "]" : ""} · ${relTime(r.ts)} · click for log/media`;
+              stack += `<span class="dot ${statusClass(r.status)}${rq.length ? " q" : ""}" data-cell="${idx}" data-run="${ri}" title="${esc(ttl)}"></span>`;
+            });
+            const xp = rr.length > 1 ? `<button class="xpand" title="${rr.length} runs — expand history (newest on top)">▾</button>` : "";
+            body += `<span class="runstack">${stack}${xp}</span>`;
           } else {
             const applicable = !hasNet || supported.has(nk);
             if (applicable) {
               todo++;
               const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
-              body += `<span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span>`;
+              body += `<span class="runstack"><span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span></span>`;
             } else {
-              body += `<span class="dot na" title="${esc(naReason(e, nk, nlabel))}"></span>`;
+              body += `<span class="runstack"><span class="dot na" title="${esc(naReason(e, nk, nlabel))}"></span></span>`;
             }
           }
         }
@@ -367,8 +380,10 @@
     });
     tbl.addEventListener("mouseout", (ev) => { if (ev.target.closest(".dot[data-cell]")) popTimer = setTimeout(() => { pop.style.display = "none"; }, 300); });
     tbl.addEventListener("click", (ev) => {
+      const x = ev.target.closest(".xpand");
+      if (x) { const rs = x.closest(".runstack"); if (rs) rs.classList.toggle("open"); return; }
       const d = ev.target.closest(".dot[data-cell]"); if (!d) return;
-      const c = CELLS[+d.dataset.cell]; if (c && c.runs.length) openCell(+d.dataset.cell);
+      const c = CELLS[+d.dataset.cell]; if (c && c.runs.length) openCell(+d.dataset.cell, +(d.dataset.run || 0));
     });
     const counts = `<span title="pass">🟢${p}</span> <span title="fail">🔴${f}</span> <span title="slow">🟠${s}</span> <span title="todo">☐${todo}</span>`;
     return { el: tbl, counts };
@@ -397,7 +412,7 @@
   pop.addEventListener("click", (e) => { const b = e.target.closest(".copy"); if (b && b.dataset.cmd != null) { navigator.clipboard.writeText(b.dataset.cmd); b.textContent = "copied ✓"; } });
 
   // ---- detail drawer: a config's run history on this commit ----
-  function openCell(idx) {
+  function openCell(idx, focus = 0) {
     const c = CELLS[idx]; if (!c) return;
     const netLabel = (NETWORKS.find((n) => n[0] === c.net) || [c.net, c.net || "(no network)"])[1];
     $("#dtitle").textContent = `${c.id} · ${netLabel} · ${c.setup} · ${c.host.toUpperCase()}`;
@@ -405,7 +420,7 @@
     let h = `<div style="position:relative;margin-bottom:10px"><button class="copy" style="position:absolute;top:0;right:0" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button><pre style="white-space:pre-wrap;margin:0;padding-right:48px">${esc(cmd)}</pre></div>`;
     h += `<p class="muted">${c.runs.length} run(s) on ${esc(SEL.repo)}@${esc(SEL.commit)}, newest first:</p>`;
     c.runs.forEach((r, i) => {
-      h += `<details class="run" ${i === 0 ? "open" : ""} data-run="${idx}:${i}">` +
+      h += `<details class="run" ${i === focus ? "open" : ""} data-run="${idx}:${i}">` +
         `<summary><span class="dot ${statusClass(r.status)}"></span><b>${esc(r.status)}</b>` +
         `<span class="rmeta">${esc(r.ts)} · ${esc(relTime(r.ts))} · ${esc(r.duration_s)}s · exit ${esc(r.exit_code)}${qualifiers(r).length ? " · " + esc(qualifiers(r).join(" · ")) : ""} · ${esc(r.host || "")}</span></summary>` +
         `<div class="rbody">${r.error ? `<div class="err">${esc(r.error)}</div>` : ""}<div class="lazy muted">opening…</div></div></details>`;
