@@ -22,17 +22,17 @@ legend top left
 <back:#DDDDDD>    </back>  UPSTREAM — used unmodified
 endlegend
 
-package "laptop a1 — dev machine" {
+package "dev-dashboard  —  NEW (this repo)" {
   rectangle "catalog.json\n<i>what to run</i>" as cat #CDEBC5
-  rectangle "<b>dash</b>\n<i>run · time · record · gate</i>" as dash #CDEBC5
-  rectangle "index.html + matrix.html\n<i>the two dashboards</i>" as ui #CDEBC5
+  rectangle "<b>dash</b>\n<i>orchestrator: run · time · gate · capture</i>" as dash #CDEBC5
+  rectangle "index.html + matrix.html\n<i>dashboards</i>" as ui #CDEBC5
 }
 
 rectangle "<b>testresults</b> (separate repo)\nresults.jsonl + logs/ + media/\n<i>keyed by code state</i>" as tr #CDEBC5
 cloud "GitHub Pages" as pages #DDDDDD
 
 cat -right-> dash
-dash --> tr : record
+dash --> tr : write 1 record / run\n(exit · time · log · video)
 ui --> tr : read
 ui ..> pages : publish
 
@@ -43,9 +43,10 @@ package "Manager-...-Over-Tor" as mgr #CDEBC5 {
 rectangle "selfprivacy-api\n<i>nix run .#pytest-vm</i>" as api #F7E7A6
 rectangle "selfprivacy-tor-tests\n<i>self-contained nixosTest VM</i>" as tests #CDEBC5
 
-dash --> api    : L1 unit-VM
-dash --> tests  : L2 integration
-dash --> mgr    : L3 / install
+' dev-dashboard RUNS each target and CAPTURES its result (exit/log/video) → then writes the record.
+dash <--> api    : L1 unit-VM\n(run -> pass/fail + log)
+dash <--> tests  : L2 integration\n(run -> pass/fail + log)
+dash <--> mgr    : L3 / install\n(run -> result + recording)
 
 node "VM backend\n<i>VirtualBox</i>" as vm #FFFFFF
 node "physical box\n<i>on the LAN</i>" as box #FFFFFF
