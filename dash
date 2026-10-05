@@ -138,6 +138,34 @@ def _iface_carrier(iface):
         return None
 
 
+def _up_ifaces():
+    out = _sh("ip -br link", timeout=10).stdout or ""
+    res = []
+    for line in out.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        name = parts[0].split("@")[0]
+        if name != "lo" and not name.startswith(("docker", "veth", "br-", "virbr")):
+            res.append(name)
+    return res
+
+
+def _ipv6_ll_discover():
+    """Devices reachable by IPv6 link-local multicast (ff02::1) — works even with NO IPv4 / no DHCP,
+    e.g. a target cabled straight to this laptop (lan-setup-0*). Returns [(mac, iface)]."""
+    for ifc in _up_ifaces():
+        _sh(f"ping -6 -c2 -W1 ff02::1%{ifc} >/dev/null 2>&1", timeout=8)
+    res = []
+    for line in (_sh("ip -6 neigh", timeout=10).stdout or "").splitlines():
+        p = line.split()
+        if p and p[0].lower().startswith("fe80") and "lladdr" in p and "dev" in p:
+            dev = p[p.index("dev") + 1]
+            if dev != "lo" and not dev.startswith(("docker", "veth", "br-", "virbr")):
+                res.append((p[p.index("lladdr") + 1].lower(), dev))
+    return res
+
+
 def setup_preflight(method):
     """Return (ok, message): whether `install --on <method>` can run right now."""
     if method in (None, "", "-", "test-vm", "vm-remote"):
@@ -1421,6 +1449,12 @@ def cmd_find_target(args):
     for m, i in _neigh_pairs():
         if m not in seen:
             cands.append((m, i, "on LAN")); seen.add(m)
+    # IPv6 link-local — finds a directly-cabled target that has NO IPv4/DHCP (lan-setup-0*). Added only
+    # for MACs the IPv4 sweep didn't already cover (so LAN devices keep their IPv4).
+    for m, dev in _ipv6_ll_discover():
+        if m not in seen:
+            src = "direct cable" if dev == DIRECT_IFACE else f"link-local {dev}"
+            cands.append((m, "no-IPv4 (link-local)", src)); seen.add(m)
 
     if not cands:
         print(f"{AMBER}No devices found.{OFF}")
@@ -1460,8 +1494,11 @@ def cmd_find_target(args):
         print("cancelled — nothing selected.")
         return
     m, i = chosen
-    print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  IP={i}\n  install, e.g.:")
-    print(f"  {CYAN}./dash run install.lan-setup-0 --ip {i} --key ~/.ssh/pcname_ed25519 \\\n"
+    # For a link-local-only (direct-cable, no IPv4) target the install IP is the netboot server's
+    # pinned installer address; the e2e adopts the box by MAC regardless.
+    ip_for_cmd = i if i[:1].isdigit() else DIRECT_IP.rsplit(".", 1)[0] + ".50"
+    print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  (found at {i})\n  install, e.g.:")
+    print(f"  {CYAN}./dash run install.lan-setup-0 --ip {ip_for_cmd} --key ~/.ssh/pcname_ed25519 \\\n"
           f"    --env FLAKE=<flake> --env MAC={m} --env DOMAIN=<domain> \\\n"
           f"    --env NETBOOT=auto --env TRANSPORT=none{OFF}")
 
