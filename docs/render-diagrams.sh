@@ -15,7 +15,15 @@ shopt -s nullglob
 pumls=("$DOCS"/*.puml)
 if [ ${#pumls[@]} -eq 0 ]; then echo "no .puml files in $DOCS — nothing to render"; exit 0; fi
 
-echo "rendering ${#pumls[@]} diagram(s) with pinned plantuml ($NIXPKGS)…"
+echo "rendering ${#pumls[@]} plantuml diagram(s) with pinned plantuml ($NIXPKGS)…"
 nix --extra-experimental-features 'nix-command flakes' run "$NIXPKGS#plantuml" -- \
   -tsvg -nometadata -o "$DOCS" "${pumls[@]}"
+
+# Python SVG generators (docs/gen_*.py — each writes its own .svg). Pure stdlib, deterministic; for
+# layouts plantuml can't express (e.g. levels.svg: repos spanning the L1/L2/L3 bands they're used by).
+for gen in "$DOCS"/gen_*.py; do
+  [ -e "$gen" ] || continue
+  echo "running $(basename "$gen")…"
+  python3 "$gen"
+done
 echo "done → $DOCS/*.svg"

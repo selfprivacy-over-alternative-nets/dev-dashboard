@@ -8,11 +8,13 @@ on:
     branches: [main]
     paths:
       - 'docs/*.puml'
+      - 'docs/gen_*.py'
       - 'docs/render-diagrams.sh'
       - '.github/workflows/diagrams.yml'
   pull_request:
     paths:
       - 'docs/*.puml'
+      - 'docs/gen_*.py'
       - 'docs/render-diagrams.sh'
       - '.github/workflows/diagrams.yml'
 
@@ -46,8 +48,8 @@ jobs:
       - name: Verify SVGs compiled (PRs)
         if: github.event_name == 'pull_request'
         run: |
-          for f in docs/*.puml; do
-            svg="${f%.puml}.svg"
+          shopt -s nullglob
+          for svg in docs/*.svg; do
             test -s "$svg" || { echo "::error::$svg did not render"; exit 1; }
           done
           echo "all diagrams render"

@@ -4,8 +4,8 @@
 #   git config core.hooksPath .githooks
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-if git diff --cached --name-only --diff-filter=ACM | grep -qE '^docs/.*\.puml$'; then
-  echo "[pre-commit] docs/*.puml changed — re-rendering diagrams (pinned plantuml)…"
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '^docs/.*\.(puml|py)$|^docs/render-diagrams\.sh$'; then
+  echo "[pre-commit] docs diagram source changed — re-rendering diagrams…"
   bash docs/render-diagrams.sh
   git add docs/*.svg
 fi
