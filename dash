@@ -129,6 +129,15 @@ def _netboot_leases():
     return res
 
 
+def _iface_carrier(iface):
+    """True if the NIC has a live link (carrier), False if not, None if unknown. No carrier on the
+    wired port = nothing is plugged in / the target NIC is off — a target can't be discovered."""
+    try:
+        return open(f"/sys/class/net/{iface}/carrier").read().strip() == "1"
+    except Exception:
+        return None
+
+
 def setup_preflight(method):
     """Return (ok, message): whether `install --on <method>` can run right now."""
     if method in (None, "", "-", "test-vm", "vm-remote"):
@@ -1391,6 +1400,18 @@ def cmd_find_target(args):
     for m, i in _netboot_leases():
         if m not in seen:
             cands.append((m, i, "netbooted")); seen.add(m)
+    # Direct-cable link status — a common reason a target is invisible (no cable link / target NIC off).
+    _car = _iface_carrier(DIRECT_IFACE)
+    _srv = _iface_has_ip(DIRECT_IFACE, DIRECT_IP)
+    if _car is False:
+        _link = f"{RED}NO CARRIER (no cable link){OFF}"
+    elif _car:
+        _link = f"{GREEN}link up{OFF}"
+    else:
+        _link = "unknown"
+    print(f"{GREY}direct cable {DIRECT_IFACE}: {_link}; netboot server "
+          f"{'up' if _srv else 'down'}{OFF}")
+
     prefixes = _local_prefixes()
     if args.subnet:
         prefixes = sorted(set(prefixes) | {args.subnet})
@@ -1403,7 +1424,12 @@ def cmd_find_target(args):
 
     if not cands:
         print(f"{AMBER}No devices found.{OFF}")
-        if not _iface_has_ip(DIRECT_IFACE, DIRECT_IP):
+        if _car is False:
+            print(f"  {DIRECT_IFACE} has {RED}NO CARRIER{OFF} — nothing is linked on the wired port. "
+                  f"Check the cable (both ends), and that the target is powered ON and in UEFI network "
+                  f"boot (or a running OS) so its NIC comes up. Watch it: "
+                  f"{CYAN}watch -n1 cat /sys/class/net/{DIRECT_IFACE}/carrier{OFF} (want 1).")
+        elif not _srv:
             print(f"  Installing an EMPTY device over a direct cable? It only gets an IP once the "
                   f"netboot server is running. Start it (separate terminal, sudo):")
             print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
@@ -1417,6 +1443,10 @@ def cmd_find_target(args):
     for n, (m, i, src) in enumerate(cands, 1):
         tag = f"{GREEN}netbooted{OFF}" if src == "netbooted" else f"{GREY}{src}{OFF}"
         print(f"  [{n}] MAC {BOLD}{m}{OFF}  IP {i}  ({tag})")
+    if _car and not _srv and not any(s == "netbooted" for _, _, s in cands):
+        print(f"{AMBER}note{OFF}: {DIRECT_IFACE} is linked but the netboot server is DOWN, so a "
+              f"direct-cabled target has no IP yet and won't appear. Start it, then re-run:")
+        print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
     try:
         if len(cands) == 1:
             m, i, _ = cands[0]
