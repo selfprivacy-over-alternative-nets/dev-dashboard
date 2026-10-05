@@ -86,6 +86,49 @@ def _iface_has_ip(iface, ip):
     return ip in r.stdout
 
 
+def _local_prefixes():
+    """The /24 prefixes this laptop is on (RFC1918) + the direct-cable netboot subnet — the subnets a
+    target could appear on."""
+    out = _sh("ip -4 -o addr show scope global", timeout=10).stdout or ""
+    pref = set()
+    for line in out.splitlines():
+        for tok in line.split():
+            if "/" in tok and tok.count(".") == 3:
+                a = tok.split("/")[0].split(".")
+                if a[0] == "10" or (a[0] == "192" and a[1] == "168") or (a[0] == "172" and a[1].isdigit() and 16 <= int(a[1]) <= 31):
+                    pref.add(".".join(a[:3]))
+    pref.add(DIRECT_IP.rsplit(".", 1)[0])
+    return sorted(pref)
+
+
+def _ping_sweep(prefix):
+    """Quietly populate the neighbour table for a /24 (parallel, no job-control noise)."""
+    _sh(f"seq 254 | xargs -P254 -I{{}} ping -c1 -W1 {prefix}.{{}} >/dev/null 2>&1", timeout=60)
+
+
+def _neigh_pairs():
+    """(mac, ip) for every neighbour with a resolved lladdr."""
+    out = _sh("ip neigh", timeout=10).stdout or ""
+    res = []
+    for line in out.splitlines():
+        p = line.split()
+        if "lladdr" in p and "." in p[0]:
+            res.append((p[p.index("lladdr") + 1].lower(), p[0]))
+    return res
+
+
+def _netboot_leases():
+    """(mac, ip) of devices that took a lease from the direct-cable netboot server — i.e. booted into
+    the installer. The strongest signal for 'this is the target'."""
+    res, path = [], "/tmp/netboot-leases"
+    if os.path.exists(path):
+        for line in open(path):
+            f = line.split()
+            if len(f) >= 3 and ":" in f[1] and "." in f[2]:
+                res.append((f[1].lower(), f[2]))
+    return res
+
+
 def setup_preflight(method):
     """Return (ok, message): whether `install --on <method>` can run right now."""
     if method in (None, "", "-", "test-vm", "vm-remote"):
@@ -1340,6 +1383,59 @@ def cmd_l3_baseline(args):
     print(f"  modules: {pre.get('modules')}   users_n: {pre.get('users_n')}")
 
 
+def cmd_find_target(args):
+    """Discover candidate target devices and confirm WHICH one to install to — match the MAC shown on
+    the target's PXE/boot screen. Reads the netboot DHCP leases (a device that booted into the
+    installer = the strongest signal) + scans every connected LAN. Prints the MAC/IP to install with."""
+    cands, seen = [], set()
+    for m, i in _netboot_leases():
+        if m not in seen:
+            cands.append((m, i, "netbooted")); seen.add(m)
+    prefixes = _local_prefixes()
+    if args.subnet:
+        prefixes = sorted(set(prefixes) | {args.subnet})
+    print(f"{GREY}scanning {', '.join(p + '.0/24' for p in prefixes)} …{OFF}")
+    for p in prefixes:
+        _ping_sweep(p)
+    for m, i in _neigh_pairs():
+        if m not in seen:
+            cands.append((m, i, "on LAN")); seen.add(m)
+
+    if not cands:
+        print(f"{AMBER}No devices found.{OFF}")
+        if not _iface_has_ip(DIRECT_IFACE, DIRECT_IP):
+            print(f"  Installing an EMPTY device over a direct cable? It only gets an IP once the "
+                  f"netboot server is running. Start it (separate terminal, sudo):")
+            print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
+            print(f"  then boot the target into UEFI network boot and re-run.")
+        else:
+            print(f"  Netboot server is up but nothing leased yet — boot the target into UEFI network "
+                  f"boot. For a router-LAN target, check cable/power or pass --subnet <prefix>.")
+        return
+
+    print(f"{BOLD}Candidate targets{OFF} — match the MAC shown on the target's screen:")
+    for n, (m, i, src) in enumerate(cands, 1):
+        tag = f"{GREEN}netbooted{OFF}" if src == "netbooted" else f"{GREY}{src}{OFF}"
+        print(f"  [{n}] MAC {BOLD}{m}{OFF}  IP {i}  ({tag})")
+    try:
+        if len(cands) == 1:
+            m, i, _ = cands[0]
+            chosen = (m, i) if input(f"Confirm this is your target (MAC {m})? [y/N]: ").strip().lower() in ("y", "yes") else None
+        else:
+            sel = input("Which is your target? [number, or n to cancel]: ").strip()
+            chosen = cands[int(sel) - 1][:2] if sel.isdigit() and 1 <= int(sel) <= len(cands) else None
+    except (EOFError, KeyboardInterrupt):
+        chosen = None
+    if not chosen:
+        print("cancelled — nothing selected.")
+        return
+    m, i = chosen
+    print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  IP={i}\n  install, e.g.:")
+    print(f"  {CYAN}./dash run install.lan-setup-0 --ip {i} --key ~/.ssh/pcname_ed25519 \\\n"
+          f"    --env FLAKE=<flake> --env MAC={m} --env DOMAIN=<domain> \\\n"
+          f"    --env NETBOOT=auto --env TRANSPORT=none{OFF}")
+
+
 def cmd_serve(args):
     import http.server
     os.chdir(ROOT)
@@ -2423,6 +2519,11 @@ def main():
     vb.add_argument("--ip", required=True, help="deployed box IP to check")
     vb.add_argument("--key", help="ssh private key path")
     vb.set_defaults(fn=cmd_verify_box)
+
+    ft = sub.add_parser("find-target", help="discover + confirm the install target device (match the MAC on its screen)")
+    ft.add_argument("--on", help="setup hint (unused for scan; kept for symmetry)")
+    ft.add_argument("--subnet", help="extra LAN subnet prefix to scan, e.g. 192.168.1")
+    ft.set_defaults(fn=cmd_find_target)
 
     lb = sub.add_parser("l3-baseline", help="capture/show the known-clean golden backend baseline for an L3 setup")
     lb.add_argument("action", nargs="?", choices=["capture", "show"], default="capture")
