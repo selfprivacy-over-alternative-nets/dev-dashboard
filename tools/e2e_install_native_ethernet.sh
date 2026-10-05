@@ -18,7 +18,7 @@ set -euo pipefail
 
 # All user-facing args are REQUIRED (no implicit defaults): the written command is the
 # whole truth on any network/device. Omitting one fails fast telling you what to set.
-FLAKE=${FLAKE:?required: path to deploy flake, e.g. FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy}
+FLAKE=${FLAKE:?required: path to deploy flake, e.g. FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer}
 IP=${IP:?required: target IP, e.g. IP=192.168.100.50 (lan-setup-0 direct-cable installer) or IP=192.168.1.167 (via router R)}
 MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
 KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
@@ -205,6 +205,25 @@ fi
 
 [ -f "$EXTRA/etc/ssl/selfprivacy-le/fullchain.pem" ] || { echo "missing LE cert in $EXTRA — run the staging step first"; exit 1; }
 
+# Wifi (setups …-0b/0c/0d): inject a NetworkManager connection so the box joins wifi after install.
+# The PSK lives ONLY in $FLAKE/state (git-ignored + excluded from the mirror) and on the target —
+# NEVER committed. Pass it once with --env WIFI_PSK=<pass> (saved for reuse); thereafter WIFI_SSID is
+# enough. The connection file is written into the --extra-files tree at 0600.
+if [ -n "${WIFI_SSID:-}" ]; then
+  WIFI_DIR="$FLAKE/state/wifi"; mkdir -p "$WIFI_DIR"; chmod 700 "$WIFI_DIR"
+  PSK_FILE="$WIFI_DIR/$WIFI_SSID.psk"
+  if [ -n "${WIFI_PSK:-}" ]; then printf '%s' "$WIFI_PSK" > "$PSK_FILE"; chmod 600 "$PSK_FILE"; fi
+  [ -s "$PSK_FILE" ] || { echo "!! no wifi PSK for '$WIFI_SSID' — pass it once: --env WIFI_PSK=<pass> (saved to $PSK_FILE, git-ignored, never committed)"; exit 1; }
+  NMDIR="$EXTRA/etc/NetworkManager/system-connections"; mkdir -p "$NMDIR"
+  CONN="$NMDIR/$WIFI_SSID.nmconnection"
+  { printf '[connection]\nid=%s\ntype=wifi\nautoconnect=true\n' "$WIFI_SSID"
+    printf '[wifi]\nmode=infrastructure\nssid=%s\n' "$WIFI_SSID"
+    printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n' "$(cat "$PSK_FILE")"
+    printf '[ipv4]\nmethod=auto\n[ipv6]\nmethod=auto\n'; } > "$CONN"
+  chmod 600 "$CONN"
+  echo "wifi: injected NetworkManager connection for '$WIFI_SSID' (PSK from $PSK_FILE; 0600; not committed)"
+fi
+
 # Direct-cable (NETBOOT=auto): install WITHOUT rebooting. Network boot is first in the
 # target's boot order and our netboot server is still up, so a reboot now would PXE
 # straight back into the installer instead of the freshly-installed disk (and the disk
@@ -214,14 +233,14 @@ if [ "$NETBOOT" = auto ]; then NA_MAIN="--phases disko,install"; NA_FALLBACK="--
 
 say "1. WIPE + INSTALL (nixos-anywhere, both disks by serial, inject cert+secrets)"
 if ! nix run github:nix-community/nixos-anywhere -- \
-      --flake "$FLAKE#pcname" --target-host "root@$IP" -i "$KEY" --extra-files "$EXTRA" $NA_MAIN; then
+      --flake "$FLAKE#box" --target-host "root@$IP" -i "$KEY" --extra-files "$EXTRA" $NA_MAIN; then
   echo "!! nixos-anywhere could not reconnect at $IP (kexec installer took a different DHCP lease)."
   echo "   Discovering the box by MAC $MAC and resuming ..."
   DIP=$(discover_by_mac "$MAC")
   [ -n "$DIP" ] || { echo "could not locate the box by MAC — aborting"; exit 1; }
   echo "   installer found at $DIP — resuming"
   nix run github:nix-community/nixos-anywhere -- \
-    --flake "$FLAKE#pcname" --target-host "root@$DIP" -i "$KEY" --extra-files "$EXTRA" \
+    --flake "$FLAKE#box" --target-host "root@$DIP" -i "$KEY" --extra-files "$EXTRA" \
     $NA_FALLBACK
 fi
 

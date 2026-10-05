@@ -3,7 +3,7 @@
 # with no AI/manual guesswork. It discovers the target's NIC MAC + disks from the running
 # netboot installer over SSH, then rewrites the two hardware-specific files:
 #   1) the netboot DHCP pin   (~/netboot/dnsmasq.conf : dhcp-host=<MAC>,<PIN_IP>)
-#   2) the deploy disk layout (pcname-deploy/disko.nix : OS disk, optional storage disk, by-id)
+#   2) the deploy disk layout (selfprivacy-altnet-deployer/disko.nix : OS disk, optional storage disk, by-id)
 #
 # Why this exists: the rig is hardwired to one machine (a MAC pin + specific disk serials). A
 # different target won't get the pinned installer IP and disko fails on missing disks. This makes
@@ -25,7 +25,7 @@
 #   STORAGE_DISK a 2nd disk mounted at /mnt/storage (nofail). Default: none → single-disk layout.
 #   PIN_IP       the fixed installer IP to pin the MAC to (default 192.168.100.50).
 #   DNSMASQ      path to the netboot dnsmasq.conf (default ~/netboot/dnsmasq.conf).
-#   DISKO        path to the deploy disko.nix     (default <repo>/pcname-deploy/disko.nix).
+#   DISKO        path to the deploy disko.nix     (default <repo>/selfprivacy-altnet-deployer/disko.nix).
 #   LEASES       dnsmasq lease file for TARGET_IP=auto (default /tmp/netboot-leases).
 #   NETBOOT_SCRIPT path to the netboot server launcher (default ~/netboot/start-netboot-server.sh).
 #   ASSUME_YES=1 skip the "about to WIPE disk X" confirmation (default: ask).
@@ -44,7 +44,7 @@ ASSUME_YES=${ASSUME_YES:-}
 RESTART_NETBOOT=${RESTART_NETBOOT:-}
 
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-DISKO=${DISKO:-$(cd "$SELF_DIR/../.." && pwd)/pcname-deploy/disko.nix}
+DISKO=${DISKO:-$(cd "$SELF_DIR/../.." && pwd)/selfprivacy-altnet-deployer/disko.nix}
 
 say(){ printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die(){ printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }

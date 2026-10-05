@@ -8,7 +8,7 @@
 # truth on any device. Omitting one fails fast telling you what to set.
 set -euo pipefail
 
-FLAKE=${FLAKE:?required: deploy flake (for the stamp pins), e.g. FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy}
+FLAKE=${FLAKE:?required: deploy flake (for the stamp pins), e.g. FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer}
 IP=${IP:?required: target IP once installed + on the network, e.g. IP=192.168.1.167}
 MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
 KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}

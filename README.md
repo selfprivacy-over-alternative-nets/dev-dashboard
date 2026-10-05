@@ -33,19 +33,17 @@
 Install over lan:
 ```sh
 # First reboot the target device into network mode, it will display its mac in ipv4 mode. 
-# Write that mac down and enter it in:
-MAC=d8:cb:8a:7c:0a:f4; NET=192.168.1
-for i in $(seq 1 254); do ping -c1 -W1 $NET.$i >/dev/null 2>&1 & done; wait
-ip neigh | awk -v m="$MAC" 'tolower($0) ~ tolower(m) && $1 ~ /\./{print $1}'
-# That prints out the ip of the target device.
-```
+# Then on this device you need to start some service that hands out IP adresses to lan-connected devices:
+  sudo bash ~/netboot/start-netboot-server.sh # and keep it running.
 
-# a physical box over a direct cable (netboot). Start the netboot server first (sudo, separate
-# terminal): sudo bash ~/netboot/start-netboot-server.sh  — then:
+# Then in another terminal run:
+./dash find-target # That should let you see which device is the target, it will output the mac and ip you need to use like:
+
+# Install SelfPrivacy backend to target:
 ./dash run install.lan-setup-0 \
   --ip 192.168.100.50 \
   --key ~/.ssh/pcname_ed25519 \
-  --env FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy \
+  --env FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer \
   --env MAC=d8:cb:8a:7c:0a:f4 \
   --env DOMAIN=weersurf.nl \
   --env NETBOOT=auto \
@@ -53,7 +51,7 @@ ip neigh | awk -v m="$MAC" 'tolower($0) ~ tolower(m) && $1 ~ /\./{print $1}'
 ```
 
 Targeting a **different** device? Run `tools/retarget_device.sh` once (it rewrites the netboot MAC
-pin + `disko.nix` from the target's own hardware) — see `../pcname-deploy/INSTALL.md §3`.
+pin + `disko.nix` from the target's own hardware) — see `../selfprivacy-altnet-deployer/INSTALL.md §3`.
 
 ### Run tests
 

@@ -19,7 +19,7 @@
 
 ## Your deployment values (fill these for YOUR rig; shown with the current pcname box)
 ```
-FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy      # the deploy flake (#pcname)
+FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer      # the deploy flake (#pcname)
 KEY=/home/a/.ssh/pcname_ed25519                            # ssh deploy key
 MAC=d8:cb:8a:7c:0a:f4                                      # target NIC MAC
 DOMAIN=weersurf.nl                                         # public domain
@@ -49,7 +49,7 @@ Replace FLAKE/KEY/MAC/DOMAIN/IP with your values above.
 ./dash run install.lan-setup-0 --on lan-setup-0 \
   --ip 192.168.100.50 \
   --env NETBOOT=auto --env TRANSPORT=none \
-  --env FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy \
+  --env FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer \
   --env MAC=d8:cb:8a:7c:0a:f4 \
   --env KEY=/home/a/.ssh/pcname_ed25519 \
   --env DOMAIN=weersurf.nl
@@ -62,7 +62,7 @@ Via router R instead of a direct cable (target already on R, no netboot):
 ./dash run install.lan-setup-1 --on lan-setup-1 \
   --ip 192.168.1.167 \
   --env NETBOOT=off --env TRANSPORT=https \
-  --env FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy \
+  --env FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer \
   --env MAC=d8:cb:8a:7c:0a:f4 \
   --env KEY=/home/a/.ssh/pcname_ed25519 \
   --env DOMAIN=weersurf.nl

@@ -48,7 +48,15 @@ dash <--> api    : L1 unit-VM\n(run -> pass/fail + log)
 dash <--> tests  : L2 integration\n(run -> pass/fail + log)
 dash <--> mgr    : L3 / install\n(run -> result + recording)
 
-rectangle "pcname-deploy (flake)\n+ ~/netboot" as deploy #CDEBC5
+' The deployer, expanded by what each piece VARIES BY (ordered generic → hardware → per-user → env):
+' generic = reusable as-is; hardware = auto-adapted per device; per-user = inputs per install;
+' env = environment-specific workaround. Scaling = shrink everything below «generic» to auto/inputs.
+package "selfprivacy-altnet-deployer (flake) + ~/netboot — NEW" as deploy #CDEBC5 {
+  rectangle "«generic» installer + backend wiring\nflake.nix · netboot.nix · nix-gc" as d_gen #E8F5E9
+  rectangle "«hardware» disko.nix (disks) · netboot dnsmasq MAC pin\n(auto-adapted by retarget / auto-retarget)" as d_hw #E3F0FB
+  rectangle "«per-user» host.nix (host/net) · weersurf-https (domain/cert)\nsecrets-seed · state/ (token · cert · keys · wifi)" as d_user #FFF3E0
+  rectangle "«env workaround» renew/ (theory7 DNS · Selenium)" as d_env #FBE9E7
+}
 rectangle "chutney\n<i>private Tor net</i>" as chut #DDDDDD
 
 ' The app (a repo) is BUILT and RUN on a FRONTEND DEVICE — kept distinct from the BACKEND MACHINE
