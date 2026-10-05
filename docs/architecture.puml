@@ -48,16 +48,27 @@ dash <--> api    : L1 unit-VM\n(run -> pass/fail + log)
 dash <--> tests  : L2 integration\n(run -> pass/fail + log)
 dash <--> mgr    : L3 / install\n(run -> result + recording)
 
-node "VM backend\n<i>VirtualBox</i>" as vm #FFFFFF
-node "physical box\n<i>on the LAN</i>" as box #FFFFFF
 rectangle "pcname-deploy (flake)\n+ ~/netboot" as deploy #CDEBC5
 rectangle "chutney\n<i>private Tor net</i>" as chut #DDDDDD
 
-backend --> vm   : build-and-run.sh
-deploy  --> box  : nixos-anywhere /\nUSB / netboot
+' The app (a repo) is BUILT and RUN on a FRONTEND DEVICE — kept distinct from the BACKEND MACHINE
+' that runs SelfPrivacy. L3 pairs one of each; the app dials the backend over a transport.
+rectangle "FRONTEND DEVICE — runs the app" as FE #EEF3FB {
+  node "Ubuntu laptop\n<i>Flutter desktop app</i>" as fedesk #FFFFFF
+  node "Android device / emulator\n<i>Flutter app (roadmap)</i>" as feandroid #F0F0F0
+}
+rectangle "BACKEND MACHINE — runs SelfPrivacy" as BE #FBF2EC {
+  node "VirtualBox VM\n<i>vm-local</i>" as vm #FFFFFF
+  node "physical box\n<i>LAN · lan-setup-* / usb-*</i>" as box #FFFFFF
+}
+
+app ..> fedesk    : built & run (L3 desktop)
+app ..> feandroid : roadmap (L3 android)
+backend --> vm    : build-and-run.sh
+deploy  --> box   : nixos-anywhere / USB / netboot
 mgr     ..> deploy : install.* (box)
-app ..> vm       : L3 drives the app\n(tor · https · chutney)
-app ..> box      : L3 drives the app\n(tor · https)
-chut ..> app     : chutney transport
+fedesk ..> vm     : dials backend\n(tor · https · chutney)
+fedesk ..> box    : dials backend\n(tor · https)
+chut ..> fedesk   : chutney transport
 
 @enduml
