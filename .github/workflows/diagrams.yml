@@ -1,0 +1,53 @@
+name: diagrams
+
+# Keep docs/*.svg in sync with their docs/*.puml source. On a push to main that changes a diagram
+# source (or the renderer), re-render with the PINNED plantuml and commit the refreshed SVG so the
+# picture embedded in the README never drifts. On PRs, just render to prove the source compiles.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/*.puml'
+      - 'docs/render-diagrams.sh'
+      - '.github/workflows/diagrams.yml'
+  pull_request:
+    paths:
+      - 'docs/*.puml'
+      - 'docs/render-diagrams.sh'
+      - '.github/workflows/diagrams.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: diagrams-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Render diagrams (pinned plantuml)
+        run: bash docs/render-diagrams.sh
+      - name: Commit refreshed SVGs (push to main only)
+        if: github.event_name == 'push'
+        run: |
+          if git diff --quiet -- docs; then
+            echo "diagrams already up to date"
+          else
+            git config user.name  'diagram-bot'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add docs/*.svg
+            git commit -m 'docs: re-render diagrams [skip ci]'
+            git push
+          fi
+      - name: Verify SVGs compiled (PRs)
+        if: github.event_name == 'pull_request'
+        run: |
+          for f in docs/*.puml; do
+            svg="${f%.puml}.svg"
+            test -s "$svg" || { echo "::error::$svg did not render"; exit 1; }
+          done
+          echo "all diagrams render"

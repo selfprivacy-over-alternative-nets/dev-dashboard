@@ -25,29 +25,13 @@ command against the right target, and appends one normalized JSON record to the 
 `testresults` repo (so recording a result never dirties the code). `index.html` (per-run board) and
 `matrix.html` (the grid) read those records back and render them; GitHub Pages serves them.
 
-```
-   ┌───────────────────────────── dev-dashboard  (NEW, this repo) ─────────────────────────────┐
-   │  catalog.json ──► dash ──(run · time · record)──►  testresults/results.jsonl  (NEW repo)  │
-   │       ▲                        │                         logs/  media/  (local only)      │
-   │       └───── index.html · matrix.html  ◄──(read & visualise)──┘  ──► GitHub Pages          │
-   └─────┬────────────────┬──────────────────────────────────┬────────────────────────────────┘
-       L1│              L2│                               L3 │  and  install.*
-         ▼                ▼                                   ▼
-  selfprivacy-api   selfprivacy-tor-tests            Manager-…-Over-Tor  (NEW orchestration)
-  (FORK: Tor API)   (NEW: nixosTest flake)           ├─ backend/  build-and-run.sh ──► a local VM
-  `nix run          boots a backend VM, pins         │            backend (NixOS modules; pins API)
-   .#pytest-vm`     api+manager+nixpkgs, checks       └─ flutter-app/selfprivacy.org.app  (FORK app)
-  local, no app     routing per network                          └─ driven like a user, screen-recorded
-                                                          │
-                              The backend an L3/​install run targets is EITHER that local VM
-                              (`--on vm-local`) OR a physical box installed by:
-                                 pcname-deploy (NEW flake) + tools/e2e_*.sh + ~/netboot (NEW)
-                                 via nixos-anywhere / USB / direct-cable netboot,
-                              reached over the LAN (`--ip/--key/--token`) by the app.
+![Architecture — repos & data/control flow](docs/architecture.svg)
 
-   transports: `tor`/`https` hit the deployed backend directly; `chutney` stands up a private Tor
-   network on the laptop using  chutney  (UPSTREAM, Tor Project — unmodified).
-```
+> **Editing the diagram:** the picture is generated — edit the source `docs/architecture.puml`, not
+> the `.svg`. `docs/render-diagrams.sh` re-renders it with a **pinned** plantuml (via nix, so a local
+> render and CI produce byte-identical SVG). Enable the auto-render pre-commit hook once with
+> `git config core.hooksPath .githooks`; CI (`.github/workflows/diagrams.yml`) re-renders on any
+> `docs/*.puml` change and commits the refreshed SVG, so the picture never drifts from its source.
 
 **What is upstream vs new (so you know what we own):**
 
@@ -223,6 +207,9 @@ matrix.html app_matrix.js  the catalog-driven test-matrix grid (states × tests 
 style.css                shared styling
 networks.md              the 7 networks + the setups (--on) with ASCII topologies
 test_matrix.md           the full explicit, copy-paste command reference (manual runs)
+docs/architecture.puml   diagram SOURCE (edit this); render-diagrams.sh → architecture.svg (pinned plantuml)
+.githooks/pre-commit     auto-re-renders diagrams on commit (enable: git config core.hooksPath .githooks)
+.github/workflows/       pages.yml (publish) · l3-https.yml (self-hosted CI) · diagrams.yml (keep svg in sync)
 tools/
   e2e_install_native_ethernet.sh · e2e_install_usb.sh   one-command installs (netboot / USB)
   retarget_device.sh     point the netboot + deploy rig at a NEW target device (no hand-edit)

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Auto-recompile diagrams on a local commit: if any docs/*.puml is staged, re-render the SVGs with the
+# pinned renderer and stage them, so the committed picture matches its source. Enable once (per clone):
+#   git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '^docs/.*\.puml$'; then
+  echo "[pre-commit] docs/*.puml changed — re-rendering diagrams (pinned plantuml)…"
+  bash docs/render-diagrams.sh
+  git add docs/*.svg
+fi
