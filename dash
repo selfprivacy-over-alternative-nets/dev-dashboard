@@ -381,6 +381,20 @@ def _setup_backend_kind(setup):
     return "vm"   # vm-local, test-vm, "-", or unset
 
 
+def _setup_family(setup):
+    """The install-METHOD family of a setup — what actually determines how the box got installed:
+    `usb` (installer USB → disk) vs `lan` (direct-cable / router netboot, nixos-anywhere) vs `vm`
+    (local VirtualBox). The fine variants (…-0a/0b/0c/0d) share ONE install and differ only in
+    post-install connectivity, so they map to the same family. Used to stop a result landing in the
+    wrong install-method column (e.g. a usb cell green against a lan-installed box)."""
+    s = (setup or "").strip()
+    if s.startswith("usb"):
+        return "usb"
+    if s.startswith("lan-setup") or s == "native-ethernet":
+        return "lan"
+    return "vm"   # vm-local / test-vm / unset
+
+
 def _ssh_base(key):
     o = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
          "-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
@@ -954,6 +968,26 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                     print(f"{GREY}note{OFF}  {entry['id']} — box stamp has no running-system baseline; "
                           f"redeploy to enable drift detection.")
             base["box_stale"] = bool(_bd)
+            # Install-method gate (reqs 20-28/37): the box must have been installed the way THIS cell
+            # claims. The stamp proves code identity, not how it was installed — so without this a
+            # usb-* result could go green against a lan-installed box (a false positive for usb). Match
+            # the install-method FAMILY (usb vs lan/netboot vs vm); the fine a/b/c/d variants share one
+            # install. Older boxes stamped before `method` was recorded skip this (noted).
+            _box_method = _stamp.get("method")
+            base["box_method"] = _box_method
+            if _box_method is None:
+                print(f"{GREY}note{OFF}  {entry['id']} — box stamp has no install `method`; "
+                      f"redeploy to enable install-method verification.")
+            elif _setup_family(_box_method) != _setup_family(method_tag):
+                base["box_method_mismatch"] = True
+                print(f"{RED}install-method mismatch{OFF}  {entry['id']} — box was installed via "
+                      f"{_box_method} (family {_setup_family(_box_method)}), but --on {method_tag} "
+                      f"claims family {_setup_family(method_tag)}.")
+                print(f"  a {_setup_family(method_tag)} result must run against a "
+                      f"{_setup_family(method_tag)}-installed box (else it's a false positive for that "
+                      f"method). (Re)install via {_setup_family(method_tag)}, or pass --allow-dirty.")
+                if not allow_dirty:
+                    return None
             # Record what the BOX actually runs (its stamp = source of truth) as the server-side
             # state, plus the local client repo(s) — not the workstation's server checkout.
             _server = _stamp.get("repos") or []
@@ -1046,7 +1080,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     if entry.get("category") == "install":
         # Hand the FULL deploy identity to the installer so it stamps the box authoritatively
         # (repos/branches/commits used + dirtiness), not just api/nixpkgs pins.
-        run_env["DEV_TEST_STAMP"] = json.dumps({"repos": _repos, "pins": _pins, "state_hash": _state_hash, "dirty": bool(_dirty_repos)})
+        run_env["DEV_TEST_STAMP"] = json.dumps({"repos": _repos, "pins": _pins, "state_hash": _state_hash,
+                                                 "dirty": bool(_dirty_repos), "method": method_tag})
     shot_dir = ""
     if shots:                                    # the test grabs its own $DISPLAY into SHOT_DIR per step
         shot_dir = os.path.join(MEDIA, run_id + ".shots")
@@ -1839,7 +1874,8 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
                          retries=retries, target=target, state_key=state_key)
     if rec:
         extra = {k: base[k] for k in ("box_stamp", "box_live", "box_stale", "box_state_hash",
-                                      "repos", "pins", "closure") if k in base}
+                                      "box_method", "box_method_mismatch", "repos", "pins", "closure")
+                 if k in base}
         # For a box run the closure identity is the box's running-system store path (req 92).
         if base.get("closure"):
             _sk = base.get("box_state_hash") or base.get("state_hash") or ""
