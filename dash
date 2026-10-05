@@ -174,7 +174,7 @@ def setup_preflight(method):
         if not shutil.which("VBoxManage"):
             return False, "VirtualBox not found (VBoxManage). Install it, e.g. `sudo apt install virtualbox`."
         return True, ""
-    if method == "lan-setup-0":
+    if (method or "").startswith("lan-setup-0"):   # lan-setup-0 / 0a / 0b / 0c / 0d
         if not _iface_has_ip(DIRECT_IFACE, DIRECT_IP):
             return False, (
                 f"Direct-link netboot server is not running on {DIRECT_IFACE}.\n"
@@ -191,7 +191,7 @@ def setup_preflight(method):
             "      pointing TFTP/HTTP at ~/netboot.\n"
             "  Until R is set up, use  --on lan-setup-0  (direct cable)  or  --on usb.\n"
             "  Details: dev-dashboard/README.md (Setups).")
-    if method == "usb":
+    if (method or "").startswith("usb"):           # usb / usb-0a / 0b / 0c
         return True, ""  # manual boot; install cmd is @manual
     return True, ""
 
@@ -211,7 +211,33 @@ def entry_by_id(cat, cid):
     for e in all_entries(cat):
         if e["id"] == cid:
             return e
-    return None
+    return _resolve_install_alias(cat, cid)
+
+
+def _resolve_install_alias(cat, cid):
+    """Accept the FINE install-setup ids as run targets: install.lan-setup-0a..0d → the coarse
+    install.lan-setup-0 entry, install.usb-0a..0c → install.usb. The a/b/c/d differ only in post-install
+    connectivity (wifi), not in the install command — so reuse the coarse entry but record the fine
+    setup as its method (so the stamp + matrix column reflect the real variant)."""
+    base = None
+    if re.match(r"^install\.lan-setup-0[a-d]$", cid):
+        base = "install.lan-setup-0"
+    elif re.match(r"^install\.usb-0[a-c]$", cid):
+        base = "install.usb"
+    if not base:
+        return None
+    e = next((x for x in all_entries(cat) if x["id"] == base), None)
+    if not e:
+        return None
+    e = dict(e)
+    e["id"] = cid
+    e["method"] = cid.split(".", 1)[1]   # lan-setup-0d / usb-0a
+    return e
+
+
+def _wifi_required(setup):
+    """Setups whose target ends up on wifi (so a wifi spec is mandatory): lan-setup-0b/0c/0d, usb-0b/0c."""
+    return (setup or "") in ("lan-setup-0b", "lan-setup-0c", "lan-setup-0d", "usb-0b", "usb-0c")
 
 
 def is_ci():
@@ -1093,6 +1119,13 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             print(f"{RED}preflight FAILED{OFF}  {entry['id']}  {GREY}[on={method_tag}]{OFF}")
             for line in msg.splitlines():
                 print(f"  {line}")
+            return None
+        # Wifi setups (…-0b/0c/0d): the target ends up on wifi, so a wifi spec is mandatory — the e2e
+        # verifies it's in range (non-disruptively, by scan) before installing.
+        if _wifi_required(method_tag) and not _env_get(extra_env, "WIFI_SSID"):
+            print(f"{RED}no wifi spec{OFF}  {entry['id']} [on={method_tag}] — this setup leaves the "
+                  f"target on wifi; pass {CYAN}--env WIFI_SSID=<ssid>{OFF} (and --env WIFI_PSK=<pass> if "
+                  f"needed). The install scans that the SSID is in range before writing anything.")
             return None
 
     if cmd == "@flutter":

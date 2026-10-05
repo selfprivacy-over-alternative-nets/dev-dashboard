@@ -178,6 +178,31 @@ if ! ensure_target; then
   echo "  - check MAC=$MAC matches the target's NIC."
   exit 1
 fi
+
+# Auto-retarget: if the deploy flake's disko disks don't exist on THIS target, adapt disko.nix (+ the
+# netboot MAC pin) to the target's REAL hardware before installing, so a different device "just works".
+# You confirm which disk gets WIPED here — UP FRONT, before the long install. Runs only on a mismatch.
+disko_matches(){
+  local dev devs
+  devs=$(grep -oE '/dev/disk/by-id/[^"]+' "$FLAKE/disko.nix" 2>/dev/null | sort -u)
+  [ -n "$devs" ] || return 0        # nothing by-id to check
+  for dev in $devs; do
+    ssh $SSHO -o BatchMode=yes "root@$IP" "test -e '$dev'" 2>/dev/null || return 1
+  done
+  return 0
+}
+if ! disko_matches; then
+  say "0b. RETARGET — this target's disks don't match the flake; adapting disko.nix (confirm the wipe)"
+  if [ -f "$HERE/retarget_device.sh" ]; then
+    TARGET_IP="$IP" KEY="$KEY" DISKO="$FLAKE/disko.nix" bash "$HERE/retarget_device.sh" \
+      || { echo "!! retarget aborted — not installing."; exit 1; }
+    disko_matches || { echo "!! disko still doesn't match the target after retarget — check the disks."; exit 1; }
+  else
+    echo "!! disko.nix targets disks not on this device and $HERE/retarget_device.sh is missing —"
+    echo "   fix disko.nix for this target's disks, then re-run."; exit 1
+  fi
+fi
+
 [ -f "$EXTRA/etc/ssl/selfprivacy-le/fullchain.pem" ] || { echo "missing LE cert in $EXTRA — run the staging step first"; exit 1; }
 
 # Direct-cable (NETBOOT=auto): install WITHOUT rebooting. Network boot is first in the
