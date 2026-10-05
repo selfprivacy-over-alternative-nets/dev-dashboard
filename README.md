@@ -1,9 +1,5 @@
 # SelfPrivacy dev dashboard
 
-A **full-width, CLI-style test matrix** that shows — per commit and per (even uncommitted) code
-config — **what works, what doesn't, and how fast**, across the SelfPrivacy-over-alternative-nets
-stack. One orchestrator script runs/times/records every command; the board publishes to GitHub Pages.
-
 - **Live:** `https://selfprivacy-over-alternative-nets.github.io/dev-dashboard/`
 - **Local (with videos & raw logs):** `./dash serve` → http://localhost:8099/
 
@@ -15,10 +11,6 @@ stack. One orchestrator script runs/times/records every command; the board publi
 - **L3 — app usage:** the SelfPrivacy app is driven like a user (open → Providers→Services→back →
   add a service …) against a running backend, and **screen-recorded**.
 
-`unit` is deliberately **not** a network column.
-
-Each level depends on a set of repos (`dash` `DEFAULT_REPOS` — what its clean-state + pin gate and
-state key cover); a repo used by several levels spans their blocks below:
 
 ![Test levels × repos](docs/levels.svg)
 
@@ -28,58 +20,36 @@ state key cover); a repo used by several levels spans their blocks below:
 
 ## Architecture — the repos and how they connect
 
-`dash` (in **this** repo) is the orchestrator: it reads `catalog.json`, runs each test/install
-command against the right target, and appends one normalized JSON record to the **separate**
-`testresults` repo (so recording a result never dirties the code). `index.html` (per-run board) and
-`matrix.html` (the grid) read those records back and render them; GitHub Pages serves them.
-
 ![Architecture — repos & data/control flow](docs/architecture.svg)
 
-> **Editing the diagram:** the picture is generated — edit the source `docs/architecture.puml`, not
-> the `.svg`. `docs/render-diagrams.sh` re-renders it with a **pinned** plantuml (via nix, so a local
-> render and CI produce byte-identical SVG). Enable the auto-render pre-commit hook once with
-> `git config core.hooksPath .githooks`; CI (`.github/workflows/diagrams.yml`) re-renders on any
-> `docs/*.puml` change and commits the refreshed SVG, so the picture never drifts from its source.
-
-**What is upstream vs new (so you know what we own):**
-
-| Repo / path | Role | Provenance |
-|---|---|---|
-| **dev-dashboard** (this repo) | harness (`dash`) + the two dashboards; orchestrates, times, records, publishes | **NEW** |
-| **testresults** | result store (`results.jsonl` + logs/media), keyed by the whole code state | **NEW** |
-| **selfprivacy-api** | the SelfPrivacy REST API; L1 unit-VM; runs on every backend | **FORK** — upstream + `tor-support` (Tor sub-path URL routing) |
-| **Manager-…-Over-Tor** | orchestration: `backend/` NixOS modules + `build-and-run.sh`/`build-iso.sh`, embeds the app | **NEW** collection (wraps upstream SelfPrivacy NixOS modules; pins the API fork) |
-| &nbsp;&nbsp;└ `flutter-app/selfprivacy.org.app` | the SelfPrivacy app, driven by L3 | **FORK** — upstream app + alt-net/clearnet + test injection |
-| **selfprivacy-tor-tests** | self-contained L2 `nixosTest` flake (boots a backend VM, checks routing) | **NEW** |
-| **pcname-deploy** | native NixOS deploy flake for a physical box (not git-tracked locally; rsync-mirrored) | **NEW** |
-| **~/netboot** | direct-cable netboot server (dnsmasq + TFTP + HTTP, UKI installer) | **NEW** (lives outside the repos) |
-| **chutney** | private Tor network for the `chutney` transport | **UPSTREAM** — Tor Project, unmodified |
-
-The commit of each repo a run used is recorded in `repos[]`; the sidebar "state" is that whole
-combination (see **Data model**). `../upstream_delta.md` tracks the API fork's delta vs upstream.
-
-
 ## Filling the test matrix
-
-Every command is written in full and **every argument is required** (reproducibility: a stranger on a
-stranger's machine must be able to run it from the text alone). The harness **refuses** a run whose
-code/box doesn't match (dirty tree, pin/closure/stamp mismatch, wrong install method, …) — see
-**Integrity** below — so a green cell means the committed code actually ran. `test_matrix.md` is the
-full explicit command reference; `networks.md` / `./dash setups` show the setups with topology diagrams.
 
 ### Install a backend (do this first for L2/L3)
 
 ```bash
 # local VirtualBox VM (no external hardware):
 ./dash run install.vm-local --on vm-local
+```
+Install over lan:
+```sh
+# First reboot the target device into network mode, it will display its mac in ipv4 mode. 
+# Write that mac down and enter it in:
+MAC=d8:cb:8a:7c:0a:f4; NET=192.168.1
+for i in $(seq 1 254); do ping -c1 -W1 $NET.$i >/dev/null 2>&1 & done; wait
+ip neigh | awk -v m="$MAC" 'tolower($0) ~ tolower(m) && $1 ~ /\./{print $1}'
+# That prints out the ip of the target device.
+```
 
 # a physical box over a direct cable (netboot). Start the netboot server first (sudo, separate
 # terminal): sudo bash ~/netboot/start-netboot-server.sh  — then:
 ./dash run install.lan-setup-0 \
-  --ip 192.168.100.50 --key ~/.ssh/pcname_ed25519 \
+  --ip 192.168.100.50 \
+  --key ~/.ssh/pcname_ed25519 \
   --env FLAKE=/home/a/git/personal/selfprivacy/pcname-deploy \
-  --env MAC=d8:cb:8a:7c:0a:f4 --env DOMAIN=weersurf.nl \
-  --env NETBOOT=auto --env TRANSPORT=none
+  --env MAC=d8:cb:8a:7c:0a:f4 \
+  --env DOMAIN=weersurf.nl \
+  --env NETBOOT=auto \
+  --env TRANSPORT=none
 ```
 
 Targeting a **different** device? Run `tools/retarget_device.sh` once (it rewrites the netboot MAC
