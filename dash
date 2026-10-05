@@ -1497,10 +1497,19 @@ def cmd_find_target(args):
     # For a link-local-only (direct-cable, no IPv4) target the install IP is the netboot server's
     # pinned installer address; the e2e adopts the box by MAC regardless.
     ip_for_cmd = i if i[:1].isdigit() else DIRECT_IP.rsplit(".", 1)[0] + ".50"
-    print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  (found at {i})\n  install, e.g.:")
-    print(f"  {CYAN}./dash run install.lan-setup-0 --ip {ip_for_cmd} --key ~/.ssh/pcname_ed25519 \\\n"
-          f"    --env FLAKE=<flake> --env MAC={m} --env DOMAIN=<domain> \\\n"
-          f"    --env NETBOOT=auto --env TRANSPORT=none{OFF}")
+    cmd_lines = [
+        "./dash run install.lan-setup-0 \\",
+        f"  --ip {ip_for_cmd} \\",
+        "  --key ~/.ssh/pcname_ed25519 \\",
+        "  --env FLAKE=<flake> \\",
+        f"  --env MAC={m} \\",
+        "  --env DOMAIN=<domain> \\",
+        "  --env NETBOOT=auto \\",
+        "  --env TRANSPORT=none",
+    ]
+    print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  (found at {i})")
+    print("install, e.g.:")
+    print(CYAN + "\n".join(cmd_lines) + OFF)
 
 
 def cmd_serve(args):
