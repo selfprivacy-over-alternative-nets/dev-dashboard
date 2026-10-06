@@ -1530,19 +1530,19 @@ def cmd_find_target(args):
     # For a link-local-only (direct-cable, no IPv4) target the install IP is the netboot server's
     # pinned installer address; the e2e adopts the box by MAC regardless.
     ip_for_cmd = i if i[:1].isdigit() else DIRECT_IP.rsplit(".", 1)[0] + ".50"
-    cmd_lines = [
-        "./dash run install.lan-setup-0 \\",
-        f"  --ip {ip_for_cmd} \\",
-        "  --key ~/.ssh/pcname_ed25519 \\",
-        "  --env FLAKE=<flake> \\",
-        f"  --env MAC={m} \\",
-        "  --env DOMAIN=<domain> \\",
-        "  --env NETBOOT=auto \\",
-        "  --env TRANSPORT=none",
-    ]
     print(f"\n{GREEN}target confirmed{OFF}  MAC={m}  (found at {i})")
-    print("install, e.g.:")
-    print(CYAN + "\n".join(cmd_lines) + OFF)
+    # Hand off to resolve_flake.sh: it fills in the last blanks (which deploy flake + domain) and
+    # prints/offers to run the ready install command. Fallback to a placeholder command if absent.
+    _rf = os.path.join(ROOT, "tools", "resolve_flake.sh")
+    if os.path.exists(_rf):
+        subprocess.run(["bash", _rf], env={**os.environ, "MAC": m, "IP": ip_for_cmd})
+    else:
+        print("install, e.g.:")
+        print(CYAN + "\n".join([
+            "./dash run install.lan-setup-0 \\", f"  --ip {ip_for_cmd} \\",
+            "  --key ~/.ssh/pcname_ed25519 \\", "  --env FLAKE=<flake> \\",
+            f"  --env MAC={m} \\", "  --env DOMAIN=<domain> \\",
+            "  --env NETBOOT=auto \\", "  --env TRANSPORT=none"]) + OFF)
 
 
 def cmd_serve(args):
