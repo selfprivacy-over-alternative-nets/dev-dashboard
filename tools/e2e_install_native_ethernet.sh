@@ -288,6 +288,9 @@ print_next_steps(){
   echo "     ${BOLD}./dash run L3.connect.desktop --net https --on ${SP_SETUP:-lan-setup-0a} \\${OFF}"
   echo "     ${BOLD}  --ip <box-ip> --key ${KEY/#$HOME/\~} --token ${tok}${OFF}"
   echo "   (no public DNS yet? use  --net tor  against the box's .onion instead.)"
+  echo
+  echo "Prefer a guided finish (reboot → wait → read the public IP → DNS records → verify they resolve)?"
+  echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-lan-setup-0a}${OFF}"
 }
 
 if [ "$NETBOOT" = auto ]; then
@@ -308,6 +311,16 @@ A live/service verify needs the box on a network WITH INTERNET (a direct cable h
   3) Re-run this (interactively) with the box online, or run the verifier directly.
 EOM
     print_next_steps
+    # Offer the guided finish (reboot → wait → internet → public IP → DNS records → verify) when
+    # there's a terminal to prompt on; stays fully non-interactive (unchanged) under CI/pipes.
+    if [ -t 1 ] && [ -r /dev/tty ]; then
+      printf '\n\033[1mGuide me through the rest now (reboot → check online → read public IP → DNS records → verify)? [y/N]: \033[0m'
+      read -r _go </dev/tty 2>/dev/null || _go=""
+      case "$_go" in
+        y|Y|yes|YES) bash "$HERE/finish_box_setup.sh" --domain "$DOMAIN" --key "$KEY" \
+                       ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" || true ;;
+      esac
+    fi
     exit 0
   fi
 
