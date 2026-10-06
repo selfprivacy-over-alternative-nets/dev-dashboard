@@ -20,6 +20,39 @@ G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
 ask_secret(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -rs v </dev/tty; } 2>/dev/null || v=""; printf '\n' >&2; printf '%s' "$v"; }
 
+# Verify the wifi WITHOUT disturbing the laptop's current connection.
+#  - SSID in range: always checkable (passive scan).
+#  - Password: only checkable non-disruptively if a wifi radio is FREE (you're on ethernet, or a 2nd
+#    adapter exists) — we associate on THAT radio (ipv4 disabled, so it's just the handshake), then
+#    tear it down. If the only radio is in use, we can't test it without dropping your wifi → warn.
+verify_wifi(){
+  local ssid="$1" psk="$2" busy spare tmp="sp-verify-$$"
+  command -v nmcli >/dev/null 2>&1 || { echo "${Y}  ⚠ wifi not verified: 'nmcli' not available.${X}"; return 0; }
+  if nmcli -t -f SSID dev wifi list 2>/dev/null | grep -qxF "$ssid"; then
+    echo "${G}  ✓ wifi '$ssid' is in range${X}"
+  else
+    echo "${Y}  ⚠ wifi '$ssid' is NOT visible in a scan — check the name (it won't connect if wrong/out of range).${X}"
+  fi
+  busy=$(nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null | awk -F: '$2=="wifi"&&$3=="connected"{print $1;exit}')
+  spare=$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | awk -F: -v b="$busy" '$2=="wifi"&&$1!=b{print $1;exit}')
+  if [ -z "$spare" ]; then
+    echo "${Y}  ⚠ wifi PASSWORD not verified — your only wifi radio is in use, and testing it would drop"
+    echo "${Y}    your current wifi. The install still applies it; double-check the password.${X}"
+    return 0
+  fi
+  echo "${GR}  verifying the password on a free wifi radio ($spare) — your current connection is untouched…${X}"
+  if nmcli con add type wifi ifname "$spare" con-name "$tmp" ssid "$ssid" \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$psk" \
+        connection.autoconnect no ipv4.method disabled ipv6.method ignore >/dev/null 2>&1 \
+     && nmcli --wait 20 con up "$tmp" >/dev/null 2>&1; then
+    echo "${G}  ✓ wifi password verified${X}"
+  else
+    echo "${Y}  ⚠ couldn't connect with that password on $spare — it may be wrong (or the AP is out of reach). Double-check it.${X}"
+  fi
+  nmcli con down "$tmp" >/dev/null 2>&1 || true
+  nmcli con delete "$tmp" >/dev/null 2>&1 || true
+}
+
 # ── find candidate deploy flakes: a sibling folder whose flake.nix declares nixosConfigurations.box ──
 mapfile -t FLAKES < <(
   for f in "$SEARCH"/*/flake.nix; do
@@ -72,7 +105,8 @@ WIFI_SSID=""; WIFI_PSK=""
 if [ "$WIFI" = 1 ]; then
   WIFI_SSID=$(ask "  wifi name (SSID): ")
   WIFI_PSK=$(ask_secret "  wifi password (hidden): ")
-  [ -n "$WIFI_SSID" ] || echo "${Y}  (no wifi name given — the install will refuse until you provide one)${X}"
+  if [ -n "$WIFI_SSID" ]; then verify_wifi "$WIFI_SSID" "$WIFI_PSK"
+  else echo "${Y}  (no wifi name given — the install will refuse until you provide one)${X}"; fi
 fi
 
 # the --env list (wifi only when the setup needs it)
