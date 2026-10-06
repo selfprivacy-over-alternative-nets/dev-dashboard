@@ -54,9 +54,14 @@ dash <--> mgr    : L3 / install\n(run -> result + recording)
 package "selfprivacy-altnet-deployer (flake) + ~/netboot — NEW" as deploy #CDEBC5 {
   rectangle "«generic» installer + backend wiring\nflake.nix · netboot.nix · nix-gc" as d_gen #E8F5E9
   rectangle "«hardware» disko.nix (disks) · netboot dnsmasq MAC pin\n(auto-adapted by retarget / auto-retarget)" as d_hw #E3F0FB
-  rectangle "«per-user» host.nix (host/net) · weersurf-https (domain/cert)\nsecrets-seed · state/ (token · cert · keys · wifi)" as d_user #FFF3E0
+  rectangle "«per-user» host.nix (host/net) · weersurf-https (domain/cert) · secrets-seed\n<b>state/</b> (token · cert · keys · wifi)  🔒 SECRETS — NOT synced" as d_user #FFF3E0
   rectangle "«env workaround» renew/ (theory7 DNS · Selenium)" as d_env #FBE9E7
 }
+note bottom of deploy
+  install: <b>nixos-anywhere --flake <deployer>#box --extra-files state/extra</b>
+  (builds backend+disko+host, partitions, copies state/extra onto the box; token made on-box)
+  synced to the private repo EXCEPT <b>state/</b> (all secrets): <i>rsync --exclude state</i>
+end note
 rectangle "chutney\n<i>private Tor net</i>" as chut #DDDDDD
 
 ' The app (a repo) is BUILT and RUN on a FRONTEND DEVICE — kept distinct from the BACKEND MACHINE
