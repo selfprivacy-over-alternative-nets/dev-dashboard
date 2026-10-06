@@ -18,6 +18,7 @@ SEARCH=$(cd "$SELF_DIR/../.." && pwd)                     # the selfprivacy repo
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
+ask_secret(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -rs v </dev/tty; } 2>/dev/null || v=""; printf '\n' >&2; printf '%s' "$v"; }
 
 # ── find candidate deploy flakes: a sibling folder whose flake.nix declares nixosConfigurations.box ──
 mapfile -t FLAKES < <(
@@ -50,17 +51,53 @@ DOM_DEFAULT=""
 DOMAIN=$(ask "your web address (domain)${DOM_DEFAULT:+ [$DOM_DEFAULT]}: ")
 DOMAIN=${DOMAIN:-${DOM_DEFAULT:-<your-domain>}}
 
+# ── network setup: how the box gets online AFTER install (reqs 20-23). The install is identical;
+#    the choice only decides post-install connectivity + whether wifi credentials are needed. ──
+echo
+echo "${B}Which network setup?${X}  (how the box connects to the internet after it's installed)"
+echo "  ${B}1${X}  lan-setup-0a — you plug the cable into your router afterwards  ${GR}(no wifi)${X}"
+echo "  ${B}2${X}  lan-setup-0b — the box joins your home wifi"
+echo "  ${B}3${X}  lan-setup-0c — the box joins a different wifi"
+echo "  ${B}4${X}  lan-setup-0d — wifi only (you remove the cable afterwards)"
+sel=$(ask "pick a number [1]: "); sel=${sel:-1}
+case "$sel" in
+  1) SETUP=install.lan-setup-0a; WIFI=0 ;;
+  2) SETUP=install.lan-setup-0b; WIFI=1 ;;
+  3) SETUP=install.lan-setup-0c; WIFI=1 ;;
+  4) SETUP=install.lan-setup-0d; WIFI=1 ;;
+  *) SETUP=install.lan-setup-0a; WIFI=0; echo "${GR}(not recognised — using lan-setup-0a)${X}" ;;
+esac
+
+WIFI_SSID=""; WIFI_PSK=""
+if [ "$WIFI" = 1 ]; then
+  WIFI_SSID=$(ask "  wifi name (SSID): ")
+  WIFI_PSK=$(ask_secret "  wifi password (hidden): ")
+  [ -n "$WIFI_SSID" ] || echo "${Y}  (no wifi name given — the install will refuse until you provide one)${X}"
+fi
+
+# the --env list (wifi only when the setup needs it)
+ENVS=( "FLAKE=$FLAKE" "MAC=$MAC" "DOMAIN=$DOMAIN" )
+[ -n "$WIFI_SSID" ] && ENVS+=( "WIFI_SSID=$WIFI_SSID" )
+[ -n "$WIFI_PSK" ]  && ENVS+=( "WIFI_PSK=$WIFI_PSK" )
+ENVS+=( "NETBOOT=auto" "TRANSPORT=none" )
+
 KEY_DISP=${KEY/#$HOME/\~}
 echo
-echo "${G}ready to install${X} — run this (for a wifi-only setup use ${B}install.lan-setup-0d${X} and add ${B}--env WIFI_SSID=… --env WIFI_PSK=…${X}):"
-printf "%s./dash run %s \\\\\n  --ip %s \\\\\n  --key %s \\\\\n  --env FLAKE=%s \\\\\n  --env MAC=%s \\\\\n  --env DOMAIN=%s \\\\\n  --env NETBOOT=auto \\\\\n  --env TRANSPORT=none%s\n" \
-  "$C" "$SETUP" "$IP" "$KEY_DISP" "$FLAKE" "$MAC" "$DOMAIN" "$X"
+echo "${G}ready to install${X} — run this:"
+printf "%s./dash run %s \\\\\n  --ip %s \\\\\n  --key %s" "$C" "$SETUP" "$IP" "$KEY_DISP"
+for e in "${ENVS[@]}"; do
+  case "$e" in WIFI_PSK=*) printf " \\\\\n  --env WIFI_PSK=%s" "••••••" ;; *) printf " \\\\\n  --env %s" "$e" ;; esac
+done
+printf "%s\n" "$X"
+[ -n "$WIFI_PSK" ] && echo "${GR}(the wifi password is hidden above — it's included if you choose 'run it now'; re-type it if you copy-paste)${X}"
 
 # ── offer to run it (the install itself confirms the disk wipe) ──
-case "$FLAKE" in *'<'*) echo "${GR}(fill in the flake/domain, then run the command above.)${X}"; exit 0;; esac
+case "$FLAKE" in *'<'*) echo "${GR}(fill in the flake, then run the command above.)${X}"; exit 0;; esac
 go=$(ask $'\nrun it now? [y/N]: ')
 case "$go" in
-  y|Y|yes|YES) ( cd "$DASH_DIR" && ./dash run "$SETUP" --ip "$IP" --key "$KEY" \
-      --env "FLAKE=$FLAKE" --env "MAC=$MAC" --env "DOMAIN=$DOMAIN" --env NETBOOT=auto --env TRANSPORT=none ) ;;
+  y|Y|yes|YES)
+    RUN_ARGS=( run "$SETUP" --ip "$IP" --key "$KEY" )
+    for e in "${ENVS[@]}"; do RUN_ARGS+=( --env "$e" ); done
+    ( cd "$DASH_DIR" && ./dash "${RUN_ARGS[@]}" ) ;;
   *) echo "not run — copy the command above when you're ready." ;;
 esac
