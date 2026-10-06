@@ -51,11 +51,31 @@ dash <--> mgr    : L3 / install\n(run -> result + recording)
 ' The deployer, expanded by what each piece VARIES BY (ordered generic → hardware → per-user → env):
 ' generic = reusable as-is; hardware = auto-adapted per device; per-user = inputs per install;
 ' env = environment-specific workaround. Scaling = shrink everything below «generic» to auto/inputs.
+' A vertically-stacked "skyscraper": one FLOOR per element, top→bottom, colour-banded by what it
+' VARIES BY (green=generic/reusable · blue=hardware/auto · amber=per-user/input · red=env hack ·
+' grey=state/secrets, NOT synced). Hidden edges force the vertical stack.
 package "selfprivacy-altnet-deployer (flake) + ~/netboot — NEW" as deploy #CDEBC5 {
-  rectangle "«generic» installer + backend wiring\nflake.nix · netboot.nix · nix-gc" as d_gen #E8F5E9
-  rectangle "«hardware» disko.nix (disks) · netboot dnsmasq MAC pin\n(auto-adapted by retarget / auto-retarget)" as d_hw #E3F0FB
-  rectangle "«per-user» host.nix (host/net) · weersurf-https (domain/cert) · secrets-seed\n<b>state/</b> (token · cert · keys · wifi)  🔒 SECRETS — NOT synced" as d_user #FFF3E0
-  rectangle "«env workaround» renew/ (theory7 DNS · Selenium)" as d_env #FBE9E7
+  rectangle "flake.nix — pins backend · wires tor-core + disko   «generic»" as f1 #E8F5E9
+  rectangle "netboot.nix — in-RAM PXE installer   «generic»" as f2 #E8F5E9
+  rectangle "nix-gc-path.nix — nix in API PATH (GC)   «generic»" as f3 #E8F5E9
+  rectangle "disko.nix — disk layout by-id (auto)   «hardware»" as f4 #E3F0FB
+  rectangle "~/netboot dnsmasq — MAC pin (auto)   «hardware»" as f5 #E3F0FB
+  rectangle "host.nix — hostname · net · ssh · recovery   «per-user»" as f6 #FFF3E0
+  rectangle "weersurf-https.nix — domain + cert source   «per-user»" as f7 #FFF3E0
+  rectangle "secrets-seed.nix — userdata.json (token on-box)   «per-user»" as f8 #FFF3E0
+  rectangle "renew/ — theory7 DNS-01 (Selenium)   «env hack»" as f9 #FBE9E7
+  rectangle "state/extra — token · cert · wifi → --extra-files   🔒 NOT synced" as f10 #ECEFF1
+  rectangle "state/keepass · wifi/ · ca/ — secrets + CA fallback   🔒 NOT synced" as f11 #ECEFF1
+  f1 -[hidden]down-> f2
+  f2 -[hidden]down-> f3
+  f3 -[hidden]down-> f4
+  f4 -[hidden]down-> f5
+  f5 -[hidden]down-> f6
+  f6 -[hidden]down-> f7
+  f7 -[hidden]down-> f8
+  f8 -[hidden]down-> f9
+  f9 -[hidden]down-> f10
+  f10 -[hidden]down-> f11
 }
 note bottom of deploy
   install: <b>nixos-anywhere --flake <deployer>#box --extra-files state/extra</b>
