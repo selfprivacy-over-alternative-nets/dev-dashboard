@@ -1511,8 +1511,8 @@ def cmd_find_target(args):
         tag = f"{GREEN}netbooted{OFF}" if src == "netbooted" else f"{GREY}{src}{OFF}"
         print(f"  [{n}] MAC {BOLD}{m}{OFF}  IP {i}  ({tag})")
     if _car and not _srv and not any(s == "netbooted" for _, _, s in cands):
-        print(f"{AMBER}note{OFF}: {DIRECT_IFACE} is linked but the netboot server is DOWN, so a "
-              f"direct-cabled target has no IP yet and won't appear. Start it, then re-run:")
+        print(f"{RED}note: {DIRECT_IFACE} is linked but the netboot server is DOWN, so a "
+              f"direct-cabled target has no IP yet and won't appear. Start it, then re-run:{OFF}")
         print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
     try:
         if len(cands) == 1:
