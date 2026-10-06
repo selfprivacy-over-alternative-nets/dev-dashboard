@@ -1,0 +1,38 @@
+@startuml deployer
+' Plain-language view of the installer for a non-technical reader: what each part is FOR and what
+' YOU have to type in. Colour = how much input it needs (see legend). Rendered by render-diagrams.sh.
+title What the installer is made of — and what <b>you</b> have to provide
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam rectangle {
+  BorderColor #777777
+  roundCorner 14
+}
+skinparam packageBackgroundColor #FAFAFA
+
+legend top left
+<b>What the colours mean</b>
+<back:#E8F5E9>   </back>  green — same for everyone, you do nothing
+<back:#E3F0FB>   </back>  blue — found automatically from your device
+<back:#FFF3E0>   </back>  amber — about you: you type this in
+<back:#FBE9E7>   </back>  red — the fiddly internet bit
+<back:#ECEFF1>   </back>  grey — 🔒 your secrets: stay on your computer, never uploaded
+endlegend
+
+package "The SelfPrivacy installer" as D {
+  rectangle "<b>The SelfPrivacy app + the installer itself</b>\nYou provide: nothing — it's the same for everyone" as a1 #E8F5E9
+  rectangle "<b>Which computer & which disk to use</b>\nYou provide: nothing — it detects your device;\nyou just confirm which disk gets erased" as a2 #E3F0FB
+  rectangle "<b>How it gets online (wifi or cable)</b>\nYou provide: your wifi name + password (only if wifi)" as a3 #FFF3E0
+  rectangle "<b>Your web address + its security padlock</b>\nYou provide: your web address (e.g. selfprivacy.example.com)" as a4 #FFF3E0
+  rectangle "<b>Your admin login + the app's secret key</b>\nYou provide: nothing — made on the device automatically" as a5 #FFF3E0
+  rectangle "<b>Keeping the security padlock renewed</b>\nYou provide: a web-address provider (automatic with a normal one)" as a6 #FBE9E7
+  rectangle "<b>🔒 Your private secrets</b> (keys · padlock · wifi & app passwords)\nStored ONLY on your computer — never uploaded or shared" as a7 #ECEFF1
+  a1 -[hidden]down-> a2
+  a2 -[hidden]down-> a3
+  a3 -[hidden]down-> a4
+  a4 -[hidden]down-> a5
+  a5 -[hidden]down-> a6
+  a6 -[hidden]down-> a7
+}
+@enduml

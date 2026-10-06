@@ -26,6 +26,15 @@
 
 ### Install a backend (do this first for L2/L3)
 
+**In plain language — what the installer is, and the 3 steps to use it:**
+
+![What the installer is made of, and what you provide](docs/deployer.svg)
+
+![How to set up and test a box — 3 steps](docs/flow.svg)
+
+<!-- deployer.svg / flow.svg are generated from docs/deployer.puml / docs/flow.puml by
+     render-diagrams.sh — edit the .puml, not the .svg. -->
+
 ```bash
 # local VirtualBox VM (no external hardware):
 ./dash run install.vm-local --on vm-local
@@ -183,10 +192,13 @@ matrix.html app_matrix.js  the catalog-driven test-matrix grid (states × tests 
 style.css                shared styling
 networks.md              the 7 networks + the setups (--on) with ASCII topologies
 test_matrix.md           the full explicit, copy-paste command reference (manual runs)
-docs/                    diagram SOURCES (edit these) + rendered SVGs:
-  architecture.puml        data/control-flow (plantuml) → architecture.svg
-  gen_levels.py            test-levels × repos coverage (pure-python SVG) → levels.svg
-  render-diagrams.sh       ONE renderer for both (pinned plantuml via nix + the py generators)
+docs/                    diagram SOURCES (edit the .puml/.py, NOT the .svg) + rendered SVGs:
+  architecture.puml        repos & data flow, incl. the deployer skyscraper → architecture.svg
+  deployer.puml            plain-language "what the installer is + what you provide" → deployer.svg
+  flow.puml                plain-language 3-step find-target → install → test flow → flow.svg
+  gen_levels.py            test-levels × repos coverage → levels.svg
+  gen_l3_coverage.py       L3 frontend-device × backend-machine coverage → l3-coverage.svg
+  render-diagrams.sh       ONE renderer for all (pinned plantuml via nix + the py generators)
 .githooks/pre-commit     auto-re-renders diagrams on commit (enable: git config core.hooksPath .githooks)
 .github/workflows/       pages.yml (publish) · l3-https.yml (self-hosted CI) · diagrams.yml (keep svg in sync)
 tools/

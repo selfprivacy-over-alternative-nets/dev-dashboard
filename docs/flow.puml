@@ -1,0 +1,37 @@
+@startuml flow
+' The end-to-end flow a person follows: get ready -> find the device -> install -> test.
+' Nodes stay short + robust; the exact copy-paste commands live in the README/requirements text.
+title How to set up and test a SelfPrivacy box — 3 steps
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam activity {
+  BackgroundColor #EEF3FB
+  BorderColor #5a6b7a
+}
+
+start
+:<b>0. Get ready</b> (once)
+cable the new device to this laptop, turn it on in "network boot" mode
+(it shows its own MAC on screen), then start the address server:
+sudo bash ~/netboot/start-netboot-server.sh;
+:<b>1. Find the device</b>
+run  <b>./dash find-target</b>
+→ it prints the device's MAC + IP, e.g.  MAC 80:e8:2c:15:81:8b  IP 192.168.100.29;
+:<b>2. Install onto it</b>
+run  <b>./dash run install.lan-setup-0d ...</b>  with the MAC + IP from step 1,
+your web address, and your wifi name + password (full command below the picture)
+→ it asks "erase which disk?", then installs and prints <b>done</b>;
+:<b>3. Test the running box</b>
+run  <b>./dash run L3.connect.desktop ... --token ...</b>
+→ <b>green = it works</b>   (red = something is off, the log says what);
+note right
+  <b>Where your secrets go</b>
+  The wifi password, the app secret key (token) and the TLS
+  certificate are written only into the installer's <b>state/</b>
+  folder on THIS computer. It is never uploaded or pushed
+  (git-ignored + excluded from the backup). To back it up too,
+  lock the whole folder with ONE password:  <b>age -p</b>.
+end note
+stop
+@enduml
