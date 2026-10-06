@@ -269,12 +269,13 @@ print_next_steps(){
   say "NEXT STEPS"
   echo "① Find the box's IP + confirm it's online — run this ON THE BOX (its own keyboard/screen),"
   if [ -n "${WIFI_SSID:-}" ]; then
-    echo "   after you power-cycle it so it boots from disk and joins wifi '${WIFI_SSID}'"
+    echo "   after you reboot it so it boots from disk and joins wifi '${WIFI_SSID}'"
     echo "   (this laptop can't see it — the box is on a different radio/MAC/network):"
   else
-    echo "   after you cable it to your router and power-cycle it"
+    echo "   after you cable it to your router and reboot it"
     echo "   (or from this laptop:  ./dash find-target  once it's on this LAN):"
   fi
+  echo "   log in at the box's console as  ${BOLD}root${OFF}  password  ${BOLD}tijdelijkwachtwoord${OFF}  then run:"
   echo "     ${BOLD}ping -c1 1.1.1.1 && hostname -I${OFF}"
   echo "   → line 1 prints bytes = ONLINE; line 2 = the box's IP (call it <box-ip>)."
   echo
@@ -302,7 +303,7 @@ if [ "$NETBOOT" = auto ]; then
 The install is complete; the injected identity (secrets.json + LE cert) is on disk.
 A live/service verify needs the box on a network WITH INTERNET (a direct cable has none):
   1) Move the target to router R (or set its BIOS boot order to the internal disk).
-  2) Power-cycle it — the netboot server is stopped, so it boots from disk and joins the LAN.
+  2) Reboot it — the netboot server is stopped, so it boots from disk and joins the LAN.
   3) Re-run this (interactively) with the box online, or run the verifier directly.
 EOM
     print_next_steps
@@ -311,7 +312,7 @@ EOM
 
   # Continue to the live verify. The box is still running the in-RAM INSTALLER (we didn't
   # reboot, to avoid the PXE loop). Ask the user to put it on an internet network, then reboot
-  # it OURSELVES so it boots from disk into the installed system (no manual power-cycle needed).
+  # it OURSELVES so it boots from disk into the installed system (no manual reboot needed).
   say "2b. bring the target ONLINE for the live service verify"
   echo "Connect the target to a network WITH INTERNET (e.g. router R) — it's currently running"
   echo "the in-RAM installer; I'll reboot it into the installed disk once it's on that network."
