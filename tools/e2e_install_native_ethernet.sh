@@ -276,8 +276,9 @@ print_next_steps(){
     echo "   (or from this laptop:  ./dash find-target  once it's on this LAN):"
   fi
   echo "   log in at the box's console as  ${BOLD}root${OFF}  password  ${BOLD}tijdelijkwachtwoord${OFF}  then run:"
-  echo "     ${BOLD}ping -c1 1.1.1.1 && hostname -I${OFF}"
-  echo "   → line 1 prints bytes = ONLINE; line 2 = the box's IP (call it <box-ip>)."
+  echo "     ${BOLD}ping -c1 1.1.1.1 && hostname -I && curl -s https://api.ipify.org; echo${OFF}"
+  echo "   → 'bytes from…' = ONLINE; then the box's LAN IP (192.168.x.x — home access)"
+  echo "     and the public IP (the last line — public access, needs :443 forwarded on the router)."
   echo
   echo "② Add these 5 DNS A-records at your DNS host, pointing at <box-ip>:"
   for sub in api cloud git matrix meet; do printf "     A   %-28s <box-ip>\n" "$sub.$DOMAIN"; done
