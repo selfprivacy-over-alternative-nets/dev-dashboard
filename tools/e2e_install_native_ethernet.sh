@@ -262,13 +262,39 @@ ondisk_verify(){
   ' 2>/dev/null || echo NO-INSTALLED-ROOT-FOUND
 }
 
+# Post-install next steps: find the box's IP, the DNS records to add, and the integration test.
+print_next_steps(){
+  local BOLD=$'\033[1m' OFF=$'\033[0m' tok sub
+  tok=$(python3 -c "import json;print(json.load(open('$EXTRA/etc/selfprivacy/secrets.json'))['api']['token'])" 2>/dev/null || echo "<box-api-token>")
+  say "NEXT STEPS"
+  echo "① Find the box's IP + confirm it's online — run this ON THE BOX (its own keyboard/screen),"
+  if [ -n "${WIFI_SSID:-}" ]; then
+    echo "   after you power-cycle it so it boots from disk and joins wifi '${WIFI_SSID}'"
+    echo "   (this laptop can't see it — the box is on a different radio/MAC/network):"
+  else
+    echo "   after you cable it to your router and power-cycle it"
+    echo "   (or from this laptop:  ./dash find-target  once it's on this LAN):"
+  fi
+  echo "     ${BOLD}ping -c1 1.1.1.1 && hostname -I${OFF}"
+  echo "   → line 1 prints bytes = ONLINE; line 2 = the box's IP (call it <box-ip>)."
+  echo
+  echo "② Add these 5 DNS A-records at your DNS host, pointing at <box-ip>:"
+  for sub in api cloud git matrix meet; do printf "     A   %-28s <box-ip>\n" "$sub.$DOMAIN"; done
+  echo "   <box-ip> = the box's LAN IP (home access) OR your router's PUBLIC IP (public access + forward :443)."
+  echo
+  echo "③ Integration-test the whole stack (once <box-ip> is reachable and the name resolves):"
+  echo "     ${BOLD}./dash run L3.connect.desktop --net https --on ${SP_SETUP:-lan-setup-0a} \\${OFF}"
+  echo "     ${BOLD}  --ip <box-ip> --key ${KEY/#$HOME/\~} --token ${tok}${OFF}"
+  echo "   (no public DNS yet? use  --net tor  against the box's .onion instead.)"
+}
+
 if [ "$NETBOOT" = auto ]; then
   say "2. verify the install ON DISK (from the still-running installer — no reboot/internet needed)"
   ondisk=$(ondisk_verify)
   echo "   on-disk: $ondisk"
   stop_netboot
   echo "$ondisk" | grep -q OK || { echo "!! no installed root with secrets.json found on disk — install may have failed"; exit 1; }
-  say "install.native-ethernet [lan-setup-0]: INSTALL VERIFIED ON DISK"
+  say "install.native-ethernet [${SP_SETUP:-lan-setup-0}]: INSTALL VERIFIED ON DISK"
 
   # Install-only when non-interactive or explicitly requested (TRANSPORT=none): hand off and stop.
   if [ ! -t 0 ] || [ "$TRANSPORT" = none ]; then
@@ -279,6 +305,7 @@ A live/service verify needs the box on a network WITH INTERNET (a direct cable h
   2) Power-cycle it — the netboot server is stopped, so it boots from disk and joins the LAN.
   3) Re-run this (interactively) with the box online, or run the verifier directly.
 EOM
+    print_next_steps
     exit 0
   fi
 
@@ -392,3 +419,15 @@ if [ "$TRANSPORT" = onion ]; then
 else
   python3 "$HERE/verify_install_native_ethernet.py" --transport https --domain "$DOMAIN" --token "$TOKEN" --ssh-key "$KEY"
 fi
+
+# The box is live and its real IP/token are known — print the DNS records with the IP filled in,
+# plus the ready-to-run L3 integration test (the full app-vs-backend "whole shebang").
+B=$'\033[1m'; N=$'\033[0m'
+say "NEXT STEPS"
+echo "Add these 5 DNS A-records at your DNS host (home: box LAN IP $IP; public: your router's WAN IP + forward :443):"
+for sub in api cloud git matrix meet; do printf "     A   %-28s %s\n" "$sub.$DOMAIN" "$IP"; done
+echo
+echo "Integration-test the whole stack (app driven against this backend):"
+echo "     ${B}./dash run L3.connect.desktop --net $TRANSPORT --on ${SP_SETUP:-lan-setup-0a} \\${N}"
+echo "     ${B}  --ip $IP --key ${KEY/#$HOME/\~} --token $TOKEN${N}"
+[ -n "${ONION:-}" ] && echo "   (or --net tor against the box's .onion: $ONION)"

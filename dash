@@ -1195,6 +1195,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         # (repos/branches/commits used + dirtiness), not just api/nixpkgs pins.
         run_env["DEV_TEST_STAMP"] = json.dumps({"repos": _repos, "pins": _pins, "state_hash": _state_hash,
                                                  "dirty": bool(_dirty_repos), "method": method_tag})
+        run_env["SP_SETUP"] = method_tag   # so the installer's next-steps suggest the matching --on
     shot_dir = ""
     if shots:                                    # the test grabs its own $DISPLAY into SHOT_DIR per step
         shot_dir = os.path.join(MEDIA, run_id + ".shots")
