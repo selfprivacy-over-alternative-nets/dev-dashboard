@@ -1275,6 +1275,29 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         print(f"{GREY}  (substituted: output fetched from a binary cache — built elsewhere, not run here){OFF}")
     if _forced:
         print(f"{AMBER}  FORCED past: {', '.join(_forced)} (--allow-dirty) — recorded as a forced run, not a clean pass{OFF}")
+    # After a box install, run the guided finish (reboot → online → public IP → DNS records → verify)
+    # on the REAL terminal — and only AFTER the record is written, so the human's time inside it can
+    # never inflate the install's recorded duration (which would mis-mark a clean install "slow").
+    # Interactive terminals only; CI/pipes skip it. vm-local has no DOMAIN/MAC → naturally excluded.
+    if (entry.get("category") == "install" and status in ("pass", "slow")
+            and sys.stdin.isatty() and sys.stdout.isatty()):
+        _dom, _key, _mac = run_env.get("DOMAIN"), run_env.get("KEY"), run_env.get("MAC")
+        _fin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "finish_box_setup.sh")
+        if _dom and _key and os.path.exists(_fin):
+            try:
+                _ans = input(f"\n{BOLD}Finish setup now — reboot the box, read its public IP, add + verify DNS? [Y/n] {OFF}").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                _ans = "n"
+            if _ans in ("", "y", "yes"):
+                _fargs = ["bash", _fin, "--domain", _dom, "--key", _key, "--setup", method_tag]
+                if _mac:
+                    _fargs += ["--mac", _mac]
+                if run_env.get("WIFI_SSID"):
+                    _fargs += ["--wifi", run_env["WIFI_SSID"]]
+                try:
+                    subprocess.run(_fargs)   # inherits the real terminal; does its own prompts + DNS verify
+                except KeyboardInterrupt:
+                    print(f"{GREY}  (guided finish interrupted — the install result above stands){OFF}")
     return rec
 
 

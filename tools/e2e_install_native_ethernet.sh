@@ -311,14 +311,17 @@ A live/service verify needs the box on a network WITH INTERNET (a direct cable h
   3) Re-run this (interactively) with the box online, or run the verifier directly.
 EOM
     print_next_steps
-    # Offer the guided finish (reboot → wait → internet → public IP → DNS records → verify) when
-    # there's a terminal to prompt on; stays fully non-interactive (unchanged) under CI/pipes.
-    if [ -t 1 ] && [ -r /dev/tty ]; then
-      printf '\n\033[1mGuide me through the rest now (reboot → check online → read public IP → DNS records → verify)? [y/N]: \033[0m'
-      read -r _go </dev/tty 2>/dev/null || _go=""
+    # When this script is run STANDALONE in a terminal (stdout is a tty), go straight into the guided
+    # finish (reboot → wait → internet → public IP → DNS records → verify). Under `dash` our stdout is
+    # a captured pipe (so -t 1 is false) and dash launches the guided finish itself AFTER recording the
+    # result — which keeps the human's time out of the install's timed duration. CI/pipes skip it.
+    if [ -t 1 ]; then
+      printf '\n\033[1mFinish setup now — reboot the box, read its public IP, add + verify DNS? [Y/n] \033[0m'
+      read -r _go || _go=n
       case "$_go" in
-        y|Y|yes|YES) bash "$HERE/finish_box_setup.sh" --domain "$DOMAIN" --key "$KEY" \
-                       ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" || true ;;
+        n|N|no|NO) : ;;
+        *) bash "$HERE/finish_box_setup.sh" --domain "$DOMAIN" --key "$KEY" \
+             ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" || true ;;
       esac
     fi
     exit 0
