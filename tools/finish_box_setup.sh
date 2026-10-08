@@ -16,6 +16,7 @@
 set -uo pipefail
 
 DOMAIN=""; KEY=""; IP=""; MAC=""; WIFI=""; SETUP="${SP_SETUP:-lan-setup-0a}"
+PUBLIC_METHOD="${PUBLIC_METHOD:-}"; PUBLIC_CF_NAMED="${PUBLIC_CF_NAMED:-0}"   # embedded public-access choice
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) DOMAIN="$2"; shift 2;;
@@ -24,12 +25,15 @@ while [ $# -gt 0 ]; do
     --mac)    MAC="$2";    shift 2;;
     --wifi)   WIFI="$2";   shift 2;;
     --setup)  SETUP="$2";  shift 2;;
+    --public-method)   PUBLIC_METHOD="$2";   shift 2;;   # cloudflare|ngrok|router|none (embed the tunnel)
+    --public-cf-named) PUBLIC_CF_NAMED="$2"; shift 2;;   # 1 = named tunnel, 0 = quick tunnel
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
 [ -n "$DOMAIN" ] || { echo "required: --domain <your-domain> (e.g. --domain weersurf.nl)" >&2; exit 2; }
 [ -n "$KEY" ]    || { echo "required: --key <ssh deploy key> (e.g. --key ~/.ssh/pcname_ed25519)" >&2; exit 2; }
 KEY=${KEY/#\~/$HOME}
+SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o BatchMode=yes"
@@ -160,3 +164,12 @@ case "$ans" in
   *) echo "No problem — add them when ready, then rerun this script to verify:"
      echo "   ${C}bash $(basename "$0") --domain $DOMAIN --key ${KEY/#$HOME/\~} --ip $BIP --setup $SETUP${X}" ;;
 esac
+
+# ── 8. public access (embedded; configured ENTIRELY over SSH — nothing is typed on the box) ────────
+if [ -n "$PUBLIC_METHOD" ] && [ "$PUBLIC_METHOD" != none ] && [ -n "${BIP:-}" ]; then
+  say "8  public access via $PUBLIC_METHOD (set up over SSH — no box login)"
+  cfflag=--cf-quick; [ "$PUBLIC_CF_NAMED" = 1 ] && cfflag=--cf-named
+  bash "$SELF/add-cloudflare.sh" --key "$KEY" --ip "$BIP" --domain "$DOMAIN" --setup "$SETUP" \
+       --method "$PUBLIC_METHOD" $([ "$PUBLIC_METHOD" = cloudflare ] && echo "$cfflag") \
+    || echo "${Y}(public-access setup didn't finish — rerun: bash tools/add-cloudflare.sh --key ${KEY/#$HOME/\~} --ip $BIP --method $PUBLIC_METHOD)${X}"
+fi

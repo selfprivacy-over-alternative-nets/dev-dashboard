@@ -1,0 +1,48 @@
+@startuml tunneling
+' How device B (the SelfPrivacy backend) is reached over HTTPS from the open internet.
+' The hard part: B sits behind NAT (often CGNAT / a third party's router), so there is usually no
+' inbound port to forward. These are the four routes and how each scores.
+' Rendered deterministically to tunneling.svg by docs/render-diagrams.sh (pinned plantuml).
+title Reaching the SelfPrivacy backend (device B) over HTTPS — the four routes
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam ArrowColor #444444
+skinparam rectangle {
+  BorderColor #555555
+  roundCorner 10
+}
+
+left to right direction
+
+rectangle "**Visitor**\nphone / laptop,\nanywhere" as V
+rectangle "**device B**\nSelfPrivacy backend\nlistening on :443" as B #EEF3FB
+
+rectangle "**Tunnel relay**\ncloudflare / ngrok /\npinggy / localtunnel" as T #F7E7A6
+rectangle "**DNS AAAA**\nDuckDNS (free)" as D6 #CDEBC5
+rectangle "**DNS A**" as D4
+rectangle "**Router R**\nforward :443" as R
+
+V --> T : https
+T ..> B : outbound tunnel —\nB dials OUT, beats CGNAT\n(centralised: via the relay)
+
+V --> D6 : https (IPv6)
+D6 --> B : direct — no NAT on IPv6,\njust open B's firewall
+
+V --> D4 : https (IPv4)
+D4 --> R
+R --> B : port-forward\n(needs router admin)
+
+V --> B : **.onion** via Tor —\nno DNS, no ports; Tor-only
+
+legend bottom
+<b>Scores</b>   A safe  ·  B reliable across reboot/IP-change  ·  C free  ·  D decentralised  ·  E human-readable name
+<back:#CDEBC5>    </back> <b>direct IPv6 + DuckDNS</b> — A B C <b>D</b> E · no relay, no port-forward · ONLY if the ISP gives a public IPv6
+<back:#F7E7A6>    </back> <b>tunnel relay</b> — A B C E · universal, works behind CGNAT · but NOT D (3rd party); Cloudflare ToS caps video/large files
+<back:#FFFFFF>    </back> <b>port-forward IPv4</b> — A B C D E · but needs router admin + a real public IPv4 (dead under CGNAT)
+<b>.onion (Tor)</b> — A B C D · always works, no infra · but not E (56-char) and Tor-only
+---
+<b>No single route wins A-E, is grandma-proof, AND reaches every visitor.</b>
+Product direction: auto-detect + tier — prefer direct IPv6 (decentralised), fall back to a Cloudflare tunnel; onion always available.
+endlegend
+@enduml

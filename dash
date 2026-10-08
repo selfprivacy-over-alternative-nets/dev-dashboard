@@ -1294,6 +1294,9 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                     _fargs += ["--mac", _mac]
                 if run_env.get("WIFI_SSID"):
                     _fargs += ["--wifi", run_env["WIFI_SSID"]]
+                if run_env.get("PUBLIC_METHOD"):   # embed the chosen tunnel (set up over SSH; no box login)
+                    _fargs += ["--public-method", run_env["PUBLIC_METHOD"],
+                               "--public-cf-named", run_env.get("PUBLIC_CF_NAMED", "0")]
                 try:
                     subprocess.run(_fargs)   # inherits the real terminal; does its own prompts + DNS verify
                 except KeyboardInterrupt:

@@ -78,10 +78,15 @@ if [ -z "$FLAKE" ]; then
 fi
 FLAKE=${FLAKE:-<path-to-selfprivacy-altnet-deployer>}
 
-# ── domain: suggest the one baked into the flake, let the user override ──
+# ── public access + domain, decided UP-FRONT ──────────────────────────────────────────────────────
+# The chosen public-access method DECIDES the domain, and the domain is baked into the box at deploy
+# time (vhost routing + LE cert) — so we ask it HERE, right after the device is connected, not at the
+# end. add-cloudflare.sh --plan asks the 3 questions (no box needed) and hands back DOMAIN + method;
+# the method flows through to the end-of-install apply as PUBLIC_* envs.
 DOM_DEFAULT=""
 [ -f "$FLAKE/flake.nix" ] && DOM_DEFAULT=$(grep -oE 'selfprivacy-domain *= *"[^"]+"' "$FLAKE/flake.nix" | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
-DOMAIN=$(ask "your web address (domain)${DOM_DEFAULT:+ [$DOM_DEFAULT]}: ")
+PUBLIC_METHOD=""; PUBLIC_DOMAIN_KIND=""; PUBLIC_CF_NAMED=0; DOMAIN=""
+eval "$(bash "$SELF_DIR/add-cloudflare.sh" --plan --default-domain "${DOM_DEFAULT:-}")" || true
 DOMAIN=${DOMAIN:-${DOM_DEFAULT:-<your-domain>}}
 
 # ── network setup: how the box gets online AFTER install (reqs 20-23). The install is identical;
@@ -111,6 +116,7 @@ fi
 
 # the --env list (wifi only when the setup needs it)
 ENVS=( "FLAKE=$FLAKE" "MAC=$MAC" "DOMAIN=$DOMAIN" )
+[ -n "$PUBLIC_METHOD" ] && ENVS+=( "PUBLIC_METHOD=$PUBLIC_METHOD" "PUBLIC_DOMAIN_KIND=$PUBLIC_DOMAIN_KIND" "PUBLIC_CF_NAMED=$PUBLIC_CF_NAMED" )
 [ -n "$WIFI_SSID" ] && ENVS+=( "WIFI_SSID=$WIFI_SSID" )
 [ -n "$WIFI_PSK" ]  && ENVS+=( "WIFI_PSK=$WIFI_PSK" )
 ENVS+=( "NETBOOT=auto" "TRANSPORT=none" )

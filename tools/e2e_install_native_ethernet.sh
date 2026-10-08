@@ -290,7 +290,13 @@ print_next_steps(){
   echo "   (no public DNS yet? use  --net tor  against the box's .onion instead.)"
   echo
   echo "Prefer a guided finish (reboot → wait → read the public IP → DNS records → verify they resolve)?"
-  echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-lan-setup-0a}${OFF}"
+  echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-lan-setup-0a}${PUBLIC_METHOD:+ --public-method $PUBLIC_METHOD --public-cf-named ${PUBLIC_CF_NAMED:-0}}${OFF}"
+  echo "   ${GR}(if you chose a tunnel up-front, that finish embeds it — set up over SSH, nothing typed on the box.)${OFF}"
+  echo
+  echo "④ No router access / behind double-NAT? Reach the box from ANYWHERE via an outbound tunnel"
+  echo "   (nothing to port-forward). It asks: paid/free domain? ngrok / cloudflare(free) / router — then"
+  echo "   wires the choice up on the box:"
+  echo "     ${BOLD}bash tools/add-cloudflare.sh --key ${KEY/#$HOME/\~} --ip <box-ip> --method cloudflare --domain-kind free${OFF}"
 }
 
 if [ "$NETBOOT" = auto ]; then
@@ -321,8 +327,11 @@ EOM
       case "$_go" in
         n|N|no|NO) : ;;
         *) bash "$HERE/finish_box_setup.sh" --domain "$DOMAIN" --key "$KEY" \
-             ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" || true ;;
+             ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" \
+             ${PUBLIC_METHOD:+--public-method "$PUBLIC_METHOD" --public-cf-named "${PUBLIC_CF_NAMED:-0}"} || true ;;
       esac
+      # (public access is handled INSIDE finish_box_setup.sh step 8 — it already has the box's IP and
+      #  runs add-cloudflare.sh over SSH, so nothing is ever typed on the box.)
     fi
     exit 0
   fi
