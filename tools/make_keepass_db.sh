@@ -8,7 +8,7 @@
 # pushed), so pushing your config never leaks live credentials.
 #
 # Inputs (env vars):
-#   DOMAIN                 deployed domain, e.g. weersurf.nl                 (required)
+#   DOMAIN                 deployed domain, e.g. example.com                 (required)
 #   IP                     target LAN IP (to read token/onion + ssh entry)  (optional)
 #   KEY                    ssh private key path (deploy key)                 (optional)
 #   TOKEN                  API token; if empty, read from the box via SSH    (optional)

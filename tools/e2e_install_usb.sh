@@ -12,7 +12,7 @@ FLAKE=${FLAKE:?required: deploy flake (for the stamp pins), e.g. FLAKE=/home/a/g
 IP=${IP:?required: target IP once installed + on the network, e.g. IP=192.168.1.167}
 MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
 KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
-DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=weersurf.nl}
+DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=example.com}
 TRANSPORT=${TRANSPORT:?required: https | onion | none (install-only)}
 ISO=${ISO:-}                                            # prebuilt installer .iso; else built from ISO_FLAKE
 ISO_FLAKE=${ISO_FLAKE:-../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend#packages.x86_64-linux.default}

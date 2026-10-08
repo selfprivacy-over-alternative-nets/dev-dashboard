@@ -20,9 +20,9 @@
 #
 # Standalone / non-interactive apply (every choice explicit, no silent defaults):
 #   bash tools/add-cloudflare.sh --key ~/.ssh/pcname_ed25519 --ip 192.168.1.167 \
-#        --method cloudflare --domain-kind free [--cf-named|--cf-quick] [--domain weersurf.nl] \
+#        --method cloudflare --domain-kind free [--cf-named|--cf-quick] [--domain example.com] \
 #        [--ngrok-token <tok>] [--setup lan-setup-0a]
-#   bash tools/add-cloudflare.sh --plan --default-domain weersurf.nl      # decide early, no box
+#   bash tools/add-cloudflare.sh --plan --default-domain example.com      # decide early, no box
 #
 # --key/--ip are required to APPLY; --plan needs neither.
 set -uo pipefail

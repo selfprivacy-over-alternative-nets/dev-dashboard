@@ -14,7 +14,7 @@ Takes the required data up front, checks it's present + well-formed, then verifi
 the target. Run it from OFF the LAN (e.g. mobile hotspot) to truly prove "from anywhere".
 
 Usage:
-  verify_install_native_ethernet.py --transport https --domain weersurf.nl \
+  verify_install_native_ethernet.py --transport https --domain example.com \
       [--token <64hex>] [--ssh-key ~/.ssh/pcname_ed25519]
   verify_install_native_ethernet.py --transport onion --onion <56>.onion [--token <64hex>]
 

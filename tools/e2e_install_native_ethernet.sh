@@ -22,7 +22,7 @@ FLAKE=${FLAKE:?required: path to deploy flake, e.g. FLAKE=/home/a/git/personal/s
 IP=${IP:?required: target IP, e.g. IP=192.168.100.50 (lan-setup-0 direct-cable installer) or IP=192.168.1.167 (via router R)}
 MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
 KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
-DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=weersurf.nl}
+DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=example.com}
 NETBOOT=${NETBOOT:?required: auto (start the direct-cable netboot server) or off}
 TRANSPORT=${TRANSPORT:?required: https (public, from anywhere) | onion | none (install-only, skip live verify)}
 EXTRA=${EXTRA:-$FLAKE/state/extra}             # derived from FLAKE (override only if non-standard)
@@ -231,6 +231,13 @@ fi
 NA_MAIN=""; NA_FALLBACK="--phases disko,install,reboot"
 if [ "$NETBOOT" = auto ]; then NA_MAIN="--phases disko,install"; NA_FALLBACK="--phases disko,install"; fi
 
+# Bake the chosen domain into the box as an install PARAMETER (never hardcoded): the deploy flake
+# reads ./domain.local. Cert: external-le if a real LE cert for this domain is being injected, else
+# self-signed. These .local files are gitignored — a real domain only enters here, by the operator's choice.
+printf '%s\n' "$DOMAIN" > "$FLAKE/domain.local"
+if [ -s "$EXTRA/etc/ssl/selfprivacy-le/fullchain.pem" ]; then echo external-le > "$FLAKE/cert-source.local"; else echo selfsigned > "$FLAKE/cert-source.local"; fi
+echo "domain '$DOMAIN' → $FLAKE/domain.local ; cert-source → $(cat "$FLAKE/cert-source.local")"
+
 say "1. WIPE + INSTALL (nixos-anywhere, both disks by serial, inject cert+secrets)"
 if ! nix run github:nix-community/nixos-anywhere -- \
       --flake "$FLAKE#box" --target-host "root@$IP" -i "$KEY" --extra-files "$EXTRA" $NA_MAIN; then
@@ -243,6 +250,9 @@ if ! nix run github:nix-community/nixos-anywhere -- \
     --flake "$FLAKE#box" --target-host "root@$DIP" -i "$KEY" --extra-files "$EXTRA" \
     $NA_FALLBACK
 fi
+# Restore the committed generic defaults — the chosen domain was a per-deploy PARAMETER (baked into
+# the box above via the dirty git tree), never left in the codebase / backup.
+git -C "$FLAKE" checkout -- domain.local cert-source.local 2>/dev/null || true
 
 # Verify the install ON DISK (works with no reboot / no internet). After --phases disko,install
 # the new root is left MOUNTED (disko's /mnt); a rebooted/fresh installer leaves it unmounted.

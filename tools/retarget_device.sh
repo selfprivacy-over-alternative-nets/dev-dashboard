@@ -244,5 +244,5 @@ cat <<EOF
   3) Install (box token/cert are seeded from the flake's state/extra):
      ./dash run install.lan-setup-0 --ip $PIN_IP --key $KEY \\
        --env FLAKE=\$(cd "$(dirname "$DISKO")" && pwd) --env MAC=$MAC \\
-       --env DOMAIN=weersurf.nl --env NETBOOT=auto --env TRANSPORT=none
+       --env DOMAIN=example.com --env NETBOOT=auto --env TRANSPORT=none
 EOF

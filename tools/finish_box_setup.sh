@@ -10,7 +10,7 @@
 #   7. ask "did you enter them?" — and if yes, verify they actually resolve to that IP
 #
 # Run standalone any time (e.g. to re-check DNS later):
-#   bash tools/finish_box_setup.sh --domain weersurf.nl --key ~/.ssh/pcname_ed25519 \
+#   bash tools/finish_box_setup.sh --domain example.com --key ~/.ssh/pcname_ed25519 \
 #        [--ip 192.168.1.56] [--mac d8:cb:8a:7c:0a:f4] [--wifi 'Koolwitje 5'] [--setup lan-setup-0d]
 # --domain and --key are required; the rest are optional aids.
 set -uo pipefail
@@ -30,7 +30,7 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
-[ -n "$DOMAIN" ] || { echo "required: --domain <your-domain> (e.g. --domain weersurf.nl)" >&2; exit 2; }
+[ -n "$DOMAIN" ] || { echo "required: --domain <your-domain> (e.g. --domain example.com)" >&2; exit 2; }
 [ -n "$KEY" ]    || { echo "required: --key <ssh deploy key> (e.g. --key ~/.ssh/pcname_ed25519)" >&2; exit 2; }
 KEY=${KEY/#\~/$HOME}
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
