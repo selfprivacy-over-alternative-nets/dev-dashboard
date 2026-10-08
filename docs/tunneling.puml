@@ -19,7 +19,7 @@ rectangle "**Visitor**\nphone / laptop,\nanywhere" as V
 rectangle "**device B**\nSelfPrivacy backend :443\n(Host-routed vhosts)" as B #EEF3FB
 
 rectangle "**Tunnel relay**  (B dials OUT)\n**gives a FREE host:** cloudflare-quick /\nngrok / pinggy / localtunnel\n   → random *.trycloudflare.com, *.loca.lt …\n**named Cloudflare tunnel:** you bring your OWN domain" as T #F7E7A6
-rectangle "**DuckDNS** (free)\nAAAA / A" as DD #CDEBC5
+rectangle "**DuckDNS** (free)\ngives you  name.duckdns.org\n(no domain to buy)\nsets AAAA / A" as DD #CDEBC5
 rectangle "**Registrar / DNS host**\ne.g. theory7\nA / AAAA / NS" as REG
 rectangle "**Router R**\nforward :443" as R
 
@@ -41,13 +41,13 @@ note bottom of B
   (one wildcard *.<domain>, or 5 DNS records / 5 tunnel public-hostnames).
 end note
 
-rectangle "**FREE domain sources** (when you must bring your OWN name)\n**nic.eu.org** — delegable NS → the ONLY free source that works with a **Cloudflare named tunnel** (slow manual approval)\n**DuckDNS** / **freedns.afraid.org** — A/AAAA only, no NS → **direct-IPv6** or **port-forward**, NOT a Cloudflare tunnel\n(a paid registrar like **theory7** works for all routes)" as SRC #E8F5E9
+rectangle "**FREE domain sources** (when you must bring your OWN name)\n**nic.eu.org** — delegable NS → the ONLY free source that works with a **Cloudflare named tunnel** (<color:orange>slow manual approval</color>)\n**DuckDNS** / **freedns.afraid.org** — set the IP only (A/AAAA), no NS delegation → **direct-IPv6** or **port-forward**, NOT a Cloudflare tunnel\n(a paid registrar like **theory7** works for all routes)" as SRC #E8F5E9
 SRC ..> T   : eu.org
 SRC ..> REG : paid
 
 legend bottom
 <b>Scores</b>   A safe · B reliable across reboot/IP-change · C free · D decentralised · E human-readable name
-<back:#CDEBC5>    </back> <b>direct IPv6 + DuckDNS</b> — A B C <b>D</b> E · no relay, no port-forward · ONLY if the ISP gives a public IPv6
+<back:#CDEBC5>    </back> <b>direct IPv6 + DuckDNS</b> — A B C <b>D</b> E · no relay/port-forward · but needs public IPv6 on BOTH the box AND the visitor (~half of EU; low in .nl)
 <back:#F7E7A6>    </back> <b>tunnel relay</b> — A B C · (E only with your OWN domain; free-host = random name) · behind-CGNAT, but NOT D; CF ToS caps video
 <back:#FFFFFF>    </back> <b>port-forward IPv4</b> — A B C D E · needs router admin + a real public IPv4 (dead under CGNAT)
 <b>.onion (Tor)</b> — A B C D · always works, no infra · but not E (56-char) and Tor-only
