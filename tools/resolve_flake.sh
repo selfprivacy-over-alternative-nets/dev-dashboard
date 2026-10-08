@@ -15,6 +15,7 @@ SETUP=${SETUP:-install.lan-setup-0}
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)   # dev-dashboard/tools
 DASH_DIR=$(cd "$SELF_DIR/.." && pwd)                      # dev-dashboard
 SEARCH=$(cd "$SELF_DIR/../.." && pwd)                     # the selfprivacy repo folder
+. "$SELF_DIR/prompt_lib.sh"                               # shared input validators (is_domain, is_wpa_psk, …)
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
@@ -68,8 +69,11 @@ if [ "${#FLAKES[@]}" -eq 1 ]; then
 elif [ "${#FLAKES[@]}" -gt 1 ]; then
   echo "${B}Which deploy flake?${X}"
   i=1; for f in "${FLAKES[@]}"; do echo "  [$i] $f"; i=$((i+1)); done
-  sel=$(ask "pick a number: ")
-  [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#FLAKES[@]}" ] && FLAKE="${FLAKES[$((sel-1))]}"
+  while :; do                                            # rule: a number in range; anything else → re-ask
+    sel=$(ask "pick a number 1-${#FLAKES[@]}: ")
+    if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#FLAKES[@]}" ]; then FLAKE="${FLAKES[$((sel-1))]}"; break; fi
+    echo "${Y}  please choose 1-${#FLAKES[@]}${X}"
+  done
 fi
 if [ -z "$FLAKE" ]; then
   echo "${Y}No deploy flake auto-found.${X} It's the folder with a flake.nix that has"
@@ -97,21 +101,31 @@ echo "  ${B}1${X}  lan-setup-0a — you plug the cable into your router afterwar
 echo "  ${B}2${X}  lan-setup-0b — the box joins your home wifi"
 echo "  ${B}3${X}  lan-setup-0c — the box joins a different wifi"
 echo "  ${B}4${X}  lan-setup-0d — wifi only (you remove the cable afterwards)"
-sel=$(ask "pick a number [1]: "); sel=${sel:-1}
-case "$sel" in
-  1) SETUP=install.lan-setup-0a; WIFI=0 ;;
-  2) SETUP=install.lan-setup-0b; WIFI=1 ;;
-  3) SETUP=install.lan-setup-0c; WIFI=1 ;;
-  4) SETUP=install.lan-setup-0d; WIFI=1 ;;
-  *) SETUP=install.lan-setup-0a; WIFI=0; echo "${GR}(not recognised — using lan-setup-0a)${X}" ;;
-esac
+# rule: one of 1-4 (or the labels 0a/0b/0c/0d). empty = 1. anything else → re-ask (never silently default).
+while :; do
+  sel=$(ask "pick a number 1-4 [1]: ")
+  case "${sel,,}" in
+    ""|1|0a|a) SETUP=install.lan-setup-0a; WIFI=0; break ;;
+    2|0b|b)    SETUP=install.lan-setup-0b; WIFI=1; break ;;
+    3|0c|c)    SETUP=install.lan-setup-0c; WIFI=1; break ;;
+    4|0d|d)    SETUP=install.lan-setup-0d; WIFI=1; break ;;
+    *) echo "${Y}  please choose 1-4 (or 0a/0b/0c/0d)${X}" ;;
+  esac
+done
 
 WIFI_SSID=""; WIFI_PSK=""
 if [ "$WIFI" = 1 ]; then
-  WIFI_SSID=$(ask "  wifi name (SSID): ")
-  WIFI_PSK=$(ask_secret "  wifi password (hidden): ")
-  if [ -n "$WIFI_SSID" ]; then verify_wifi "$WIFI_SSID" "$WIFI_PSK"
-  else echo "${Y}  (no wifi name given — the install will refuse until you provide one)${X}"; fi
+  while :; do                                            # rule: SSID can't be empty
+    WIFI_SSID=$(ask "  wifi name (SSID): ")
+    [ -n "$WIFI_SSID" ] && break
+    echo "${Y}  the wifi name (SSID) can't be empty${X}"
+  done
+  while :; do                                            # rule: WPA/WPA2 pass = 8-63 chars (or 64-hex)
+    WIFI_PSK=$(ask_secret "  wifi password (hidden): ")
+    is_wpa_psk "$WIFI_PSK" && break
+    echo "${Y}  a WPA/WPA2 password is 8-63 characters (or a 64-char hex key)${X}"
+  done
+  verify_wifi "$WIFI_SSID" "$WIFI_PSK"
 fi
 
 # the --env list (wifi only when the setup needs it)
@@ -133,11 +147,20 @@ printf "%s\n" "$X"
 
 # ── offer to run it (the install itself confirms the disk wipe) ──
 case "$FLAKE" in *'<'*) echo "${GR}(fill in the flake, then run the command above.)${X}"; exit 0;; esac
-go=$(ask $'\nrun it now? [y/N]: ')
-case "$go" in
-  y|Y|yes|YES)
-    RUN_ARGS=( run "$SETUP" --ip "$IP" --key "$KEY" )
-    for e in "${ENVS[@]}"; do RUN_ARGS+=( --env "$e" ); done
-    ( cd "$DASH_DIR" && ./dash "${RUN_ARGS[@]}" ) ;;
-  *) echo "not run — copy the command above when you're ready." ;;
-esac
+# rule: y/yes or n/no (empty = no). anything else → re-ask (don't guess on an install trigger).
+RUN=0
+while :; do
+  go=$(ask $'\nrun it now? [y/N]: ')
+  case "${go,,}" in
+    y|yes)   RUN=1; break ;;
+    ""|n|no) RUN=0; break ;;
+    *) echo "${Y}  please answer y or n${X}" ;;
+  esac
+done
+if [ "$RUN" = 1 ]; then
+  RUN_ARGS=( run "$SETUP" --ip "$IP" --key "$KEY" )
+  for e in "${ENVS[@]}"; do RUN_ARGS+=( --env "$e" ); done
+  ( cd "$DASH_DIR" && ./dash "${RUN_ARGS[@]}" )
+else
+  echo "not run — copy the command above when you're ready."
+fi

@@ -26,6 +26,7 @@
 #
 # --key/--ip are required to APPLY; --plan needs neither.
 set -uo pipefail
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt_lib.sh"   # shared input validators (is_domain, …)
 
 PLAN=0; KEY=""; IP=""; METHOD=""; DOMAIN_KIND=""; DOMAIN=""; CF_MODE=""; NGROK_TOKEN=""; CF_TUNNEL_TOKEN=""
 PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""
@@ -100,10 +101,10 @@ pick_domain_source(){ local ctx="$1" a   # ctx: tunnel (needs NS delegation) | r
 BACK=$'\x02BACK'
 askb(){ local v; v=$(ask "$1"); case "$v" in '<'|back|Back|BACK) printf '%s' "$BACK";; *) printf '%s' "$v";; esac; }
 run_wizard(){
-  local st=method a bk="${GR}[ < = back ]${X}"
+  local st=method a d bk="${GR}[ < = back ]${X}"
   while :; do
     case "$st" in
-      method)
+      method)   # rule: one of 1-7 / a transport name. empty or anything else → re-ask.
         msg "  ${B}1) cloudflare${X}   Cloudflare Tunnel — FREE, outbound, works behind CGNAT (centralised)"
         msg "  ${B}2) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay/port-forward (needs ISP IPv6)"
         msg "  ${B}3) ngrok${X}        ngrok — free tier = random *.ngrok-free.app (custom domain is paid)"
@@ -113,21 +114,21 @@ run_wizard(){
         msg "  ${B}7) none${X}         LAN / .onion only — just set my domain"
         a=$(askb "    choose 1-7 (or name): ")
         [ "$a" = "$BACK" ] && { msg "${GR}  (already at the first question)${X}"; continue; }
-        case "$a" in 1|cloudflare|c) METHOD=cloudflare;; 2|ipv6|6) METHOD=ipv6;; 3|ngrok|n) METHOD=ngrok;; 4|pinggy|p) METHOD=pinggy;; 5|localtunnel|lt|l) METHOD=localtunnel;; 6|router|r) METHOD=router;; 7|none|skip|"") METHOD=none;; *) msg "${Y}  pick 1-7${X}"; continue;; esac
+        case "${a,,}" in 1|cloudflare|c) METHOD=cloudflare;; 2|ipv6|6) METHOD=ipv6;; 3|ngrok|n) METHOD=ngrok;; 4|pinggy|p) METHOD=pinggy;; 5|localtunnel|lt|l) METHOD=localtunnel;; 6|router|r) METHOD=router;; 7|none|skip) METHOD=none;; *) msg "${Y}  please choose 1-7 (or a name from the list)${X}"; continue;; esac
         CF_MODE=""; DOMAIN=""; DOMAIN_KIND=""; DOMAIN_SOURCE=""; LT_SUBDOMAIN=""   # fresh start for this method
         case "$METHOD" in cloudflare) st=cfmode;; ipv6|router) st=dkind;; ngrok) st=ngd;; localtunnel) st=lts;; pinggy) DOMAIN_KIND=none; st=done;; none) st=noned;; esac ;;
-      cfmode)
+      cfmode)   # rule: A or B (empty = A, the shown default). anything else → re-ask.
         msg ""
         msg "  ${B}A)${X} free throwaway ${C}*.trycloudflare.com${X} — no domain, ONE service, temporary"
         msg "  ${B}B)${X} a stable ${B}custom domain${X} — all 5 services, survives restarts"
         a=$(askb "    choose A or B [A]  $bk: ")
         [ "$a" = "$BACK" ] && { st=method; continue; }
-        case "$a" in b|B) CF_MODE=named; st=dkind;; *) CF_MODE=quick; DOMAIN=""; st=done;; esac ;;
-      dkind)
+        case "${a,,}" in ""|a) CF_MODE=quick; DOMAIN=""; st=done;; b) CF_MODE=named; st=dkind;; *) msg "${Y}    please type A or B${X}"; continue;; esac ;;
+      dkind)    # rule: exactly 'paid' or 'free'. no silent default — anything else → re-ask.
         a=$(askb "    Do you OWN the domain (paid), or want a FREE one? [paid/free]  $bk: ")
         [ "$a" = "$BACK" ] && { [ "$METHOD" = cloudflare ] && st=cfmode || st=method; continue; }
-        case "$a" in free|f) DOMAIN_KIND=free; st=dsrc;; *) DOMAIN_KIND=paid; st=dval;; esac ;;
-      dsrc)
+        case "${a,,}" in free|f) DOMAIN_KIND=free; st=dsrc;; paid|p) DOMAIN_KIND=paid; st=dval;; *) msg "${Y}    please type 'paid' or 'free'${X}"; continue;; esac ;;
+      dsrc)     # rule: 1-4 / a source name (empty = 1, the shown default). anything else → re-ask.
         msg "    Free-domain source:"
         msg "      ${B}1) nic.eu.org${X}  delegable NS → works with tunnels AND router; SLOW approval (days)"
         msg "      ${B}2) duckdns${X}     *.duckdns.org — instant, A/AAAA only (no NS): router/IPv6, NOT a CF tunnel"
@@ -135,27 +136,34 @@ run_wizard(){
         msg "      ${B}4) other${X}       a domain you already control"
         a=$(askb "      choose 1-4 [1]  $bk: ")
         [ "$a" = "$BACK" ] && { st=dkind; continue; }
-        case "$a" in 2|duckdns) DOMAIN_SOURCE=duckdns;; 3|afraid) DOMAIN_SOURCE=afraid;; 4|other) DOMAIN_SOURCE=other;; *) DOMAIN_SOURCE=eu-org;; esac
+        case "${a,,}" in ""|1|eu-org|euorg) DOMAIN_SOURCE=eu-org;; 2|duckdns) DOMAIN_SOURCE=duckdns;; 3|afraid) DOMAIN_SOURCE=afraid;; 4|other) DOMAIN_SOURCE=other;; *) msg "${Y}      please choose 1-4${X}"; continue;; esac
         [ "$METHOD" = cloudflare ] && [ "$DOMAIN_SOURCE" != eu-org ] && [ "$DOMAIN_SOURCE" != other ] && \
           msg "      ${Y}$DOMAIN_SOURCE can't host a Cloudflare tunnel — use nic.eu.org, or switch to router/ipv6.${X}"
         st=dval ;;
-      dval)
+      dval)     # rule: a valid domain; for a DuckDNS source it must end in .duckdns.org. empty/invalid → re-ask.
         a=$(askb "    the domain (e.g. grandma-1.duckdns.org)  $bk: ")
         [ "$a" = "$BACK" ] && { [ "$DOMAIN_KIND" = free ] && st=dsrc || st=dkind; continue; }
-        [ -z "$a" ] && { msg "${Y}    a domain is required here${X}"; continue; }
+        if [ -z "$a" ]; then msg "${Y}    a domain is required here${X}"; continue; fi
+        if ! is_domain "$a"; then msg "${Y}    '$a' is not a valid domain (e.g. name.duckdns.org)${X}"; continue; fi
+        if [ "$DOMAIN_SOURCE" = duckdns ] && [[ "$a" != *.duckdns.org ]]; then msg "${Y}    a DuckDNS name must end in .duckdns.org${X}"; continue; fi
         DOMAIN="$a"; st=done ;;
-      ngd)
+      ngd)      # rule: blank (free random) OR a valid domain. invalid non-blank → re-ask.
         a=$(askb "    paid ngrok custom domain (blank = free random *.ngrok-free.app)  $bk: ")
         [ "$a" = "$BACK" ] && { st=method; continue; }
+        if [ -n "$a" ] && ! is_domain "$a"; then msg "${Y}    '$a' is not a valid domain${X}"; continue; fi
         DOMAIN="$a"; [ -n "$DOMAIN" ] && DOMAIN_KIND=paid || DOMAIN_KIND=free; st=done ;;
-      lts)
+      lts)      # rule: blank (random) OR a single DNS label (letters/digits/hyphens). invalid → re-ask.
         a=$(askb "    localtunnel subdomain prefix (blank = random *.loca.lt)  $bk: ")
         [ "$a" = "$BACK" ] && { st=method; continue; }
+        if [ -n "$a" ] && ! is_label "$a"; then msg "${Y}    letters, digits and hyphens only (no dots)${X}"; continue; fi
         LT_SUBDOMAIN="$a"; DOMAIN=""; DOMAIN_KIND=none; st=done ;;
-      noned)
+      noned)    # rule: a valid domain (empty = the flake default if there is one). invalid → re-ask.
         a=$(askb "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}  $bk: ")
         [ "$a" = "$BACK" ] && { st=method; continue; }
-        DOMAIN="${a:-$DEFAULT_DOMAIN}"; DOMAIN_KIND=none; st=done ;;
+        d="${a:-$DEFAULT_DOMAIN}"
+        if [ -z "$d" ]; then msg "${Y}    a domain is required${X}"; continue; fi
+        if ! is_domain "$d"; then msg "${Y}    '$d' is not a valid domain${X}"; continue; fi
+        DOMAIN="$d"; DOMAIN_KIND=none; st=done ;;
       done) return 0 ;;
     esac
   done
@@ -229,6 +237,12 @@ case "$METHOD" in
     DOMAIN_KIND=none ;;
   *) msg "${R}--method must be cloudflare | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
 esac
+fi
+
+# Validate the gathered domain on EVERY path (the wizard already checked; this also catches a bad
+# --domain flag in a non-interactive run) — a method that needs a name must get a real one.
+if [ -n "$DOMAIN" ] && ! is_domain "$DOMAIN"; then
+  msg "${R}'$DOMAIN' is not a valid domain (expected e.g. name.duckdns.org)${X}"; exit 2
 fi
 
 # ══ --plan: emit the decision for the installer, touch nothing ══════════════════════════════════
