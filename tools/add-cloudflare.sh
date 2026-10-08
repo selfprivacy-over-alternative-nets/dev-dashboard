@@ -92,22 +92,84 @@ pick_domain_source(){ local ctx="$1" a   # ctx: tunnel (needs NS delegation) | r
     msg "      ${Y}$DOMAIN_SOURCE can't host a Cloudflare tunnel (no NS delegation) — use nic.eu.org for a tunnel, or pick the router method.${X}"
   fi; }
 
+# ── interactive wizard with single-step BACK navigation ──────────────────────────────────────────
+# Type  <  (or 'back') at any decision to step back one question. (A literal Backspace key can't be
+# caught in a line-based shell read, so '<' is the back key.) Runs ONLY in a from-scratch interactive
+# session; non-interactive / flag-driven runs use the plain logic below (unchanged). Never covers the
+# install/deploy itself — those are the irreversible steps and happen later, outside this wizard.
+BACK=$'\x02BACK'
+askb(){ local v; v=$(ask "$1"); case "$v" in '<'|back|Back|BACK) printf '%s' "$BACK";; *) printf '%s' "$v";; esac; }
+run_wizard(){
+  local st=method a bk="${GR}[ < = back ]${X}"
+  while :; do
+    case "$st" in
+      method)
+        msg "  ${B}1) cloudflare${X}   Cloudflare Tunnel — FREE, outbound, works behind CGNAT (centralised)"
+        msg "  ${B}2) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay/port-forward (needs ISP IPv6)"
+        msg "  ${B}3) ngrok${X}        ngrok — free tier = random *.ngrok-free.app (custom domain is paid)"
+        msg "  ${B}4) pinggy${X}       Pinggy — SSH-based, nothing to install; free random *.pinggy.link (~60 min)"
+        msg "  ${B}5) localtunnel${X}  LocalTunnel — free *.loca.lt with a custom prefix"
+        msg "  ${B}6) router${X}       forward :443 on your own router (needs router admin)"
+        msg "  ${B}7) none${X}         LAN / .onion only — just set my domain"
+        a=$(askb "    choose 1-7 (or name): ")
+        [ "$a" = "$BACK" ] && { msg "${GR}  (already at the first question)${X}"; continue; }
+        case "$a" in 1|cloudflare|c) METHOD=cloudflare;; 2|ipv6|6) METHOD=ipv6;; 3|ngrok|n) METHOD=ngrok;; 4|pinggy|p) METHOD=pinggy;; 5|localtunnel|lt|l) METHOD=localtunnel;; 6|router|r) METHOD=router;; 7|none|skip|"") METHOD=none;; *) msg "${Y}  pick 1-7${X}"; continue;; esac
+        CF_MODE=""; DOMAIN=""; DOMAIN_KIND=""; DOMAIN_SOURCE=""; LT_SUBDOMAIN=""   # fresh start for this method
+        case "$METHOD" in cloudflare) st=cfmode;; ipv6|router) st=dkind;; ngrok) st=ngd;; localtunnel) st=lts;; pinggy) DOMAIN_KIND=none; st=done;; none) st=noned;; esac ;;
+      cfmode)
+        msg ""
+        msg "  ${B}A)${X} free throwaway ${C}*.trycloudflare.com${X} — no domain, ONE service, temporary"
+        msg "  ${B}B)${X} a stable ${B}custom domain${X} — all 5 services, survives restarts"
+        a=$(askb "    choose A or B [A]  $bk: ")
+        [ "$a" = "$BACK" ] && { st=method; continue; }
+        case "$a" in b|B) CF_MODE=named; st=dkind;; *) CF_MODE=quick; DOMAIN=""; st=done;; esac ;;
+      dkind)
+        a=$(askb "    Do you OWN the domain (paid), or want a FREE one? [paid/free]  $bk: ")
+        [ "$a" = "$BACK" ] && { [ "$METHOD" = cloudflare ] && st=cfmode || st=method; continue; }
+        case "$a" in free|f) DOMAIN_KIND=free; st=dsrc;; *) DOMAIN_KIND=paid; st=dval;; esac ;;
+      dsrc)
+        msg "    Free-domain source:"
+        msg "      ${B}1) nic.eu.org${X}  delegable NS → works with tunnels AND router; SLOW approval (days)"
+        msg "      ${B}2) duckdns${X}     *.duckdns.org — instant, A/AAAA only (no NS): router/IPv6, NOT a CF tunnel"
+        msg "      ${B}3) afraid${X}      freedns.afraid.org — instant; like DuckDNS, no NS"
+        msg "      ${B}4) other${X}       a domain you already control"
+        a=$(askb "      choose 1-4 [1]  $bk: ")
+        [ "$a" = "$BACK" ] && { st=dkind; continue; }
+        case "$a" in 2|duckdns) DOMAIN_SOURCE=duckdns;; 3|afraid) DOMAIN_SOURCE=afraid;; 4|other) DOMAIN_SOURCE=other;; *) DOMAIN_SOURCE=eu-org;; esac
+        [ "$METHOD" = cloudflare ] && [ "$DOMAIN_SOURCE" != eu-org ] && [ "$DOMAIN_SOURCE" != other ] && \
+          msg "      ${Y}$DOMAIN_SOURCE can't host a Cloudflare tunnel — use nic.eu.org, or switch to router/ipv6.${X}"
+        st=dval ;;
+      dval)
+        a=$(askb "    the domain (e.g. grandma-1.duckdns.org)  $bk: ")
+        [ "$a" = "$BACK" ] && { [ "$DOMAIN_KIND" = free ] && st=dsrc || st=dkind; continue; }
+        [ -z "$a" ] && { msg "${Y}    a domain is required here${X}"; continue; }
+        DOMAIN="$a"; st=done ;;
+      ngd)
+        a=$(askb "    paid ngrok custom domain (blank = free random *.ngrok-free.app)  $bk: ")
+        [ "$a" = "$BACK" ] && { st=method; continue; }
+        DOMAIN="$a"; [ -n "$DOMAIN" ] && DOMAIN_KIND=paid || DOMAIN_KIND=free; st=done ;;
+      lts)
+        a=$(askb "    localtunnel subdomain prefix (blank = random *.loca.lt)  $bk: ")
+        [ "$a" = "$BACK" ] && { st=method; continue; }
+        LT_SUBDOMAIN="$a"; DOMAIN=""; DOMAIN_KIND=none; st=done ;;
+      noned)
+        a=$(askb "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}  $bk: ")
+        [ "$a" = "$BACK" ] && { st=method; continue; }
+        DOMAIN="${a:-$DEFAULT_DOMAIN}"; DOMAIN_KIND=none; st=done ;;
+      done) return 0 ;;
+    esac
+  done
+}
+
 # ══ shared question phase (Q3 transport first — it governs how the domain is handled) ══════════════
 say "public reachability — how will the box be reached from the internet?"
-if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then
-  msg "  ${B}1) cloudflare${X}   Cloudflare Tunnel — FREE, outbound, works behind CGNAT (centralised: via Cloudflare)"
-  msg "  ${B}2) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay / no port-forward (needs a public IPv6 from your ISP)"
-  msg "  ${B}3) ngrok${X}        ngrok tunnel — free tier = random *.ngrok-free.app (custom domain is paid)"
-  msg "  ${B}4) pinggy${X}       Pinggy — SSH-based, NOTHING to install; free = random *.pinggy.link (~60-min sessions)"
-  msg "  ${B}5) localtunnel${X}  LocalTunnel — free *.loca.lt with a custom prefix (browser interstitial; see note)"
-  msg "  ${B}6) router${X}       forward :443 on your own router — free but needs router admin (hard behind NAT)"
-  msg "  ${B}7) none${X}         LAN / .onion only for now — just set my domain"
-  a=$(ask "    choose 1-7 (or name): ")
-  case "$a" in 1|cloudflare|c) METHOD=cloudflare;; 2|ipv6|6) METHOD=ipv6;; 3|ngrok|n) METHOD=ngrok;; 4|pinggy|p) METHOD=pinggy;; 5|localtunnel|lt|l) METHOD=localtunnel;; 6|router|r) METHOD=router;; 7|none|skip|"") METHOD=none;; *) METHOD="$a";; esac
-fi
+WIZARD_DONE=0
+if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then run_wizard; WIZARD_DONE=1; fi
 METHOD=$(need "$METHOD" --method "transport (cloudflare|ipv6|ngrok|pinggy|localtunnel|router|none): ")
 
-# domain, TAILORED to the method (answers Q1 paid? / Q2 free?)
+# domain, TAILORED to the method (non-interactive / flag-driven path; the interactive wizard above
+# already set these with back-navigation, so skip it then).
+if [ "$WIZARD_DONE" = 0 ]; then
 case "$METHOD" in
   cloudflare)
     if [ -z "$CF_MODE" ] && [ "$INTERACTIVE" = 1 ]; then
@@ -167,6 +229,7 @@ case "$METHOD" in
     DOMAIN_KIND=none ;;
   *) msg "${R}--method must be cloudflare | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
 esac
+fi
 
 # ══ --plan: emit the decision for the installer, touch nothing ══════════════════════════════════
 if [ "$PLAN" = 1 ]; then
