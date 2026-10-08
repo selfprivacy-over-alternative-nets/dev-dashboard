@@ -286,9 +286,9 @@ print_next_steps(){
         echo "② Public access is a Cloudflare NAMED tunnel — the api./cloud./… hostnames on your domain are"
         echo "   created automatically; no A-records to add. (The guided finish sets it up over SSH.)"
       else
-        echo "② No DNS to add — this is a FREE tunnel. Your public URL is the random address it prints"
-        echo "   (e.g. *.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt)."
-        echo "   ${GREY}'$DOMAIN' is only the box's internal service name (from the deploy flake), NOT a public domain.${OFF}"
+        echo "② Nothing to add — a FREE tunnel gives you a random public URL from the provider"
+        echo "   (e.g. https://<random>.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt)."
+        echo "   You'll see YOUR URL printed when the tunnel starts (the guided finish below sets it up)."
       fi ;;
     ipv6)
       echo "② No A-records — the IPv6 route publishes an AAAA to the box's public IPv6 (the guided finish does it)." ;;

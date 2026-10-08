@@ -176,9 +176,8 @@ elif [ "${PUBLIC_METHOD:-}" = none ]; then
   : # LAN / .onion only — nothing public to add
 else
   say "public access via ${PUBLIC_METHOD}"
-  echo "No DNS records to add here — it's wired up over SSH in step 8 below. ${GR}('$DOMAIN' is just the box's"
-  echo "internal service name from the deploy flake; your PUBLIC address is the tunnel URL / IPv6 AAAA that"
-  echo "step 8 prints — NOT a '$DOMAIN' DNS record you set.)${X}"
+  echo "Nothing to add here — a FREE tunnel gives you a random public URL from the provider, printed"
+  echo "${GR}when it starts in step 8 below (e.g. https://<random>.trycloudflare.com). Nothing to register or pick.${X}"
 fi
 
 # ── 8. public access (embedded; configured ENTIRELY over SSH — nothing is typed on the box) ────────

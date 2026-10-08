@@ -252,8 +252,8 @@ if [ "$PLAN" = 1 ]; then
   msg ""
   _prov=0; case "$METHOD" in pinggy|localtunnel) _prov=1;; ngrok) [ -z "$DOMAIN" ] && _prov=1;; cloudflare) [ "$CF_MODE" = quick ] && _prov=1;; esac
   if [ "$_prov" = 1 ]; then
-    msg "${G}planned:${X} method=${B}$METHOD${X} → a ${B}FREE public URL${X} (a random provider hostname, shown when the tunnel starts)."
-    msg "         ${GR}'$BAKED' stays as the box's INTERNAL service name (from the deploy flake) — it is NOT a public domain you provide; nothing to register, no DNS to set.${X}"
+    msg "${G}planned:${X} method=${B}$METHOD${X} — you'll get a ${B}FREE public URL from the tunnel provider${X}."
+    msg "         ${GR}It's a random address (e.g. https://<random>.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt), printed when the tunnel starts right after install. Nothing to register, no domain to choose.${X}"
   else
     msg "${G}planned:${X} method=${B}$METHOD${X} domain=${B}$BAKED${X}$([ "$METHOD" = cloudflare ] && echo " (cloudflare: ${CF_MODE})")"
   fi
@@ -312,7 +312,7 @@ case "$METHOD" in
       msg "${GR}(Adding a public hostname auto-creates its DNS CNAME in the zone — still no box access.)${X}"
       print_app_cmd "api.$DOMAIN"
     else
-      msg "Minting a free ${B}quick tunnel${X} (no account). Fronts the ${B}api.$BOX_DOMAIN${X} vhost only."
+      msg "Minting a free ${B}quick tunnel${X} (no account) — Cloudflare assigns you a random public URL (printed below)."
       install_service cloudflared-sp "$CF tunnel --no-autoupdate --no-tls-verify --http-host-header api.$BOX_DOMAIN --url https://localhost:443"
       URL=""; for _ in $(seq 1 12); do URL=$(box "journalctl -u cloudflared-sp --no-pager -n 120 2>/dev/null" | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1); [ -n "$URL" ] && break; sleep 3; done
       if [ -n "$URL" ]; then msg "${G}✓ quick tunnel up:${X} ${B}$URL${X}"; msg "${Y}NOTE: temporary URL (changes on restart), API vhost only. Rerun with a --domain for a stable, all-subdomain setup.${X}"; print_app_cmd "${URL#https://}"
