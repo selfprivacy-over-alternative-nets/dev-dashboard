@@ -81,7 +81,9 @@ say "1/7  reboot the box"
 if [ -n "$WIFI" ]; then
   echo "At the box's console (user ${B}root${X}, password ${B}tijdelijkwachtwoord${X}) type ${B}reboot${X},"
   echo "then UNPLUG the install cable so it comes up on wifi '${WIFI}'."
-  echo "Once it's back, on its console run ${B}hostname -I${X} and note the IP."
+  echo "Once it's back, on its console run ${B}hostname -I${X} and note its ${B}LAN IP${X} — the"
+  echo "192.168.x.x address. I only need it to CONNECT to the box over your network; I read the box's"
+  echo "${B}public${X} IP myself in step 5. (To see the public IP yourself: ${B}curl -s https://api.ipify.org${X} on the box.)"
 else
   echo "Reboot the box (type ${B}reboot${X} at its console, or press the power button) and make"
   echo "sure its network cable goes to your router."
@@ -102,7 +104,7 @@ if [ -z "$BIP" ] && [ -n "$MAC" ]; then
 fi
 if [ -z "$BIP" ]; then
   echo "${GR}(couldn't auto-find it — expected for wifi, where the box uses a different MAC.)${X}"
-  BIP=$(ask "Type the box's IP (from ${B}hostname -I${X} on its console): ")
+  BIP=$(ask "Type the box's ${B}LAN IP${X} — the 192.168.x.x address from ${B}hostname -I${X} on its console (NOT the public IP): ")
 fi
 is_ipv4 "$BIP" || { echo "${R}'$BIP' is not an IP — rerun once you have it from the box console.${X}"; exit 1; }
 printf 'waiting for ssh root@%s ' "$BIP"

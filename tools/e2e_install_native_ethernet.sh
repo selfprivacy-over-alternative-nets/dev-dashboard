@@ -286,7 +286,7 @@ print_next_steps(){
   echo
   echo "③ Integration-test the whole stack (once <box-ip> is reachable and the name resolves):"
   echo "     ${BOLD}./dash run L3.connect.desktop --net https --on ${SP_SETUP:-lan-setup-0a} \\${OFF}"
-  echo "     ${BOLD}  --ip <box-ip> --key ${KEY/#$HOME/\~} --token ${tok}${OFF}"
+  echo "     ${BOLD}  --ip <box-LAN-ip> --key ${KEY/#$HOME/\~} --token ${tok}${OFF}   ${GREY}(--ip is the box's LAN/192.168.x.x address, to connect — NOT a public IP)${OFF}"
   echo "   (no public DNS yet? use  --net tor  against the box's .onion instead.)"
   echo
   echo "Prefer a guided finish (reboot → wait → read the public IP → DNS records → verify they resolve)?"

@@ -55,7 +55,7 @@ while [ $# -gt 0 ]; do
 done
 if [ "$PLAN" = 0 ]; then
   [ -n "$KEY" ] || { echo "required to apply: --key <ssh deploy key>" >&2; exit 2; }
-  [ -n "$IP"  ] || { echo "required to apply: --ip <box ip>" >&2; exit 2; }
+  [ -n "$IP"  ] || { echo "required to apply: --ip <box LAN IP> (its 192.168.x.x address, to SSH in — not a public IP)" >&2; exit 2; }
   KEY=${KEY/#\~/$HOME}
 fi
 
