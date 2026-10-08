@@ -264,7 +264,7 @@ ondisk_verify(){
 
 # Post-install next steps: find the box's IP, the DNS records to add, and the integration test.
 print_next_steps(){
-  local BOLD=$'\033[1m' OFF=$'\033[0m' tok sub
+  local BOLD=$'\033[1m' GREY=$'\033[90m' OFF=$'\033[0m' tok sub
   tok=$(python3 -c "import json;print(json.load(open('$EXTRA/etc/selfprivacy/secrets.json'))['api']['token'])" 2>/dev/null || echo "<box-api-token>")
   say "NEXT STEPS"
   echo "① Find the box's IP + confirm it's online — run this ON THE BOX (its own keyboard/screen),"
@@ -291,7 +291,7 @@ print_next_steps(){
   echo
   echo "Prefer a guided finish (reboot → wait → read the public IP → DNS records → verify they resolve)?"
   echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-lan-setup-0a}${PUBLIC_METHOD:+ --public-method $PUBLIC_METHOD --public-cf-named ${PUBLIC_CF_NAMED:-0}}${OFF}"
-  echo "   ${GR}(if you chose a tunnel up-front, that finish embeds it — set up over SSH, nothing typed on the box.)${OFF}"
+  echo "   ${GREY}(if you chose a tunnel up-front, that finish embeds it — set up over SSH, nothing typed on the box.)${OFF}"
   echo
   echo "④ No router access / behind double-NAT? Reach the box from ANYWHERE via an outbound tunnel"
   echo "   (nothing to port-forward). It asks: paid/free domain? ngrok / cloudflare(free) / router — then"
