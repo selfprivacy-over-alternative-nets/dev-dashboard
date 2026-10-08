@@ -130,6 +130,12 @@ else
   exit 1
 fi
 
+# Steps 5-7 (read public IP → A-records → verify) are the ROUTER/port-forward path (or a plain
+# no-method run). For a tunnel/ipv6 method, step 8 (add-cloudflare) wires up public access and there
+# are NO A-records to add — '$DOMAIN' is only the box's internal name from the deploy flake.
+case "${PUBLIC_METHOD:-}" in cloudflare|ngrok|pinggy|localtunnel|ipv6|none) _dns=0 ;; *) _dns=1 ;; esac
+if [ "$_dns" = 1 ]; then
+
 # ── 5. read the IPs ──────────────────────────────────────────────────────────
 say "5/7  read the box's IPs"
 LAN=$(box 'hostname -I' | awk '{print $1}')
@@ -166,6 +172,14 @@ case "$ans" in
   *) echo "No problem — add them when ready, then rerun this script to verify:"
      echo "   ${C}bash $(basename "$0") --domain $DOMAIN --key ${KEY/#$HOME/\~} --ip $BIP --setup $SETUP${X}" ;;
 esac
+elif [ "${PUBLIC_METHOD:-}" = none ]; then
+  : # LAN / .onion only — nothing public to add
+else
+  say "public access via ${PUBLIC_METHOD}"
+  echo "No DNS records to add here — it's wired up over SSH in step 8 below. ${GR}('$DOMAIN' is just the box's"
+  echo "internal service name from the deploy flake; your PUBLIC address is the tunnel URL / IPv6 AAAA that"
+  echo "step 8 prints — NOT a '$DOMAIN' DNS record you set.)${X}"
+fi
 
 # ── 8. public access (embedded; configured ENTIRELY over SSH — nothing is typed on the box) ────────
 if [ -n "$PUBLIC_METHOD" ] && [ "$PUBLIC_METHOD" != none ] && [ -n "${BIP:-}" ]; then

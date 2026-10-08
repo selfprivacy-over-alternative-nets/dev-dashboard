@@ -250,7 +250,13 @@ if [ "$PLAN" = 1 ]; then
   BAKED="${DOMAIN:-${DEFAULT_DOMAIN:-<your-domain>}}"      # what gets baked into the box
   cfn=0; [ "$CF_MODE" = named ] && cfn=1
   msg ""
-  msg "${G}planned:${X} method=${B}$METHOD${X} domain=${B}$BAKED${X}$([ "$METHOD" = cloudflare ] && echo " (cloudflare: ${CF_MODE})")"
+  _prov=0; case "$METHOD" in pinggy|localtunnel) _prov=1;; ngrok) [ -z "$DOMAIN" ] && _prov=1;; cloudflare) [ "$CF_MODE" = quick ] && _prov=1;; esac
+  if [ "$_prov" = 1 ]; then
+    msg "${G}planned:${X} method=${B}$METHOD${X} → a ${B}FREE public URL${X} (a random provider hostname, shown when the tunnel starts)."
+    msg "         ${GR}'$BAKED' stays as the box's INTERNAL service name (from the deploy flake) — it is NOT a public domain you provide; nothing to register, no DNS to set.${X}"
+  else
+    msg "${G}planned:${X} method=${B}$METHOD${X} domain=${B}$BAKED${X}$([ "$METHOD" = cloudflare ] && echo " (cloudflare: ${CF_MODE})")"
+  fi
   printf 'DOMAIN=%q\n'             "$BAKED"
   printf 'PUBLIC_METHOD=%q\n'      "$METHOD"
   printf 'PUBLIC_DOMAIN_KIND=%q\n' "${DOMAIN_KIND:-none}"

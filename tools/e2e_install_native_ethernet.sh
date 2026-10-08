@@ -280,9 +280,23 @@ print_next_steps(){
   echo "   → 'bytes from…' = ONLINE; then the box's LAN IP (192.168.x.x — home access)"
   echo "     and the public IP (the last line — public access, needs :443 forwarded on the router)."
   echo
-  echo "② Add these 5 DNS A-records at your DNS host, pointing at <box-ip>:"
-  for sub in api cloud git matrix meet; do printf "     A   %-28s <box-ip>\n" "$sub.$DOMAIN"; done
-  echo "   <box-ip> = the box's LAN IP (home access) OR your router's PUBLIC IP (public access + forward :443)."
+  case "${PUBLIC_METHOD:-}" in
+    cloudflare|ngrok|pinggy|localtunnel)
+      if [ "${PUBLIC_CF_NAMED:-0}" = 1 ]; then
+        echo "② Public access is a Cloudflare NAMED tunnel — the api./cloud./… hostnames on your domain are"
+        echo "   created automatically; no A-records to add. (The guided finish sets it up over SSH.)"
+      else
+        echo "② No DNS to add — this is a FREE tunnel. Your public URL is the random address it prints"
+        echo "   (e.g. *.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt)."
+        echo "   ${GREY}'$DOMAIN' is only the box's internal service name (from the deploy flake), NOT a public domain.${OFF}"
+      fi ;;
+    ipv6)
+      echo "② No A-records — the IPv6 route publishes an AAAA to the box's public IPv6 (the guided finish does it)." ;;
+    *)
+      echo "② Add these 5 DNS A-records at your DNS host, pointing at <box-ip>:"
+      for sub in api cloud git matrix meet; do printf "     A   %-28s <box-ip>\n" "$sub.$DOMAIN"; done
+      echo "   <box-ip> = the box's LAN IP (home access) OR your router's PUBLIC IP (public access + forward :443)." ;;
+  esac
   echo
   echo "③ Integration-test the whole stack (once <box-ip> is reachable and the name resolves):"
   echo "     ${BOLD}./dash run L3.connect.desktop --net https --on ${SP_SETUP:-lan-setup-0a} \\${OFF}"
