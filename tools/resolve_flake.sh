@@ -91,7 +91,7 @@ DOM_DEFAULT=""
 [ -f "$FLAKE/flake.nix" ] && DOM_DEFAULT=$(grep -oE 'selfprivacy-domain *= *"[^"]+"' "$FLAKE/flake.nix" | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 PUBLIC_METHOD=""; PUBLIC_DOMAIN_KIND=""; PUBLIC_CF_NAMED=0; DOMAIN=""
 eval "$(bash "$SELF_DIR/add-cloudflare.sh" --plan --default-domain "${DOM_DEFAULT:-}")" || true
-DOMAIN=${DOMAIN:-${DOM_DEFAULT:-<your-domain>}}
+DOMAIN=${DOMAIN:-${DOM_DEFAULT:-selfprivacy.box}}   # a single-hostname tunnel (tailscale/cloudflare-quick/…) provides the PUBLIC name; the box just needs a valid internal domain
 
 # ── network setup: how the box gets online AFTER install (reqs 20-23). The install is identical;
 #    the choice only decides post-install connectivity + whether wifi credentials are needed. ──

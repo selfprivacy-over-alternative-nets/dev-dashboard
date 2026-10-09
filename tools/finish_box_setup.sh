@@ -146,7 +146,7 @@ fi
 # Steps 5-7 (read public IP → A-records → verify) are the ROUTER/port-forward path (or a plain
 # no-method run). For a tunnel/ipv6 method, step 8 (add-cloudflare) wires up public access and there
 # are NO A-records to add — '$DOMAIN' is only the box's internal name from the deploy flake.
-case "${PUBLIC_METHOD:-}" in cloudflare|ngrok|pinggy|localtunnel|ipv6|none) _dns=0 ;; *) _dns=1 ;; esac
+case "${PUBLIC_METHOD:-}" in cloudflare|tailscale|ngrok|pinggy|localtunnel|ipv6|none) _dns=0 ;; *) _dns=1 ;; esac
 if [ "$_dns" = 1 ]; then
 
 # ── 5. read the IPs ──────────────────────────────────────────────────────────

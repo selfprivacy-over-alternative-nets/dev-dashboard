@@ -252,7 +252,7 @@ fi
 
 # ══ --plan: emit the decision for the installer, touch nothing ══════════════════════════════════
 if [ "$PLAN" = 1 ]; then
-  BAKED="${DOMAIN:-${DEFAULT_DOMAIN:-<your-domain>}}"      # what gets baked into the box
+  BAKED="${DOMAIN:-${DEFAULT_DOMAIN:-selfprivacy.box}}"   # what gets baked into the box (flake default; a single-hostname tunnel supplies the PUBLIC name separately, so no real domain is needed)
   cfn=0; [ "$CF_MODE" = named ] && cfn=1
   msg ""
   _prov=0; case "$METHOD" in pinggy|localtunnel|tailscale) _prov=1;; ngrok) [ -z "$DOMAIN" ] && _prov=1;; cloudflare) [ "$CF_MODE" = quick ] && _prov=1;; esac
