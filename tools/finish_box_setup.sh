@@ -40,9 +40,11 @@ G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o BatchMode=yes"
 say(){ printf '\n%s== %s ==%s\n' "$B" "$*" "$X"; }
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
+can_ask(){ { : </dev/tty; } 2>/dev/null; }   # true only if there's a terminal to prompt at (not CI)
 ssh_ok(){ ssh $SSHO "root@$1" true 2>/dev/null; }
 box(){ ssh $SSHO "root@$BIP" "$@" 2>/dev/null; }
-is_ipv4(){ [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
+is_ipv4(){ [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  local o IFS=.; for o in $1; do [ "$((10#$o))" -le 255 ] || return 1; done; return 0; }
 is_private(){ case "$1" in 10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) return 0;; *) return 1;; esac; }
 
 SUBS=(api cloud git matrix meet)
@@ -103,11 +105,16 @@ if [ -z "$BIP" ] && [ -n "$MAC" ]; then
   wait 2>/dev/null || true
   BIP=$(ip neigh | awk -v m="$MAC" 'tolower($0) ~ tolower(m){print $1; exit}')
 fi
-if [ -z "$BIP" ]; then
-  echo "${GR}(couldn't auto-find it — expected for wifi, where the box uses a different MAC.)${X}"
+[ -z "$BIP" ] && echo "${GR}(couldn't auto-find it — expected for wifi, where the box uses a different MAC.)${X}"
+# Validate the LAN IP and, on a typo, re-ask IN PLACE — a single mistyped digit must not drop the whole
+# finish flow. If there's no terminal to prompt at (CI), fail clearly instead of looping forever.
+_tries=0
+while ! is_ipv4 "$BIP"; do
+  [ -n "$BIP" ] && echo "${Y}'$BIP' isn't a valid IP — it's four numbers 0-255, like ${B}192.168.1.56${X}${Y}. Let's try again.${X}"
+  if ! can_ask; then echo "${R}no terminal to re-ask on — pass a valid --ip <box LAN IP> and rerun.${X}"; exit 1; fi
+  _tries=$((_tries+1)); [ "$_tries" -gt 10 ] && { echo "${R}too many invalid entries — rerun once you have the IP from the box console.${X}"; exit 1; }
   BIP=$(ask "Type the box's ${B}LAN IP${X} — the 192.168.x.x address from ${B}hostname -I${X} on its console (NOT the public IP): ")
-fi
-is_ipv4 "$BIP" || { echo "${R}'$BIP' is not an IP — rerun once you have it from the box console.${X}"; exit 1; }
+done
 printf 'waiting for ssh root@%s ' "$BIP"
 up=""; for _ in $(seq 1 60); do if ssh_ok "$BIP"; then up=1; echo " up"; break; fi; printf .; sleep 5; done
 [ -n "$up" ] || { echo; echo "${R}no SSH on $BIP after ~5m — is it on the network and booted from disk? Check the IP.${X}"; exit 1; }

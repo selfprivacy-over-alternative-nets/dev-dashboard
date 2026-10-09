@@ -77,3 +77,41 @@ back-navigation past A8.
 
 Tunnel/funnel/ipv6 methods **skip 5-7** entirely — the provider supplies the public name, so there are
 no A-records to add.
+
+> **Typos are recoverable.** The step-2 box-IP prompt validates all four octets are `0-255` and, on a
+> malformed entry (e.g. `192.168.1`), **re-asks in place** rather than dropping the whole finish flow.
+> With no terminal (CI) it fails clearly instead of looping.
+
+### Step 8, method = tailscale — getting the auth key
+
+This is the one place a first-timer can stall, so `add-cloudflare.sh` prints the steps inline at the
+prompt. To get the key the operator (on the **laptop**, not the box):
+
+1. Open <https://login.tailscale.com/admin/settings/keys>. No account yet → **Get started / Sign up**
+   (free; log in with Google / GitHub / Microsoft / email), which lands on that same Keys page.
+2. **Generate auth key…** → leave every option at its default → **Generate key**.
+3. **Copy** the key (starts with `tskey-auth-`, shown only once).
+4. **Paste** it at the `▸ paste the Tailscale auth key …` prompt and press Enter.
+
+**Generate a NEW key for every setup.** Tailscale auth keys are **single-use** by default — spent the
+instant a box joins. A key can't be validated offline, so the script verifies it the only real way: it
+tries to join and checks the box reaches `Running`. A bad/spent key is caught immediately and it
+re-asks in place (no need to re-run) with a loud reminder to generate a fresh key (or tick **Reusable**
+when generating if you'll set up several boxes). Re-running the apply on an *already-joined* box needs
+no key at all — it keeps the existing session.
+
+After the box joins, Funnel still has to be **switched on once for the whole tailnet** — a browser
+consent only the account owner can give, so no auth key or CLI flag can do it. The script detects this,
+captures the **exact pre-filled URL** Tailscale prints (`https://login.tailscale.com/f/funnel?node=…`),
+shows it with click-by-click steps, and waits (press ENTER to retry, `s` to skip). You:
+
+1. Open that link on the laptop → click **Enable Funnel** (turn on **HTTPS Certificates** too if asked).
+2. Back in the terminal press **ENTER** — the script retries and brings Funnel up.
+
+On success it prints `✓ Tailscale Funnel up: https://selfprivacy.<tailnet>.ts.net` plus the Flutter run
+command (connect with `--dart-define=HTTPS_APEX=1`).
+
+> **NixOS note.** `/etc/systemd/system` is a read-only Nix-store symlink, so `install_service` writes
+> tunnel units to the writable `/run/systemd/system` and `systemctl start`s them (can't `enable`).
+> They run until the next **box reboot**; re-run the step-8 apply after a reboot to bring the tunnel
+> back (making tunnels reboot-persistent means baking them into the deployer flake — not yet done).

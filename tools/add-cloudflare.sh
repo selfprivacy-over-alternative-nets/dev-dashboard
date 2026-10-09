@@ -287,11 +287,17 @@ ensure_on_box(){ local attr="$1" bin="$2" unfree="$3"
   box "test -x /root/.nix-profile/bin/$bin" || { msg "${R}failed to install $attr on the box${X}"; exit 1; }
   echo "/root/.nix-profile/bin/$bin"; }
 install_service(){ local unit="$1" exec="$2"
+  # NixOS: /etc/systemd/system is a READ-ONLY symlink into the Nix store, so we can neither write a
+  # unit there nor `systemctl enable` (its WantedBy symlink target is read-only too). Units in the
+  # writable tmpfs /run/systemd/system ARE loaded by systemd, so write there and `start` directly.
+  # Caveat: /run is cleared on reboot — this tunnel does NOT survive a box reboot yet (see notes).
   printf '%s\n' "[Unit]" "Description=SelfPrivacy public tunnel ($unit)" \
     "After=network-online.target selfprivacy-api.service" "Wants=network-online.target" \
     "[Service]" "ExecStart=$exec" "Restart=always" "RestartSec=5" \
-    "[Install]" "WantedBy=multi-user.target" | putfile "/etc/systemd/system/$unit.service"
-  box "systemctl daemon-reload && systemctl enable --now $unit.service"; }
+    "[Install]" "WantedBy=multi-user.target" | putfile "/run/systemd/system/$unit.service"
+  box "systemctl daemon-reload && systemctl restart $unit.service"
+  if box "systemctl is-active --quiet $unit.service"; then msg "${G}✓ service $unit started on the box.${X}"
+  else msg "${R}service $unit failed to start — ssh root@$IP journalctl -u $unit${X}"; fi; }
 print_app_cmd(){ local host="$1"
   msg ""; msg "${GR}Point the app at it:${X}"
   msg "   ${B}flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
@@ -354,24 +360,98 @@ case "$METHOD" in
     else msg "${R}localtunnel started but no URL yet — ssh root@$IP journalctl -u localtunnel-sp${X}"; fi ;;
   tailscale)
     # Tailscale Funnel: FREE, STABLE https://<host>.<tailnet>.ts.net with a valid cert, outbound (no
-    # port-forward, CGNAT-proof). tailscaled runs in USERSPACE networking (no kernel TUN needed). Join
-    # with a one-time AUTH KEY generated in the Tailscale admin console — nothing is typed on the box.
+    # port-forward, CGNAT-proof). tailscaled runs in USERSPACE networking (no kernel TUN needed).
     TS=$(ensure_on_box tailscale tailscale 0)
     TSD="$(dirname "$TS")/tailscaled"; SOCK=/run/tailscale/tailscaled.sock
-    TAILSCALE_AUTHKEY=$(need "$TAILSCALE_AUTHKEY" --tailscale-authkey "Tailscale auth key (admin console ▸ Settings ▸ Keys ▸ Generate auth key → tskey-auth-…): ")
     box "mkdir -p /var/lib/tailscale /run/tailscale"
     install_service tailscaled-sp "$TSD --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=$SOCK"
     for _ in $(seq 1 12); do box "test -S $SOCK" && break; sleep 1; done
-    msg "joining your tailnet + turning on Funnel :443 (Tailscale terminates TLS with a valid cert) …"
-    box "$TS --socket=$SOCK up --authkey='$TAILSCALE_AUTHKEY' --hostname=selfprivacy --accept-dns=false --reset" 2>&1 | sed 's/^/  /' >&2 || true
-    box "$TS --socket=$SOCK funnel --bg https+insecure://localhost:443" 2>&1 | sed 's/^/  /' >&2 || true
-    URL=""; for _ in $(seq 1 12); do URL=$(box "$TS --socket=$SOCK funnel status 2>/dev/null; $TS --socket=$SOCK status --json 2>/dev/null" | grep -oE 'https://[a-zA-Z0-9.-]+\.ts\.net' | head -1 | sed 's#https://##'); [ -n "$URL" ] && break; sleep 3; done
+    ts_state(){ box "$TS --socket=$SOCK status --json 2>/dev/null" | tr ',' '\n' | grep -oE '"BackendState":"[^"]+"' | head -1 | sed -E 's/.*:"([^"]+)"/\1/'; }
+    # Authenticate ONLY if the box isn't already on the tailnet. Re-running the apply (e.g. to finish
+    # Funnel) must NOT log the box out — which an already-used single-use key would, especially with
+    # --reset. So: if it's already Running, keep the session; otherwise prompt for a key and join.
+    if [ "$(ts_state)" = Running ]; then
+      msg "${G}box is already on your tailnet${X} — keeping the existing session (no new auth key needed)."
+    else
+      # A FRESH auth key is needed for EVERY setup: Tailscale keys are SINGLE-USE by default — consumed
+      # the instant a box joins. There's no offline way to tell a spent key from a good one, so we VERIFY
+      # it the only real way — by trying to join and checking the box reaches Running — and re-ask if not.
+      if [ -z "$TAILSCALE_AUTHKEY" ] && [ "$INTERACTIVE" = 1 ]; then
+        msg ""
+        msg "${B}── one thing left: a Tailscale auth key ──${X}  ${GR}(a one-time code that lets this box join Tailscale; free, ~2 min)${X}"
+        msg "  ${B}1.${X} On ${B}this laptop${X} open ${C}https://login.tailscale.com/admin/settings/keys${X}"
+        msg "     ${GR}No account yet? Click ${X}${B}Get started${X}${GR} / ${X}${B}Sign up${X}${GR} first — it's free, log in with Google / GitHub / Microsoft / email, then you land on this page.${X}"
+        msg "  ${B}2.${X} Click ${B}Generate auth key…${X} — leave every option at its default — then ${B}Generate key${X}."
+        msg "  ${B}3.${X} ${B}Copy${X} the key it shows you (it starts with ${B}tskey-auth-${X} and is shown ${B}only once${X})."
+        msg "  ${B}4.${X} ${B}Paste${X} it at the prompt below (${GR}right-click, or Ctrl+Shift+V${X}) and press ${B}Enter${X}."
+        msg "     ${Y}A key works ONLY ONCE — generate a NEW one for every box you set up.${X} ${GR}(Tick ${X}${B}Reusable${X}${GR} when generating if you'll set up several.)${X}"
+        msg ""
+      fi
+      while :; do
+        TAILSCALE_AUTHKEY=$(need "$TAILSCALE_AUTHKEY" --tailscale-authkey "  ▸ paste the Tailscale auth key (tskey-auth-…) and press Enter: ")
+        if [ "${TAILSCALE_AUTHKEY#tskey-}" = "$TAILSCALE_AUTHKEY" ]; then
+          msg "${Y}  That isn't a Tailscale auth key — it must start with ${B}tskey-auth-${X}${Y}. Copy it again from the Keys page.${X}"
+          [ "$INTERACTIVE" = 1 ] && { TAILSCALE_AUTHKEY=""; continue; }
+          exit 2
+        fi
+        # VERIFY the key the only way there is: use it. `up` with a spent/expired key returns promptly; a
+        # good one drives the node to Running. --timeout + outer `timeout` guarantee it can't hang.
+        msg "checking your auth key (joining the tailnet) …"
+        box "timeout 45 $TS --socket=$SOCK up --authkey='$TAILSCALE_AUTHKEY' --hostname=selfprivacy --accept-dns=false --timeout=30s" 2>&1 | sed 's/^/  /' >&2 || true
+        [ "$(ts_state)" = Running ] && { msg "${G}✓ auth key accepted — the box is on your tailnet.${X}"; break; }
+        msg ""
+        msg "${R}✗ That auth key did NOT work.${X}"
+        msg "${Y}${B}Tailscale auth keys are SINGLE-USE — you need a NEW key for EVERY setup${X} ${GR}(this is the #1 gotcha: a key is spent the moment any box joins with it).${X}"
+        msg "  ${GR}Generate a fresh one at ${X}${C}https://login.tailscale.com/admin/settings/keys${X}${GR} → ${X}${B}Generate auth key…${X}${GR}.${X}"
+        msg "  ${GR}Setting up several boxes? Tick ${X}${B}Reusable${X}${GR} when generating so one key works for all of them.${X}"
+        msg "  ${GR}If you're certain the key is brand-new, the box may have no internet — check its connection.${X}"
+        if [ "$INTERACTIVE" != 1 ]; then
+          msg "${Y}non-interactive: pass a fresh ${X}${B}--tailscale-authkey${X}${Y} and re-run.${X}"; exit 1
+        fi
+        msg ""
+        TAILSCALE_AUTHKEY=""   # wipe the bad key and re-prompt for a new one, in place
+      done
+    fi
+    # Stable public name — exists the moment the box joins, but is only REACHABLE once Funnel is on.
+    TSHOST=$(box "$TS --socket=$SOCK status --json 2>/dev/null" | tr ',' '\n' | grep -oE '"DNSName":"selfprivacy\.[^"]+"' | head -1 | sed -E 's/.*"DNSName":"([^"]+)"/\1/; s/\.$//')
+    # Turn Funnel on. Enabling Funnel is a ONE-TIME, browser-based approval that ONLY the tailnet owner
+    # can give — it can't be done with the auth key or any CLI flag. So: try to start Funnel; if the
+    # tailnet doesn't have it on yet, `tailscale funnel` prints the EXACT pre-filled enable URL for THIS
+    # node — capture it, show the operator precisely what to click, wait, and retry until Funnel serves.
+    msg "turning on Funnel :443 (Tailscale terminates TLS with a valid cert) …"
+    # `funnel --bg` prints the enable notice then BLOCKS when Funnel isn't enabled on the tailnet (and
+    # can block on cert provisioning even when it is), so cap it with `timeout` — the notice (incl. the
+    # enable URL) is already on stdout by then; when Funnel IS on, the serve config is set before the
+    # cap fires and `funnel status` below confirms the live URL.
+    FUNNEL="timeout 25 $TS --socket=$SOCK funnel --bg https+insecure://localhost:443"
+    _fout=$(box "$FUNNEL" 2>&1)
+    while printf '%s' "$_fout" | grep -qiE 'not enabled|to enable'; do
+      _enurl=$(printf '%s' "$_fout" | grep -oE 'https://login\.tailscale\.com/[^[:space:]]+' | head -1)
+      msg ""
+      msg "${B}── one more one-time step: switch Funnel ON for your tailnet ──${X}  ${GR}(only you, the account owner, can approve this — the box cannot)${X}"
+      msg "  ${B}1.${X} On ${B}this laptop${X}, open the link below — it is pre-filled for THIS box:"
+      msg "     ${C}${_enurl:-https://login.tailscale.com/admin/settings/feature-previews}${X}"
+      msg "  ${B}2.${X} On that page click ${B}Enable Funnel${X} (approve any 'funnel' attribute it asks about)."
+      msg "     ${GR}If the page has nothing to click, first open ${X}${C}https://login.tailscale.com/admin/dns${X}${GR}, turn on ${X}${B}HTTPS Certificates${X}${GR}, then reopen the link above.${X}"
+      msg ""
+      if [ "$INTERACTIVE" != 1 ]; then
+        msg "${Y}non-interactive: enable Funnel at the URL above, then re-run this exact command.${X}"; break
+      fi
+      _ans=$(ask "  ▸ press ENTER once you've clicked Enable Funnel (or type s then ENTER to skip): ")
+      [ "${_ans,,}" = s ] && { msg "${Y}skipped — once Funnel is enabled, finish by running this ${B}on THIS laptop${X}${Y}:${X} ${GR}ssh root@$IP $FUNNEL${X}"; break; }
+      _fout=$(box "$FUNNEL" 2>&1)
+    done
+    # Poll for the live Funnel URL. First-ever HTTPS cert issuance can take ~30-40s, so give it room.
+    msg "${GR}waiting for Funnel to come up (first HTTPS cert can take ~30s) …${X}"
+    URL=""; for _ in $(seq 1 15); do URL=$(box "$TS --socket=$SOCK funnel status 2>/dev/null" | grep -oE 'https://[a-zA-Z0-9.-]+\.ts\.net' | head -1 | sed 's#https://##'); [ -n "$URL" ] && break; sleep 3; done
     if [ -n "$URL" ]; then
       msg "${G}✓ Tailscale Funnel up:${X} ${B}https://$URL${X}  (stable, valid cert, no port-forward, CGNAT-proof)"
       print_app_cmd "$URL"
     else
-      msg "${Y}tailscaled joined but Funnel isn't public yet — enable it ONCE in the admin console:${X}"
-      msg "   ${GR}https://login.tailscale.com/admin → DNS: turn on ${B}HTTPS Certificates${X}${GR}; Access controls: give this node the ${B}funnel${X}${GR} node attribute. Then: ssh root@$IP $TS --socket=$SOCK funnel status${X}"
+      msg "${Y}Funnel isn't serving publicly yet.${X} Confirm it's enabled at ${C}https://login.tailscale.com/admin/dns${X} ${GR}(HTTPS Certificates = on)${X},"
+      msg "then run this ${B}on THIS laptop${X} ${GR}(not on the box — it SSHes into the box for you)${X}:"
+      msg "   ${GR}ssh root@$IP $FUNNEL && ssh root@$IP $TS --socket=$SOCK funnel status${X}"
+      [ -n "$TSHOST" ] && msg "${GR}When it's on, the box is reachable at ${X}${B}https://$TSHOST${X}${GR} — point the app there with ${X}${B}HTTPS_APEX=1${X}${GR}.${X}"
     fi
     msg "${GR}NOTE: Funnel is ONE hostname → the app connects at the apex (HTTPS_APEX, below). The full api./cloud./… suite needs a real domain + Cloudflare named tunnel or port-forward.${X}" ;;
   ipv6)
