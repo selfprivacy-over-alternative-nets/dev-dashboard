@@ -138,6 +138,17 @@ def _iface_carrier(iface):
         return None
 
 
+def _netboot_running():
+    """True if the netboot server is ACTUALLY serving — a DHCP server listening on UDP :67. Checking
+    only the interface IP (192.168.100.1) gives false positives: that IP lingers after a prior install
+    even though the dnsmasq/TFTP/HTTP services were killed, so the target gets no lease and never shows."""
+    try:
+        out = subprocess.run(["ss", "-lun"], capture_output=True, text=True, timeout=4).stdout
+        return any(tok.endswith(":67") for line in out.splitlines() for tok in line.split())
+    except Exception:
+        return False
+
+
 def _up_ifaces():
     out = _sh("ip -br link", timeout=10).stdout or ""
     res = []
@@ -1490,7 +1501,7 @@ def cmd_find_target(args):
             cands.append((m, i, "netbooted")); seen.add(m)
     # Direct-cable link status — a common reason a target is invisible (no cable link / target NIC off).
     _car = _iface_carrier(DIRECT_IFACE)
-    _srv = _iface_has_ip(DIRECT_IFACE, DIRECT_IP)
+    _srv = _netboot_running()
     if _car is False:
         _link = f"{RED}NO CARRIER (no cable link){OFF}"
     elif _car:
@@ -1537,9 +1548,18 @@ def cmd_find_target(args):
     for n, (m, i, src) in enumerate(cands, 1):
         tag = f"{GREEN}netbooted{OFF}" if src == "netbooted" else f"{GREY}{src}{OFF}"
         print(f"  [{n}] MAC {BOLD}{m}{OFF}  IP {i}  ({tag})")
-    if _car and not _srv and not any(s == "netbooted" for _, _, s in cands):
-        print(f"{RED}note: {DIRECT_IFACE} is linked but the netboot server is DOWN, so a "
-              f"direct-cabled target has no IP yet and won't appear. Start it, then re-run:{OFF}")
+    if _car and not any(s == "netbooted" for _, _, s in cands):
+        # A direct-cabled target would appear as "netbooted" on 192.168.100.x — it hasn't (the list is
+        # only router-LAN devices). ALWAYS surface the sudo start command; wording depends on whether a
+        # DHCP server is actually serving.
+        if not _srv:
+            print(f"{RED}note: {DIRECT_IFACE} is linked but the netboot server is NOT serving (no DHCP "
+                  f"on :67), so a direct-cabled target gets no IP and won't appear. Start it, then re-run:{OFF}")
+        else:
+            print(f"{AMBER}note: the direct-cabled target hasn't appeared yet (the list above is only "
+                  f"router-LAN devices). Power it ON into UEFI network boot — it shows up as "
+                  f"{GREEN}netbooted{OFF}{AMBER} on 192.168.100.x. If it still doesn't, (re)start the "
+                  f"netboot server, then re-run:{OFF}")
         print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
     try:
         if len(cands) == 1:
