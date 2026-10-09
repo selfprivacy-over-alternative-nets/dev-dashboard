@@ -90,8 +90,14 @@ if [ "$(lsblk -no NAME "$USB_DEV" 2>/dev/null | tail -n +2 | wc -l)" -gt 0 ]; th
   [ "${EMPTY_REQUIRED:-0}" = 1 ] && { echo "   EMPTY_REQUIRED=1 and the USB is not empty — aborting."; exit 1; }
 fi
 echo "About to ERASE ${USB_DEV} and write ${ISO}."
-read -r -p "Re-type the device path to confirm: " _c || true
-[ "${_c:-}" = "$USB_DEV" ] || { echo "confirmation mismatch — aborting."; exit 1; }
+# Rule (req 142): a mismatched device path RE-ASKS (a typo shouldn't drop the whole flow); empty = abort
+# (this is a destructive erase, so proceeding still requires an EXACT match to $USB_DEV).
+while :; do
+  read -r -p "Re-type the device path to confirm (empty = abort): " _c || _c=""
+  [ -z "${_c:-}" ] && { echo "aborted — nothing erased."; exit 1; }
+  [ "${_c}" = "$USB_DEV" ] && break
+  echo "  that doesn't match ${USB_DEV} — try again, or press Enter to abort."
+done
 sudo dd if="$ISO" of="$USB_DEV" bs=4M status=progress conv=fsync
 sync
 say "   done — you may REMOVE the USB from this device."

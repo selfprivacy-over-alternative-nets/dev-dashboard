@@ -1295,11 +1295,24 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         _dom, _key, _mac = run_env.get("DOMAIN"), run_env.get("KEY"), run_env.get("MAC")
         _fin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "finish_box_setup.sh")
         if _dom and _key and os.path.exists(_fin):
-            try:
-                _ans = input(f"\n{BOLD}Finish setup now — reboot the box, read its public IP, add + verify DNS? [Y/n] {OFF}").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                _ans = "n"
-            if _ans in ("", "y", "yes"):
+            while True:
+                try:
+                    _ans = input(f"\n{BOLD}Finish setup now — reboot the box, read its public IP, add + verify DNS? [Y/n] {OFF}").strip()
+                except (EOFError, KeyboardInterrupt):
+                    _ans = "n"
+                _low = _ans.lower()
+                if _low in ("n", "no"):
+                    break   # skip the guided finish
+                if _low not in ("", "y", "yes"):
+                    # Don't silently cancel on a typo (e.g. the box IP typed at this yes/no gate) — re-ask.
+                    if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", _ans):
+                        print(f"{AMBER}  That's an IP, but this is a yes/no question.{OFF} The guided finish asks for the"
+                              f" box's LAN IP later — AFTER you reboot it onto its network (it may differ from what you typed).")
+                        print(f"  Answer {BOLD}y{OFF} to start it, or {BOLD}n{OFF} to skip.")
+                    else:
+                        print(f"{AMBER}  Please answer {BOLD}y{OFF}{AMBER} (start the guided finish) or {BOLD}n{OFF}{AMBER} (skip it).{OFF}")
+                    continue
+                # yes → run the guided finish (it asks for the box IP, then the tunnel's key in step 8)
                 _fargs = ["bash", _fin, "--domain", _dom, "--key", _key, "--setup", method_tag]
                 if _mac:
                     _fargs += ["--mac", _mac]
@@ -1312,6 +1325,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                     subprocess.run(_fargs)   # inherits the real terminal; does its own prompts + DNS verify
                 except KeyboardInterrupt:
                     print(f"{GREY}  (guided finish interrupted — the install result above stands){OFF}")
+                break
     return rec
 
 
@@ -1561,13 +1575,25 @@ def cmd_find_target(args):
                   f"{GREEN}netbooted{OFF}{AMBER} on 192.168.100.x. If it still doesn't, (re)start the "
                   f"netboot server, then re-run:{OFF}")
         print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
+    # Rule (req 142): re-ask on an invalid answer — only an explicit n / empty cancels, never a typo.
     try:
         if len(cands) == 1:
             m, i, _ = cands[0]
-            chosen = (m, i) if input(f"Confirm this is your target (MAC {m})? [y/N]: ").strip().lower() in ("y", "yes") else None
+            while True:
+                ans = input(f"Confirm this is your target (MAC {m})? [y/N]: ").strip().lower()
+                if ans in ("y", "yes"):
+                    chosen = (m, i); break
+                if ans in ("", "n", "no"):
+                    chosen = None; break
+                print(f"{AMBER}  please answer y or n (Enter or n cancels){OFF}")
         else:
-            sel = input("Which is your target? [number, or n to cancel]: ").strip()
-            chosen = cands[int(sel) - 1][:2] if sel.isdigit() and 1 <= int(sel) <= len(cands) else None
+            while True:
+                sel = input("Which is your target? [number, or n to cancel]: ").strip()
+                if sel.lower() in ("n", "no"):
+                    chosen = None; break
+                if sel.isdigit() and 1 <= int(sel) <= len(cands):
+                    chosen = cands[int(sel) - 1][:2]; break
+                print(f"{AMBER}  please type a number 1-{len(cands)} (or n to cancel){OFF}")
     except (EOFError, KeyboardInterrupt):
         chosen = None
     if not chosen:

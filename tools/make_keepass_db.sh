@@ -44,9 +44,14 @@ fi
 PW="${SP_KEEPASS_PASSWORD:-}"
 if [ -z "$PW" ]; then
   [ -t 0 ] || { echo "ERROR: set SP_KEEPASS_PASSWORD (no TTY to prompt for the master password)." >&2; exit 1; }
-  read -r -s -p "New master password for $OUT: " PW; echo
-  read -r -s -p "Confirm: " PW2; echo
-  [ "$PW" = "$PW2" ] || { echo "ERROR: passwords do not match." >&2; exit 1; }
+  # Rule (req 142): re-ask until non-empty AND matching — a typo re-prompts, it never aborts the run.
+  while :; do
+    read -r -s -p "New master password for $OUT: " PW; echo
+    [ -n "$PW" ] || { echo "  password can't be empty — try again." >&2; continue; }
+    read -r -s -p "Confirm: " PW2; echo
+    [ "$PW" = "$PW2" ] && break
+    echo "  passwords don't match — try again." >&2
+  done
 fi
 
 mkdir -p "$(dirname "$OUT")"

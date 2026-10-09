@@ -70,9 +70,19 @@ say(){ printf '\n%s== %s ==%s\n' "$B" "$*" "$X" >&2; }
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
 need(){ local val="$1" flag="$2" prompt="$3"
   if [ -z "$val" ]; then
-    if [ "$INTERACTIVE" = 1 ]; then val=$(ask "$prompt"); else
+    if [ "$INTERACTIVE" = 1 ]; then
+      # Rule (req 142): a required answer is re-asked until non-empty — never accept blank and move on.
+      while :; do val=$(ask "$prompt"); [ -n "$val" ] && break; msg "${Y}  this can't be empty — please type a value (Ctrl-C aborts)${X}"; done
+    else
       msg "${R}non-interactive: missing required choice '$flag' (no default — pass it explicitly)${X}"; exit 2; fi
   fi; printf '%s' "$val"; }
+# Ask a FIXED-CHOICE question, re-asking until the lower-cased answer is one of the allowed tokens.
+# Include "" among the tokens to permit an empty answer (= the shown default). Never silently defaults.
+ask_choice(){ local prompt="$1" err="$2"; shift 2; local a v
+  while :; do a=$(ask "$prompt"); a="${a,,}"
+    for v in "$@"; do [ "$a" = "$v" ] && { printf '%s' "$a"; return; }; done
+    msg "$err"
+  done; }
 SSHO="-i ${KEY:-/dev/null} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o BatchMode=yes"
 box(){ ssh $SSHO "root@$IP" "$@"; }
 box_tty(){ ssh -t $SSHO "root@$IP" "$@"; }
@@ -89,7 +99,7 @@ pick_domain_source(){ local ctx="$1" a   # ctx: tunnel (needs NS delegation) | r
   msg "      ${B}2) duckdns${X}     *.duckdns.org — INSTANT, but A/TXT only (no NS delegation): ${Y}router method only, not a Cloudflare tunnel${X}."
   msg "      ${B}3) afraid${X}      freedns.afraid.org — instant free subdomains; like DuckDNS, router-method only."
   msg "      ${B}4) other${X}       a domain you already control somewhere else."
-  a=$(ask "      choose 1-4 [1]: ")
+  a=$(ask_choice "      choose 1-4 [1]: " "${Y}      please choose 1-4${X}" "" 1 2 3 4 eu-org duckdns afraid other)
   case "$a" in 2|duckdns) DOMAIN_SOURCE=duckdns;; 3|afraid) DOMAIN_SOURCE=afraid;; 4|other) DOMAIN_SOURCE=other;; *) DOMAIN_SOURCE=eu-org;; esac
   if [ "$ctx" = tunnel ] && [ "$DOMAIN_SOURCE" != eu-org ] && [ "$DOMAIN_SOURCE" != other ]; then
     msg "      ${Y}$DOMAIN_SOURCE can't host a Cloudflare tunnel (no NS delegation) — use nic.eu.org for a tunnel, or pick the router method.${X}"
@@ -187,12 +197,12 @@ case "$METHOD" in
       msg ""
       msg "  ${B}A)${X} free throwaway  ${C}*.trycloudflare.com${X}  — no domain, no account, ONE service, temporary URL"
       msg "  ${B}B)${X} a stable ${B}custom domain${X} — all 5 services (api/cloud/git/matrix/meet), survives restarts"
-      a=$(ask "    choose A or B [A]: "); case "$a" in b|B) CF_MODE=named;; *) CF_MODE=quick;; esac
+      a=$(ask_choice "    choose A or B [A]: " "${Y}    please type A or B${X}" "" a b); case "$a" in b) CF_MODE=named;; *) CF_MODE=quick;; esac
     fi
     [ -z "$CF_MODE" ] && { [ -n "$DOMAIN" ] && CF_MODE=named || CF_MODE=quick; }
     if [ "$CF_MODE" = named ]; then
       if [ -z "$DOMAIN_KIND" ] && [ "$INTERACTIVE" = 1 ]; then
-        a=$(ask "    Do you already OWN this domain (paid), or want a FREE one? [paid/free]: ")
+        a=$(ask_choice "    Do you already OWN this domain (paid), or want a FREE one? [paid/free]: " "${Y}    please type 'paid' or 'free'${X}" paid p free f)
         case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
       fi
       if [ "${DOMAIN_KIND:-paid}" = free ] && [ -z "$DOMAIN" ]; then
@@ -208,7 +218,8 @@ case "$METHOD" in
     fi ;;
   ngrok)
     if [ -z "$DOMAIN" ] && [ "$INTERACTIVE" = 1 ]; then
-      DOMAIN=$(ask "    paid ngrok custom domain (blank = free random *.ngrok-free.app): ")
+      while :; do DOMAIN=$(ask "    paid ngrok custom domain (blank = free random *.ngrok-free.app): ")
+        { [ -z "$DOMAIN" ] || is_domain "$DOMAIN"; } && break; msg "${Y}    '$DOMAIN' isn't a valid domain (or leave blank for a free one)${X}"; done
     fi
     [ -n "$DOMAIN" ] && DOMAIN_KIND=paid || DOMAIN_KIND=free ;;
   pinggy)
@@ -217,27 +228,29 @@ case "$METHOD" in
     DOMAIN=""; DOMAIN_KIND=none ;;   # Tailscale Funnel serves its own *.ts.net hostname
   localtunnel)
     if [ -z "$LT_SUBDOMAIN" ] && [ "$INTERACTIVE" = 1 ]; then
-      LT_SUBDOMAIN=$(ask "    localtunnel subdomain prefix (blank = random *.loca.lt): ")
+      while :; do LT_SUBDOMAIN=$(ask "    localtunnel subdomain prefix (blank = random *.loca.lt): ")
+        { [ -z "$LT_SUBDOMAIN" ] || is_label "$LT_SUBDOMAIN"; } && break; msg "${Y}    letters, digits and hyphens only (no dots), or leave blank${X}"; done
     fi
     DOMAIN=""; DOMAIN_KIND=none ;;
   ipv6)
     msg "    Direct IPv6 needs a domain with an AAAA record (DuckDNS is ideal — free, token API)."
     if [ -z "$DOMAIN_KIND" ] && [ "$INTERACTIVE" = 1 ]; then
-      a=$(ask "    OWN the domain (paid) or a FREE one? [paid/free]: "); case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
+      a=$(ask_choice "    OWN the domain (paid) or a FREE one? [paid/free]: " "${Y}    please type 'paid' or 'free'${X}" paid p free f); case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
     fi
     [ "${DOMAIN_KIND:-paid}" = free ] && pick_domain_source router
     DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. grandma-1.duckdns.org): ") ;;
   router)
     msg "    A router forward needs a domain with public A-records."
     if [ -z "$DOMAIN_KIND" ] && [ "$INTERACTIVE" = 1 ]; then
-      a=$(ask "    Do you OWN the domain (paid) or want a FREE one? [paid/free]: ")
+      a=$(ask_choice "    Do you OWN the domain (paid) or want a FREE one? [paid/free]: " "${Y}    please type 'paid' or 'free'${X}" paid p free f)
       case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
     fi
     [ "${DOMAIN_KIND:-paid}" = free ] && pick_domain_source router
     DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. myserver.duckdns.org): ") ;;
   none)
     if [ -z "$DOMAIN" ] && [ "$INTERACTIVE" = 1 ]; then
-      DOMAIN=$(ask "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}: ")
+      while :; do DOMAIN=$(ask "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}: ")
+        [ -z "$DOMAIN" ] && { DOMAIN="$DEFAULT_DOMAIN"; break; }; is_domain "$DOMAIN" && break; msg "${Y}    '$DOMAIN' isn't a valid domain${X}"; done
     fi
     DOMAIN_KIND=none ;;
   *) msg "${R}--method must be cloudflare | tailscale | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
@@ -298,9 +311,19 @@ install_service(){ local unit="$1" exec="$2"
   box "systemctl daemon-reload && systemctl restart $unit.service"
   if box "systemctl is-active --quiet $unit.service"; then msg "${G}✓ service $unit started on the box.${X}"
   else msg "${R}service $unit failed to start — ssh root@$IP journalctl -u $unit${X}"; fi; }
-print_app_cmd(){ local host="$1"
-  msg ""; msg "${GR}Point the app at it:${X}"
-  msg "   ${B}flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
+# Locate the SelfPrivacy Flutter app dir (has pubspec.yaml) so the printed command is copy-paste-runnable
+# — `flutter run` MUST run from the app's own dir, not from dev-dashboard. Empty if not found locally.
+_appdir(){ local root d; root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd) || return
+  for d in "$root"/*/flutter-app/selfprivacy.org.app "$root"/*/selfprivacy.org.app "$root"/selfprivacy.org.app; do
+    [ -f "$d/pubspec.yaml" ] && { echo "$d"; return; }; done; }
+print_app_cmd(){ local host="$1" app; app=$(_appdir)
+  msg ""; msg "${GR}Point the app at it${X} ${GR}(run from the Flutter app dir — flutter needs its pubspec.yaml):${X}"
+  if [ -n "$app" ]; then
+    msg "   ${B}cd $app && flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
+  else
+    msg "   ${GR}# cd into your selfprivacy.org.app checkout first, then:${X}"
+    msg "   ${B}flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
+  fi
   msg "${GR}Integration test:${X}"
   msg "   ${B}./dash run L3.connect.desktop --net https --on $SETUP --ip $IP --key ${KEY/#$HOME/\~} --token ${TOKEN:-<token>}${X}"; }
 
@@ -366,11 +389,17 @@ case "$METHOD" in
     box "mkdir -p /var/lib/tailscale /run/tailscale"
     install_service tailscaled-sp "$TSD --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=$SOCK"
     for _ in $(seq 1 12); do box "test -S $SOCK" && break; sleep 1; done
-    ts_state(){ box "$TS --socket=$SOCK status --json 2>/dev/null" | tr ',' '\n' | grep -oE '"BackendState":"[^"]+"' | head -1 | sed -E 's/.*:"([^"]+)"/\1/'; }
+    # NB: `tailscale status --json` is PRETTY-printed — `"BackendState": "Running"` has a space after the
+    # colon, so the matcher must allow optional whitespace (a naive `":"` regex silently never matches).
+    ts_state(){ box "$TS --socket=$SOCK status --json 2>/dev/null" | sed -nE 's/.*"BackendState"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1; }
     # Authenticate ONLY if the box isn't already on the tailnet. Re-running the apply (e.g. to finish
-    # Funnel) must NOT log the box out — which an already-used single-use key would, especially with
-    # --reset. So: if it's already Running, keep the session; otherwise prompt for a key and join.
-    if [ "$(ts_state)" = Running ]; then
+    # Funnel) must NOT log the box out or spawn a DUPLICATE node (selfprivacy-1, -2, …). install_service
+    # just (re)started tailscaled, so POLL a few seconds for it to reconnect and report its persisted
+    # session before deciding — a mid-reconnect 'Starting' would otherwise read as 'not joined' and we'd
+    # ask for a key and register a new node. Break early on NeedsLogin (a genuinely logged-out box) so a
+    # first-time install doesn't wait needlessly.
+    _st=""; for _ in $(seq 1 12); do _st=$(ts_state); { [ "$_st" = Running ] || [ "$_st" = NeedsLogin ]; } && break; sleep 2; done
+    if [ "$_st" = Running ]; then
       msg "${G}box is already on your tailnet${X} — keeping the existing session (no new auth key needed)."
     else
       # A FRESH auth key is needed for EVERY setup: Tailscale keys are SINGLE-USE by default — consumed
@@ -394,26 +423,37 @@ case "$METHOD" in
           [ "$INTERACTIVE" = 1 ] && { TAILSCALE_AUTHKEY=""; continue; }
           exit 2
         fi
-        # VERIFY the key the only way there is: use it. `up` with a spent/expired key returns promptly; a
-        # good one drives the node to Running. --timeout + outer `timeout` guarantee it can't hang.
+        # VERIFY the key the only way there is: use it. `up` with a spent/expired key returns an error; a
+        # good one drives the node to Running. --timeout + outer `timeout` guarantee it can't hang. We
+        # CAPTURE the output so we can tell a rejected key apart from a mere connectivity problem.
         msg "checking your auth key (joining the tailnet) …"
-        box "timeout 45 $TS --socket=$SOCK up --authkey='$TAILSCALE_AUTHKEY' --hostname=selfprivacy --accept-dns=false --timeout=30s" 2>&1 | sed 's/^/  /' >&2 || true
+        _up=$(box "timeout 45 $TS --socket=$SOCK up --authkey='$TAILSCALE_AUTHKEY' --hostname=selfprivacy --accept-dns=false --timeout=30s" 2>&1)
+        printf '%s\n' "$_up" | grep -v 'Permanently added' | sed 's/^/  /' >&2
         [ "$(ts_state)" = Running ] && { msg "${G}✓ auth key accepted — the box is on your tailnet.${X}"; break; }
         msg ""
-        msg "${R}✗ That auth key did NOT work.${X}"
-        msg "${Y}${B}Tailscale auth keys are SINGLE-USE — you need a NEW key for EVERY setup${X} ${GR}(this is the #1 gotcha: a key is spent the moment any box joins with it).${X}"
-        msg "  ${GR}Generate a fresh one at ${X}${C}https://login.tailscale.com/admin/settings/keys${X}${GR} → ${X}${B}Generate auth key…${X}${GR}.${X}"
-        msg "  ${GR}Setting up several boxes? Tick ${X}${B}Reusable${X}${GR} when generating so one key works for all of them.${X}"
-        msg "  ${GR}If you're certain the key is brand-new, the box may have no internet — check its connection.${X}"
+        if printf '%s' "$_up" | grep -qiE 'invalid key|not valid|expired|already been used|unauthorized'; then
+          # Tailscale actually REJECTED the key → it's spent/expired. THIS is the single-use case.
+          msg "${R}✗ The auth key was rejected by Tailscale.${X}"
+          msg "${Y}${B}Auth keys are SINGLE-USE — generate a NEW one for this setup${X} ${GR}(a key is spent the moment any box joins with it).${X}"
+          msg "  ${GR}Fresh key: ${X}${C}https://login.tailscale.com/admin/settings/keys${X}${GR} → ${X}${B}Generate auth key…${X}${GR} (tick ${X}${B}Reusable${X}${GR} for several boxes).${X}"
+        else
+          # Key wasn't rejected — the box just didn't reach Running. Almost always connectivity.
+          msg "${R}✗ The box didn't come online on your tailnet${X} ${GR}(the key was not rejected, so it's not the key).${X}"
+          msg "  ${GR}• Make sure the box has internet — it needs outbound HTTPS to controlplane.tailscale.com.${X}"
+          msg "  ${GR}• Check you pasted the whole ${X}${B}tskey-auth-…${X}${GR} string (no cut-off).${X}"
+          msg "  ${GR}• See the real reason on the box: ${X}${GR}ssh root@$IP journalctl -u tailscaled-sp -n 20${X}"
+        fi
         if [ "$INTERACTIVE" != 1 ]; then
-          msg "${Y}non-interactive: pass a fresh ${X}${B}--tailscale-authkey${X}${Y} and re-run.${X}"; exit 1
+          msg "${Y}non-interactive: fix the above, pass a fresh ${X}${B}--tailscale-authkey${X}${Y} if needed, and re-run.${X}"; exit 1
         fi
         msg ""
-        TAILSCALE_AUTHKEY=""   # wipe the bad key and re-prompt for a new one, in place
+        TAILSCALE_AUTHKEY=""   # wipe the key and re-prompt in place
       done
     fi
-    # Stable public name — exists the moment the box joins, but is only REACHABLE once Funnel is on.
-    TSHOST=$(box "$TS --socket=$SOCK status --json 2>/dev/null" | tr ',' '\n' | grep -oE '"DNSName":"selfprivacy\.[^"]+"' | head -1 | sed -E 's/.*"DNSName":"([^"]+)"/\1/; s/\.$//')
+    # Stable public name — read the box's OWN assigned name (Self is the first DNSName in the pretty-
+    # printed JSON). Note Tailscale may suffix it (e.g. selfprivacy-1) if an old offline node still holds
+    # the name 'selfprivacy', so don't hard-code it. Whitespace-tolerant for the same reason as ts_state.
+    TSHOST=$(box "$TS --socket=$SOCK status --json 2>/dev/null" | sed -nE 's/.*"DNSName"[[:space:]]*:[[:space:]]*"([^"]+)\.".*/\1/p' | head -1)
     # Turn Funnel on. Enabling Funnel is a ONE-TIME, browser-based approval that ONLY the tailnet owner
     # can give — it can't be done with the auth key or any CLI flag. So: try to start Funnel; if the
     # tailnet doesn't have it on yet, `tailscale funnel` prints the EXACT pre-filled enable URL for THIS

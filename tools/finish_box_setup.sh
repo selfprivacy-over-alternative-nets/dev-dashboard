@@ -41,6 +41,12 @@ SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o Con
 say(){ printf '\n%s== %s ==%s\n' "$B" "$*" "$X"; }
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
 can_ask(){ { : </dev/tty; } 2>/dev/null; }   # true only if there's a terminal to prompt at (not CI)
+# yes/no with re-ask on anything that isn't yes/no; empty = the $2 default ('y' or 'n'). Never quits (req 142).
+yesno(){ local prompt="$1" def="${2:-n}" a
+  while :; do a=$(ask "$prompt")
+    case "${a,,}" in y|yes) return 0;; n|no) return 1;; "") [ "$def" = y ] && return 0 || return 1;;
+      *) printf '%s  please answer y or n%s\n' "$Y" "$X" >&2;; esac
+  done; }
 ssh_ok(){ ssh $SSHO "root@$1" true 2>/dev/null; }
 box(){ ssh $SSHO "root@$BIP" "$@" 2>/dev/null; }
 is_ipv4(){ [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
@@ -174,24 +180,23 @@ fi
 
 # ── 7. confirm + verify ──────────────────────────────────────────────────────
 say "7/7  verify the records"
-ans=$(ask "Did you enter all 5 records at your DNS host? [y/N]: ")
-case "$ans" in
-  y|Y|yes|YES)
-    while :; do
-      echo "checking what they resolve to (via 1.1.1.1 / 8.8.8.8) …"
-      if verify_dns "$PUB" "$LAN"; then
-        echo "${G}✓ all 5 records resolve to $PUB — DNS is set up correctly.${X}"
-        echo "${GR}Next: integration-test the stack —${X}"
-        echo "   ${B}./dash run L3.connect.desktop --net https --on ${SETUP} --ip $BIP --key ${KEY/#$HOME/\~} \\${X}"
-        echo "   ${B}  --token \$(ssh -i ${KEY/#$HOME/\~} root@$BIP 'jq -r .api.token /etc/selfprivacy/secrets.json')${X}"
-        break
-      fi
-      again=$(ask $'\nSome records aren\'t right yet. Re-check now? [y/N]: ')
-      case "$again" in y|Y|yes|YES) continue;; *) echo "Stopped — fix the records and rerun this script to re-check."; break;; esac
-    done ;;
-  *) echo "No problem — add them when ready, then rerun this script to verify:"
-     echo "   ${C}bash $(basename "$0") --domain $DOMAIN --key ${KEY/#$HOME/\~} --ip $BIP --setup $SETUP${X}" ;;
-esac
+if yesno "Did you enter all 5 records at your DNS host? [y/N]: " n; then
+  while :; do
+    echo "checking what they resolve to (via 1.1.1.1 / 8.8.8.8) …"
+    if verify_dns "$PUB" "$LAN"; then
+      echo "${G}✓ all 5 records resolve to $PUB — DNS is set up correctly.${X}"
+      echo "${GR}Next: integration-test the stack —${X}"
+      echo "   ${B}./dash run L3.connect.desktop --net https --on ${SETUP} --ip $BIP --key ${KEY/#$HOME/\~} \\${X}"
+      echo "   ${B}  --token \$(ssh -i ${KEY/#$HOME/\~} root@$BIP 'jq -r .api.token /etc/selfprivacy/secrets.json')${X}"
+      break
+    fi
+    if yesno $'\nSome records aren\'t right yet. Re-check now? [y/N]: ' n; then continue; fi
+    echo "Stopped — fix the records and rerun this script to re-check."; break
+  done
+else
+  echo "No problem — add them when ready, then rerun this script to verify:"
+  echo "   ${C}bash $(basename "$0") --domain $DOMAIN --key ${KEY/#$HOME/\~} --ip $BIP --setup $SETUP${X}"
+fi
 elif [ "${PUBLIC_METHOD:-}" = none ]; then
   : # LAN / .onion only — nothing public to add
 else

@@ -58,6 +58,12 @@ Cloudflare tunnel), or `other` (a domain you already control).
 > **Single-hostname caveat.** tailscale, cloudflare-*quick*, ngrok-free, pinggy and localtunnel each
 > give **one** hostname → only the **API/app** is reachable publicly. The full 5-subdomain suite needs
 > a real domain + a Cloudflare **named** tunnel (B) or a router port-forward.
+>
+> That one hostname is the **API endpoint**, not a website: opening it in a browser shows the box's
+> default nginx page at `/` and the GraphiQL console at `/graphql` — there is **no web login screen**.
+> You log in and manage the server from the **SelfPrivacy app** (point it at the host with
+> `HTTPS_APEX=1`). The browser login pages (Nextcloud `cloud.`, Forgejo `git.`, …) live on the other
+> subdomains, which a single-hostname tunnel does not expose.
 
 ## Phase B — INSTALL (`tools/e2e_install_native_ethernet.sh`) — no questions
 
