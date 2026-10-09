@@ -16,7 +16,7 @@
 #   Q2 free domain?   -> a quick/pinggy/localtunnel tunnel needs NONE (random *.trycloudflare.com /
 #                        *.pinggy.link / *.loca.lt); a free CUSTOM domain comes from a source you pick
 #                        (nic.eu.org = delegable to Cloudflare; DuckDNS/afraid = router method only).
-#   Q3 transport?     -> cloudflare | ipv6 | ngrok | pinggy | localtunnel | router | none (all free).
+#   Q3 transport?     -> cloudflare | tailscale | ipv6 | ngrok | pinggy | localtunnel | router | none (free).
 #
 # Standalone / non-interactive apply (every choice explicit, no silent defaults):
 #   bash tools/add-cloudflare.sh --key ~/.ssh/pcname_ed25519 --ip 192.168.1.167 \
@@ -30,7 +30,7 @@ set -uo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/net_lib.sh"      # box_global_ipv6 (routable-IPv6 autodetect)
 
 PLAN=0; KEY=""; IP=""; METHOD=""; DOMAIN_KIND=""; DOMAIN=""; CF_MODE=""; NGROK_TOKEN=""; CF_TUNNEL_TOKEN=""
-PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""
+PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""; TAILSCALE_AUTHKEY=""
 DEFAULT_DOMAIN=""; SETUP="${SP_SETUP:-lan-setup-0a}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,6 +48,7 @@ while [ $# -gt 0 ]; do
     --lt-subdomain)   LT_SUBDOMAIN="$2";  shift 2;;   # localtunnel requested subdomain prefix
     --domain-source)  DOMAIN_SOURCE="$2"; shift 2;;   # eu-org | duckdns | afraid | other (free-domain source)
     --duckdns-token)  DUCKDNS_TOKEN="$2"; shift 2;;   # DuckDNS token (auto-update the A/AAAA record)
+    --tailscale-authkey) TAILSCALE_AUTHKEY="$2"; shift 2;;  # Tailscale auth key (tskey-auth-…) for Funnel
     --default-domain) DEFAULT_DOMAIN="$2"; shift 2;;  # suggested domain (plan only)
     --setup)          SETUP="$2";        shift 2;;
     -h|--help)        sed -n '2,38p' "$0"; exit 0;;
@@ -105,19 +106,20 @@ run_wizard(){
   local st=method a d bk="${GR}[ < = back ]${X}"
   while :; do
     case "$st" in
-      method)   # rule: one of 1-7 / a transport name. empty or anything else → re-ask.
+      method)   # rule: one of 1-8 / a transport name. empty or anything else → re-ask.
         msg "  ${B}1) cloudflare${X}   Cloudflare Tunnel — FREE, outbound, works behind CGNAT (centralised)"
-        msg "  ${B}2) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay/port-forward (needs ISP IPv6)"
-        msg "  ${B}3) ngrok${X}        ngrok — free tier = random *.ngrok-free.app (custom domain is paid)"
-        msg "  ${B}4) pinggy${X}       Pinggy — SSH-based, nothing to install; free random *.pinggy.link (~60 min)"
-        msg "  ${B}5) localtunnel${X}  LocalTunnel — free *.loca.lt with a custom prefix"
-        msg "  ${B}6) router${X}       forward :443 on your own router (needs router admin)"
-        msg "  ${B}7) none${X}         LAN / .onion only — just set my domain"
-        a=$(askb "    choose 1-7 (or name): ")
+        msg "  ${B}2) tailscale${X}    Tailscale Funnel — FREE stable https://<name>.ts.net, valid cert, no port-forward, CGNAT-proof (recommended)"
+        msg "  ${B}3) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay/port-forward (needs ISP IPv6)"
+        msg "  ${B}4) ngrok${X}        ngrok — free tier = 1 static *.ngrok-free.app (browser interstitial)"
+        msg "  ${B}5) pinggy${X}       Pinggy — SSH-based, nothing to install; free random *.pinggy.link (~60 min)"
+        msg "  ${B}6) localtunnel${X}  LocalTunnel — free *.loca.lt with a custom prefix"
+        msg "  ${B}7) router${X}       forward :443 on your own router (needs router admin)"
+        msg "  ${B}8) none${X}         LAN / .onion only — just set my domain"
+        a=$(askb "    choose 1-8 (or name): ")
         [ "$a" = "$BACK" ] && { msg "${GR}  (already at the first question)${X}"; continue; }
-        case "${a,,}" in 1|cloudflare|c) METHOD=cloudflare;; 2|ipv6|6) METHOD=ipv6;; 3|ngrok|n) METHOD=ngrok;; 4|pinggy|p) METHOD=pinggy;; 5|localtunnel|lt|l) METHOD=localtunnel;; 6|router|r) METHOD=router;; 7|none|skip) METHOD=none;; *) msg "${Y}  please choose 1-7 (or a name from the list)${X}"; continue;; esac
+        case "${a,,}" in 1|cloudflare|c) METHOD=cloudflare;; 2|tailscale|ts|t) METHOD=tailscale;; 3|ipv6|v6) METHOD=ipv6;; 4|ngrok|n) METHOD=ngrok;; 5|pinggy|p) METHOD=pinggy;; 6|localtunnel|lt|l) METHOD=localtunnel;; 7|router|r) METHOD=router;; 8|none|skip) METHOD=none;; *) msg "${Y}  please choose 1-8 (or a name from the list)${X}"; continue;; esac
         CF_MODE=""; DOMAIN=""; DOMAIN_KIND=""; DOMAIN_SOURCE=""; LT_SUBDOMAIN=""   # fresh start for this method
-        case "$METHOD" in cloudflare) st=cfmode;; ipv6|router) st=dkind;; ngrok) st=ngd;; localtunnel) st=lts;; pinggy) DOMAIN_KIND=none; st=done;; none) st=noned;; esac ;;
+        case "$METHOD" in cloudflare) st=cfmode;; ipv6|router) st=dkind;; ngrok) st=ngd;; localtunnel) st=lts;; pinggy|tailscale) DOMAIN_KIND=none; st=done;; none) st=noned;; esac ;;
       cfmode)   # rule: A or B (empty = A, the shown default). anything else → re-ask.
         msg ""
         msg "  ${B}A)${X} free throwaway ${C}*.trycloudflare.com${X} — no domain, ONE service, temporary"
@@ -174,7 +176,7 @@ run_wizard(){
 say "public reachability — how will the box be reached from the internet?"
 WIZARD_DONE=0
 if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then run_wizard; WIZARD_DONE=1; fi
-METHOD=$(need "$METHOD" --method "transport (cloudflare|ipv6|ngrok|pinggy|localtunnel|router|none): ")
+METHOD=$(need "$METHOD" --method "transport (cloudflare|tailscale|ipv6|ngrok|pinggy|localtunnel|router|none): ")
 
 # domain, TAILORED to the method (non-interactive / flag-driven path; the interactive wizard above
 # already set these with back-navigation, so skip it then).
@@ -211,6 +213,8 @@ case "$METHOD" in
     [ -n "$DOMAIN" ] && DOMAIN_KIND=paid || DOMAIN_KIND=free ;;
   pinggy)
     DOMAIN=""; DOMAIN_KIND=none ;;   # pinggy serves its own *.pinggy.link hostname
+  tailscale)
+    DOMAIN=""; DOMAIN_KIND=none ;;   # Tailscale Funnel serves its own *.ts.net hostname
   localtunnel)
     if [ -z "$LT_SUBDOMAIN" ] && [ "$INTERACTIVE" = 1 ]; then
       LT_SUBDOMAIN=$(ask "    localtunnel subdomain prefix (blank = random *.loca.lt): ")
@@ -236,7 +240,7 @@ case "$METHOD" in
       DOMAIN=$(ask "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}: ")
     fi
     DOMAIN_KIND=none ;;
-  *) msg "${R}--method must be cloudflare | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
+  *) msg "${R}--method must be cloudflare | tailscale | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
 esac
 fi
 
@@ -251,10 +255,10 @@ if [ "$PLAN" = 1 ]; then
   BAKED="${DOMAIN:-${DEFAULT_DOMAIN:-<your-domain>}}"      # what gets baked into the box
   cfn=0; [ "$CF_MODE" = named ] && cfn=1
   msg ""
-  _prov=0; case "$METHOD" in pinggy|localtunnel) _prov=1;; ngrok) [ -z "$DOMAIN" ] && _prov=1;; cloudflare) [ "$CF_MODE" = quick ] && _prov=1;; esac
+  _prov=0; case "$METHOD" in pinggy|localtunnel|tailscale) _prov=1;; ngrok) [ -z "$DOMAIN" ] && _prov=1;; cloudflare) [ "$CF_MODE" = quick ] && _prov=1;; esac
   if [ "$_prov" = 1 ]; then
-    msg "${G}planned:${X} method=${B}$METHOD${X} — you'll get a ${B}FREE public URL from the tunnel provider${X}."
-    msg "         ${GR}It's a random address (e.g. https://<random>.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt), printed when the tunnel starts right after install. Nothing to register, no domain to choose.${X}"
+    msg "${G}planned:${X} method=${B}$METHOD${X} — you'll get a ${B}FREE public URL from the provider${X}."
+    msg "         ${GR}A provider-assigned address (e.g. https://<name>.ts.net / *.trycloudflare.com / *.ngrok-free.app / *.pinggy.link / *.loca.lt), set up right after install. Nothing to register, no domain to choose.${X}"
   else
     msg "${G}planned:${X} method=${B}$METHOD${X} domain=${B}$BAKED${X}$([ "$METHOD" = cloudflare ] && echo " (cloudflare: ${CF_MODE})")"
   fi
@@ -348,6 +352,28 @@ case "$METHOD" in
       msg "${Y}NOTE: loca.lt adds a one-time browser interstitial (API/app clients must send header 'Bypass-Tunnel-Reminder: true'). It fronts ONE endpoint; Host-routed cloud/git/… need separate tunnels.${X}"
       print_app_cmd "${URL#https://}"
     else msg "${R}localtunnel started but no URL yet — ssh root@$IP journalctl -u localtunnel-sp${X}"; fi ;;
+  tailscale)
+    # Tailscale Funnel: FREE, STABLE https://<host>.<tailnet>.ts.net with a valid cert, outbound (no
+    # port-forward, CGNAT-proof). tailscaled runs in USERSPACE networking (no kernel TUN needed). Join
+    # with a one-time AUTH KEY generated in the Tailscale admin console — nothing is typed on the box.
+    TS=$(ensure_on_box tailscale tailscale 0)
+    TSD="$(dirname "$TS")/tailscaled"; SOCK=/run/tailscale/tailscaled.sock
+    TAILSCALE_AUTHKEY=$(need "$TAILSCALE_AUTHKEY" --tailscale-authkey "Tailscale auth key (admin console ▸ Settings ▸ Keys ▸ Generate auth key → tskey-auth-…): ")
+    box "mkdir -p /var/lib/tailscale /run/tailscale"
+    install_service tailscaled-sp "$TSD --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=$SOCK"
+    for _ in $(seq 1 12); do box "test -S $SOCK" && break; sleep 1; done
+    msg "joining your tailnet + turning on Funnel :443 (Tailscale terminates TLS with a valid cert) …"
+    box "$TS --socket=$SOCK up --authkey='$TAILSCALE_AUTHKEY' --hostname=selfprivacy --accept-dns=false --reset" 2>&1 | sed 's/^/  /' >&2 || true
+    box "$TS --socket=$SOCK funnel --bg https+insecure://localhost:443" 2>&1 | sed 's/^/  /' >&2 || true
+    URL=""; for _ in $(seq 1 12); do URL=$(box "$TS --socket=$SOCK funnel status 2>/dev/null; $TS --socket=$SOCK status --json 2>/dev/null" | grep -oE 'https://[a-zA-Z0-9.-]+\.ts\.net' | head -1 | sed 's#https://##'); [ -n "$URL" ] && break; sleep 3; done
+    if [ -n "$URL" ]; then
+      msg "${G}✓ Tailscale Funnel up:${X} ${B}https://$URL${X}  (stable, valid cert, no port-forward, CGNAT-proof)"
+      print_app_cmd "$URL"
+    else
+      msg "${Y}tailscaled joined but Funnel isn't public yet — enable it ONCE in the admin console:${X}"
+      msg "   ${GR}https://login.tailscale.com/admin → DNS: turn on ${B}HTTPS Certificates${X}${GR}; Access controls: give this node the ${B}funnel${X}${GR} node attribute. Then: ssh root@$IP $TS --socket=$SOCK funnel status${X}"
+    fi
+    msg "${GR}NOTE: Funnel is ONE hostname → the app connects at the apex (HTTPS_APEX, below). The full api./cloud./… suite needs a real domain + Cloudflare named tunnel or port-forward.${X}" ;;
   ipv6)
     # DECENTRALISED: reach B directly over its public IPv6 — no relay, no NAT, no port-forward. The box
     # firewall already allows :443 (NixOS opens it for v4+v6); we just publish/track an AAAA record.
@@ -394,6 +420,6 @@ EOF
   none)
     msg "${GR}No public tunnel chosen — the box is reachable on the LAN and over its .onion only.${X}"
     print_app_cmd "api.${DOMAIN:-$BOX_DOMAIN}" ;;
-  *) msg "${R}--method must be cloudflare | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
+  *) msg "${R}--method must be cloudflare | tailscale | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
 esac
 say "4/4  done ($METHOD)"
