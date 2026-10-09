@@ -27,6 +27,7 @@
 # --key/--ip are required to APPLY; --plan needs neither.
 set -uo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt_lib.sh"   # shared input validators (is_domain, …)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/net_lib.sh"      # box_global_ipv6 (routable-IPv6 autodetect)
 
 PLAN=0; KEY=""; IP=""; METHOD=""; DOMAIN_KIND=""; DOMAIN=""; CF_MODE=""; NGROK_TOKEN=""; CF_TUNNEL_TOKEN=""
 PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""
@@ -351,8 +352,8 @@ case "$METHOD" in
     # DECENTRALISED: reach B directly over its public IPv6 — no relay, no NAT, no port-forward. The box
     # firewall already allows :443 (NixOS opens it for v4+v6); we just publish/track an AAAA record.
     DOMAIN=$(need "$DOMAIN" --domain "domain to point at the box (e.g. grandma-1.duckdns.org): ")
-    V6=$(box "ip -6 addr show scope global 2>/dev/null | awk '{print \$2}' | cut -d/ -f1 | grep -E '^[23]' | head -1")
-    [ -n "$V6" ] || { msg "${R}no routable public IPv6 on the box (ISP is IPv4-only / CGNAT). Use --method cloudflare instead.${X}"; exit 1; }
+    V6=$(box_global_ipv6 "$IP" "$KEY")   # autodetect on the box's CURRENT (final) network
+    [ -n "$V6" ] || { msg "${R}no routable public IPv6 on the box's current network (IPv4-only / CGNAT). Use --method cloudflare instead.${X}"; exit 1; }
     msg "${G}box has a public IPv6:${X} ${B}$V6${X} — no NAT; :443 already open in the NixOS firewall."
     if printf '%s' "$DOMAIN" | grep -q '\.duckdns\.org$' && [ -z "$DUCKDNS_TOKEN" ] && [ "$INTERACTIVE" = 1 ]; then
       DUCKDNS_TOKEN=$(ask "DuckDNS token (auto-update the AAAA; blank = I'll set it manually): ")

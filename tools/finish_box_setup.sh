@@ -34,6 +34,7 @@ done
 [ -n "$KEY" ]    || { echo "required: --key <ssh deploy key> (e.g. --key ~/.ssh/pcname_ed25519)" >&2; exit 2; }
 KEY=${KEY/#\~/$HOME}
 SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$SELF/net_lib.sh"   # box_global_ipv6 (routable-IPv6 autodetect on the box's final network)
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o BatchMode=yes"
@@ -128,6 +129,18 @@ if box 'ping -c1 -W3 1.1.1.1 >/dev/null 2>&1'; then
 else
   echo "${R}the box has no internet.${X} ${WIFI:+Check the wifi password/SSID. }Public HTTPS needs internet; fix this, then rerun."
   exit 1
+fi
+
+# ── 4b. autodetect public IPv6 on the box's FINAL network ──────────────────────────────────────
+# IPv6 is a property of THIS network — which can be a different wifi/router than the install path or
+# your laptop — so we can only tell now, with the box rebooted onto it. (Move the box to another
+# network later → re-run this to re-check.)
+say "4b  public IPv6 on this network?"
+V6=$(box_global_ipv6 "$BIP" "$KEY")
+if [ -n "$V6" ]; then
+  echo "${G}yes — routable public IPv6 $V6${X} → the decentralised ipv6 route works here (no tunnel / no port-forward)."
+else
+  echo "${Y}no routable public IPv6 on this network${X}${WIFI:+ (wifi '$WIFI')} — ipv6-direct won't work here; use a tunnel (cloudflare) or a router port-forward."
 fi
 
 # Steps 5-7 (read public IP → A-records → verify) are the ROUTER/port-forward path (or a plain
