@@ -1,0 +1,105 @@
+@startuml setup-flow
+' The install wizard as a decision tree: every QUESTION the operator is asked and every piece of DATA
+' they must type, in order. Three phases: (A) local wizard — all questions, no box touched yet;
+' (B) INSTALL — irreversible, no questions; (C) finish — on the box's final network.
+' "⌨ [x]" = a value you type. The public-access method is asked UP-FRONT because it decides the DOMAIN,
+' and the domain is baked into the box at install (vhost routing + TLS cert) and can't change later.
+' Rendered deterministically to setup-flow.svg by docs/render-diagrams.sh (pinned plantuml).
+title SelfPrivacy-over-alternative-nets — install wizard flow (questions & data entered)
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam ArrowColor #444444
+skinparam ActivityBorderColor #555555
+skinparam ActivityDiamondBorderColor #555555
+skinparam NoteBackgroundColor #FFF6D5
+skinparam NoteBorderColor #C9B458
+
+legend top left
+  <b>⌨ [x]</b> = a value you TYPE      <b>bold</b> partition = phase
+  pink = irreversible (no back-nav)
+endlegend
+
+start
+
+partition "A. Local wizard  (on your laptop — nothing on the box yet; type < to go back)" {
+  :<b>./dash find-target</b>
+  scan LAN + direct cable for the target;
+  note right
+    no target? it prints the
+    <b>sudo</b> netboot-server command
+  end note
+  :pick the target by MAC   ⌨ <b>[number]</b>;
+  :confirm deploy flake
+  (auto-found, else ⌨ <b>[path]</b>);
+
+  :<b>Q1 — public reachability?</b>  (how the box is reached from the internet)
+  choose ⌨ <b>[1-8]</b>;
+  switch (method)
+  case ( 1 cloudflare )
+    :<b>A</b> quick  or  <b>B</b> named?  ⌨ <b>[A/B]</b>;
+    if (B — stable, all 5 services) then
+      :own it or free?  ⌨ <b>[paid/free]</b>;
+      if (free) then
+        :source  ⌨ <b>[eu-org / duckdns / afraid / other]</b>;
+      endif
+      :⌨ <b>[domain]</b>  (zone must be on Cloudflare);
+    else (A — one service, temp)
+      :no domain — random <i>*.trycloudflare.com</i>;
+    endif
+  case ( 2 tailscale )
+    :no domain — <i>*.ts.net</i>
+    (auth key entered later, step C8);
+  case ( 3 ipv6 )
+    :own it or free?  ⌨ <b>[paid/free]</b> (+ source);
+    :⌨ <b>[domain]</b>  (AAAA record);
+  case ( 4 ngrok )
+    :⌨ <b>[domain]</b>  or blank = free <i>*.ngrok-free.app</i>;
+  case ( 5 pinggy )
+    :no domain — <i>*.pinggy.link</i>;
+  case ( 6 localtunnel )
+    :⌨ <b>[prefix]</b>  or blank = random <i>*.loca.lt</i>;
+  case ( 7 router )
+    :own it or free?  ⌨ <b>[paid/free]</b> (+ source);
+    :⌨ <b>[domain]</b>  (A records + forward :443);
+  case ( 8 none )
+    :⌨ <b>[domain]</b>  (LAN / .onion only);
+  endswitch
+
+  :<b>Q2 — network setup?</b>  (how the box gets online AFTER install)
+  ⌨ <b>[1-4]</b>  = 0a cable→router / 0b home wifi / 0c other wifi / 0d wifi-only;
+  if (wifi?  0b / 0c / 0d) then (yes)
+    :⌨ <b>[wifi SSID]</b>  (checked: in range);
+    :⌨ <b>[wifi password]</b>  (checked: 8-63 chars / 64-hex);
+  endif
+
+  :show the ready command
+  <b>run it now?</b>  ⌨ <b>[y/N]</b>;
+}
+
+partition "B. INSTALL  (irreversible — no questions, no back-nav)" #FADBD8 {
+  :netboot the target over the direct cable (UEFI PXE);
+  :<b>WIPE both disks</b> + nixos-anywhere
+  (inject LE cert + secrets, bake DOMAIN);
+  :verify the install ON DISK;
+}
+
+partition "C. Finish  (box rebooted onto its FINAL network)" {
+  :<b>1</b> reboot the box  (wifi: unplug the cable);
+  :<b>2</b> ⌨ <b>[box LAN IP]</b>  (from <i>hostname -I</i> on its console);
+  :<b>3</b> confirm booted · <b>4</b> internet · <b>4b</b> auto-detect public IPv6;
+  if (method needs DNS records?) then (router / plain only)
+    :<b>5</b> read the box's LAN + public IP;
+    :<b>6</b> add 5 A-records  api/cloud/git/matrix/meet → IP;
+    :<b>7</b> ⌨ <b>[added them? y/N]</b> → verify they resolve;
+  else (tunnel / funnel / ipv6)
+    :no DNS — the provider supplies the public name;
+  endif
+  :<b>8</b> apply public access over SSH (nothing typed on the box) —
+  method secret: tailscale ⌨ <b>[auth key]</b> · cloudflare-named ⌨ <b>[tunnel token]</b>
+  · ngrok ⌨ <b>[token]</b> · pinggy ⌨ <b>[token?]</b>;
+}
+
+:<b>public URL ready</b> → connect the Flutter app;
+stop
+@enduml
