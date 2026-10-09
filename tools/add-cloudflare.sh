@@ -326,6 +326,34 @@ print_app_cmd(){ local host="$1" app; app=$(_appdir)
   fi
   msg "${GR}Integration test:${X}"
   msg "   ${B}./dash run L3.connect.desktop --net https --on $SETUP --ip $IP --key ${KEY/#$HOME/\~} --token ${TOKEN:-<token>}${X}"; }
+# WAIT until the box actually answers over the PUBLIC internet — "serving on the box" is not the same as
+# "reachable": tunnel providers publish public DNS for a NEW name minutes after it's enabled. We poll the
+# URL from the laptop (which uses public DNS, unlike the box's MagicDNS) until it responds, with visible
+# progress and a generous ceiling, so a non-technical user just waits and never debugs DNS. (req 149)
+# Returns 0 when reachable, 1 on timeout. SP_REACH_TIMEOUT overrides the ceiling (seconds; default 600).
+wait_reachable(){ local host="$1" t0=$SECONDS ceil=$(( SECONDS + ${SP_REACH_TIMEOUT:-600} )) n=0 code reason wait=10
+  msg "${GR}Checking it's reachable from anywhere on the internet. A brand-new address can take a couple of${X}"
+  msg "${GR}minutes to go live — this is automatic, just wait. Each check is shown below:${X}"
+  while :; do
+    n=$((n+1))
+    curl -fsS -m 12 -o /dev/null "https://$host/" 2>/dev/null; code=$?
+    if [ "$code" = 0 ]; then
+      msg "${G}   ✓ check #$n (${B}$((SECONDS-t0))s${X}${G}): LIVE — https://$host responds from the public internet.${X}"; return 0; fi
+    case "$code" in                                   # translate curl's exit code to a plain reason
+      6)      reason="address not published yet (DNS)";;
+      7)      reason="not accepting connections yet";;
+      28)     reason="no response yet (timed out)";;
+      35|60)  reason="TLS/cert still warming up";;
+      22)     reason="responds, but with an HTTP error";;
+      *)      reason="not reachable yet (curl $code)";;
+    esac
+    if [ "$SECONDS" -ge "$ceil" ]; then
+      msg "${Y}   ⚠ check #$n (~$(((SECONDS-t0)/60)) min): still $reason — not waiting longer now.${X}"
+      msg "${Y}     The box IS serving correctly; only the PUBLIC address hasn't gone live.${X}"; return 1; fi
+    # Gentle backoff (10→30s cap) so a long wait makes ~20 checks, not 40 — avoids hammering DNS/the tunnel.
+    msg "${GR}   · check #$n (${B}$((SECONDS-t0))s${X}${GR}): $reason — checking again in ${wait}s …${X}"
+    sleep "$wait"; [ "$wait" -lt 30 ] && wait=$((wait+5))
+  done; }
 
 say "3/4  configuring: $METHOD"
 case "$METHOD" in
@@ -485,7 +513,12 @@ case "$METHOD" in
     msg "${GR}waiting for Funnel to come up (first HTTPS cert can take ~30s) …${X}"
     URL=""; for _ in $(seq 1 15); do URL=$(box "$TS --socket=$SOCK funnel status 2>/dev/null" | grep -oE 'https://[a-zA-Z0-9.-]+\.ts\.net' | head -1 | sed 's#https://##'); [ -n "$URL" ] && break; sleep 3; done
     if [ -n "$URL" ]; then
-      msg "${G}✓ Tailscale Funnel up:${X} ${B}https://$URL${X}  (stable, valid cert, no port-forward, CGNAT-proof)"
+      msg "${G}✓ Tailscale Funnel configured on the box:${X} ${B}https://$URL${X}  (valid cert, no port-forward, CGNAT-proof)"
+      if ! wait_reachable "$URL"; then
+        msg "  ${GR}Leave it a few more minutes and open ${X}${C}https://$URL${X}${GR} in a browser. If it NEVER comes${X}"
+        msg "  ${GR}live, this box has leftover duplicate identities from earlier re-installs — a one-per-install${X}"
+        msg "  ${GR}artifact a real single setup won't hit. (Fix: persist the tailscale identity across installs.)${X}"
+      fi
       print_app_cmd "$URL"
     else
       msg "${Y}Funnel isn't serving publicly yet.${X} Confirm it's enabled at ${C}https://login.tailscale.com/admin/dns${X} ${GR}(HTTPS Certificates = on)${X},"
