@@ -317,12 +317,12 @@ _appdir(){ local root d; root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev
   for d in "$root"/*/flutter-app/selfprivacy.org.app "$root"/*/selfprivacy.org.app "$root"/selfprivacy.org.app; do
     [ -f "$d/pubspec.yaml" ] && { echo "$d"; return; }; done; }
 print_app_cmd(){ local host="$1" app; app=$(_appdir)
-  msg ""; msg "${GR}Point the app at it${X} ${GR}(run from the Flutter app dir — flutter needs its pubspec.yaml):${X}"
+  # Lead with the `./dash app` command (works from anywhere; all args explicit) — that's the launcher.
+  msg ""; msg "${GR}Open the app — from ANYWHERE (run from your dev-dashboard checkout):${X}"
+  msg "   ${B}./dash app --domain $host --token ${TOKEN:-<box-api-token>} --apex${X}"
   if [ -n "$app" ]; then
+    msg "${GR}   …or directly, without ./dash (from the Flutter app dir):${X}"
     msg "   ${B}cd $app && flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
-  else
-    msg "   ${GR}# cd into your selfprivacy.org.app checkout first, then:${X}"
-    msg "   ${B}flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
   fi
   msg "${GR}Integration test:${X}"
   msg "   ${B}./dash run L3.connect.desktop --net https --on $SETUP --ip $IP --key ${KEY/#$HOME/\~} --token ${TOKEN:-<token>}${X}"; }
