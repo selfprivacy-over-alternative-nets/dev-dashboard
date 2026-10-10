@@ -26,6 +26,7 @@ Env: results are tagged env=ci when CI or GITHUB_ACTIONS is set, else env=local.
 import argparse
 import datetime
 import hashlib
+import glob
 import json
 import os
 import re
@@ -1618,6 +1619,33 @@ def cmd_find_target(args):
             "  --env NETBOOT=auto \\", "  --env TRANSPORT=none"]) + OFF)
 
 
+def _flutter_app_dir():
+    """Find the SelfPrivacy Flutter app dir (has pubspec.yaml). None if not checked out locally."""
+    base = os.path.dirname(ROOT)   # the selfprivacy repo folder (dev-dashboard/..)
+    for pat in ("*/flutter-app/selfprivacy.org.app", "*/selfprivacy.org.app", "selfprivacy.org.app"):
+        for d in glob.glob(os.path.join(base, pat)):
+            if os.path.isfile(os.path.join(d, "pubspec.yaml")):
+                return d
+    return None
+
+
+def cmd_app(args):
+    """Launch the SelfPrivacy Flutter app against the box's PUBLIC url — works FROM ANYWHERE (the app
+    reaches the box over the public tunnel, not the LAN). Every argument is EXPLICIT and REQUIRED
+    (--domain, --token, and --apex/--no-apex): no caching, no SSH auto-resolve, no silent defaults — so
+    the printed command is fully reproducible by anyone (reqs 1, 2, 4). The ONLY thing auto-found is the
+    local Flutter checkout dir (a derived local path, like resolve_flake finds the deploy flake)."""
+    appdir = _flutter_app_dir()
+    if not appdir:
+        print(f"{RED}SelfPrivacy Flutter app not found locally (no selfprivacy.org.app/pubspec.yaml). Clone it first.{OFF}"); return
+    cmd = ["flutter", "run", "-d", "linux",
+           f"--dart-define=HTTPS_DOMAIN={args.domain}"] + (["--dart-define=HTTPS_APEX=1"] if args.apex else []) + \
+          [f"--dart-define=API_TOKEN={args.token}"]
+    print(f"{GREEN}launching the app → {BOLD}https://{args.domain}{OFF}{GREEN} (apex={args.apex}) — reachable from anywhere{OFF}")
+    print(f"{GREY}  cd {appdir} && {' '.join(cmd[:5])} … (token hidden){OFF}")
+    subprocess.run(cmd, cwd=appdir)
+
+
 def cmd_serve(args):
     import http.server
     os.chdir(ROOT)
@@ -2714,6 +2742,14 @@ def main():
     lb.add_argument("--key", help="ssh private key path (required for a box setup)")
     lb.add_argument("--token", help="box API token (required for a box setup)")
     lb.set_defaults(fn=cmd_l3_baseline)
+
+    ap = sub.add_parser("app", help="launch the Flutter app against the box's PUBLIC url (works from anywhere); ALL args explicit+required")
+    ap.add_argument("--domain", required=True, help="the box's public host, e.g. selfprivacy.<tailnet>.ts.net (single-hostname tunnel) or api.<domain>")
+    ap.add_argument("--token", required=True, help="the box API token (full value — from your setup's KeePass/notes)")
+    apx = ap.add_mutually_exclusive_group(required=True)
+    apx.add_argument("--apex", dest="apex", action="store_true", help="app talks to the apex host (single-hostname tunnel: tailscale/cloudflare-quick/ngrok/pinggy/localtunnel)")
+    apx.add_argument("--no-apex", dest="apex", action="store_false", help="app talks to api.<domain> (full real-domain stack)")
+    ap.set_defaults(fn=cmd_app)
 
     s = sub.add_parser("serve")
     s.add_argument("port", nargs="?", type=int, default=8099)
