@@ -1549,6 +1549,9 @@ def cmd_find_target(args):
                   f"Check the cable (both ends), and that the target is powered ON and in UEFI network "
                   f"boot (or a running OS) so its NIC comes up. Watch it: "
                   f"{CYAN}watch -n1 cat /sys/class/net/{DIRECT_IFACE}/carrier{OFF} (want 1).")
+            print(f"  Installing a NEW empty device over the direct cable? After the cable is linked, start "
+                  f"the netboot server (separate terminal, sudo):")
+            print(f"    {CYAN}sudo bash ~/netboot/start-netboot-server.sh{OFF}")
         elif not _srv:
             print(f"  Installing an EMPTY device over a direct cable? It only gets an IP once the "
                   f"netboot server is running. Start it (separate terminal, sudo):")
@@ -1563,11 +1566,16 @@ def cmd_find_target(args):
     for n, (m, i, src) in enumerate(cands, 1):
         tag = f"{GREEN}netbooted{OFF}" if src == "netbooted" else f"{GREY}{src}{OFF}"
         print(f"  [{n}] MAC {BOLD}{m}{OFF}  IP {i}  ({tag})")
-    if _car and not any(s == "netbooted" for _, _, s in cands):
-        # A direct-cabled target would appear as "netbooted" on 192.168.100.x — it hasn't (the list is
-        # only router-LAN devices). ALWAYS surface the sudo start command; wording depends on whether a
-        # DHCP server is actually serving.
-        if not _srv:
+    if not any(s == "netbooted" for _, _, s in cands):
+        # No direct-cable netbooted target in the list (only router-LAN devices). If you're installing a
+        # NEW empty device over the direct cable, ALWAYS surface the netboot-server command — regardless
+        # of carrier (you may not have plugged the cable in yet). Wording adapts to the carrier/server state.
+        if _car is False:
+            print(f"{AMBER}note: installing a NEW empty device over the direct cable? ({DIRECT_IFACE} has no "
+                  f"link yet.) Plug the cable into the target, start the netboot server (separate terminal, "
+                  f"sudo), then power the target into UEFI network boot — it'll appear as "
+                  f"{GREEN}netbooted{OFF}{AMBER} on 192.168.100.x:{OFF}")
+        elif not _srv:
             print(f"{RED}note: {DIRECT_IFACE} is linked but the netboot server is NOT serving (no DHCP "
                   f"on :67), so a direct-cabled target gets no IP and won't appear. Start it, then re-run:{OFF}")
         else:
