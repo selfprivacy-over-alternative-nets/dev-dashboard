@@ -1,0 +1,64 @@
+@startuml tailscale
+' Tailscale Funnel — WHO does WHAT and WHICH pieces of data move, grouped by entity.
+' Colour = entity type (see legend):
+'   blue  = HOST device (your laptop)  ⊃  white CLI  ⊃  purple CLI actions/choices
+'   orange = TARGET device (the SelfPrivacy box)
+'   gray  = Tailscale website (login.tailscale.com) — the TWO URLs you visit
+'   green = information pieces (auth key, node, name/subdomain, public URL)
+' Numbered arrows give the order. Rendered to tailscale.svg by docs/render-diagrams.sh (pinned plantuml).
+title Tailscale Funnel — entities, data pieces & flow (incl. the node-collision + Funnel checks)
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam ArrowColor #555555
+skinparam rectangle {
+  FontSize 12
+  roundCorner 8
+}
+
+rectangle "**HOST device** — your laptop" as HOST #DCE9F7;line:1565C0 {
+  rectangle "**CLI**  ./dash run install… → add-cloudflare.sh" as CLI #FFFFFF;line:555555 {
+    rectangle "choose transport:\n**2) tailscale**" as P1 #E1D5F2;line:6A1B9A
+    rectangle "**paste auth key**\nat the prompt" as P2 #E1D5F2;line:6A1B9A
+    rectangle "collision → **press ENTER**\nonce the nodes are deleted" as P3 #E1D5F2;line:6A1B9A
+    rectangle "**paste a FRESH key**\n(re-join)" as P4 #E1D5F2;line:6A1B9A
+    rectangle "**./dash app**\n~--domain … ~--token … ~--apex" as P5 #E1D5F2;line:6A1B9A
+  }
+}
+
+rectangle "**Tailscale website** — login.tailscale.com\n(browser; account owner only)" as WEB #E0E0E0;line:616161 {
+  rectangle "**/admin/settings/keys**\nGenerate auth key (sign up if new)" as WKEYS #F5F5F5;line:9E9E9E
+  rectangle "**/admin/machines**\nDelete stale nodes" as WMACH #F5F5F5;line:9E9E9E
+}
+
+rectangle "**TARGET device** — the SelfPrivacy box\nruns tailscaled + enables Funnel" as TARGET #FFE0B2;line:E65100
+
+rectangle "auth key\n**tskey-auth-…**  (single-use)" as IKEY #C8E6C9;line:2E7D32
+rectangle "**node**  (registered identity)" as INODE #C8E6C9;line:2E7D32 {
+  rectangle "name / subdomain\n**selfprivacy(-N).<tailnet>.ts.net**" as INAME #DCEDC8;line:558B2F
+}
+rectangle "public URL\n**https://selfprivacy.<tailnet>.ts.net**" as IURL #C8E6C9;line:2E7D32
+
+P1 ..> WKEYS   : **0** go get a key
+WKEYS --> IKEY : **1** generate
+IKEY --> P2    : **2** copy → paste
+P2 --> TARGET  : **3** tailscale up\n~--authkey ~--hostname=selfprivacy
+TARGET --> INODE : **4** registers\n(node holds the name)
+INAME --> P3   : **5** if **selfprivacy-N**\n(collision)
+P3 --> WMACH   : **6** open
+WMACH --> INODE : **7** delete ALL\nselfprivacy*
+P4 --> TARGET  : **8** re-join (fresh key)
+TARGET --> IURL : **9** when name =\n**selfprivacy** → Funnel on
+IURL --> P5    : **10** reach it\nfrom anywhere
+
+note bottom of WMACH
+  A brand-new account has NO nodes → no collision, steps 5-8 never happen.
+  Only a repeat-installing tester hits them. Enabling Funnel (step 9) is
+  also a one-time website step the first time.
+end note
+
+legend bottom
+  **Colour = entity** —  <back:#DCE9F7>  host (laptop)  </back>   <back:#E1D5F2>  CLI action/choice  </back>   <back:#FFE0B2>  target box  </back>   <back:#E0E0E0>  Tailscale website  </back>   <back:#C8E6C9>  data / info piece  </back>
+endlegend
+
+@enduml

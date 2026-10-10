@@ -427,9 +427,10 @@ case "$METHOD" in
     # ask for a key and register a new node. Break early on NeedsLogin (a genuinely logged-out box) so a
     # first-time install doesn't wait needlessly.
     _st=""; for _ in $(seq 1 12); do _st=$(ts_state); { [ "$_st" = Running ] || [ "$_st" = NeedsLogin ]; } && break; sleep 2; done
-    if [ "$_st" = Running ]; then
-      msg "${G}box is already on your tailnet${X} — keeping the existing session (no new auth key needed)."
-    else
+    # Prompt for + verify an auth key, re-asking until the box reaches Running (req 143). Factored into a
+    # function so the name-collision gate (req 157) can RE-JOIN after the operator deletes stale nodes.
+    # Uses the global TAILSCALE_AUTHKEY, cleared to force a fresh single-use key on each (re)join.
+    ts_join(){
       # A FRESH auth key is needed for EVERY setup: Tailscale keys are SINGLE-USE by default — consumed
       # the instant a box joins. There's no offline way to tell a spent key from a good one, so we VERIFY
       # it the only real way — by trying to join and checking the box reaches Running — and re-ask if not.
@@ -477,11 +478,47 @@ case "$METHOD" in
         msg ""
         TAILSCALE_AUTHKEY=""   # wipe the key and re-prompt in place
       done
+    }
+    if [ "$_st" = Running ]; then
+      msg "${G}box is already on your tailnet${X} — keeping the existing session (no new auth key needed)."
+    else
+      ts_join
     fi
     # Stable public name — read the box's OWN assigned name (Self is the first DNSName in the pretty-
     # printed JSON). Note Tailscale may suffix it (e.g. selfprivacy-1) if an old offline node still holds
     # the name 'selfprivacy', so don't hard-code it. Whitespace-tolerant for the same reason as ts_state.
-    TSHOST=$(box "$TS --socket=$SOCK status --json 2>/dev/null" | sed -nE 's/.*"DNSName"[[:space:]]*:[[:space:]]*"([^"]+)\.".*/\1/p' | head -1)
+    ts_name(){ box "$TS --socket=$SOCK status --json 2>/dev/null" | sed -nE 's/.*"DNSName"[[:space:]]*:[[:space:]]*"([^"]+)\.".*/\1/p' | head -1; }
+    # ts_name returns the FULL MagicDNS name (e.g. selfprivacy.tail6ab1a9.ts.net) — right for the URL, but
+    # the collision check must compare only the FIRST LABEL (the hostname Tailscale may suffix): clean =
+    # 'selfprivacy', collision = 'selfprivacy-9'. Comparing the whole name would NEVER equal 'selfprivacy'
+    # and loop forever even when the name is already clean (fixed 2026-10-11).
+    TSHOST=$(ts_name); TSLABEL="${TSHOST%%.*}"
+    # req 157: BLOCK until the box got the CLEAN name 'selfprivacy' (not selfprivacy-N). A dead node from
+    # an earlier install still owning the base name is the ONLY cause of a suffix; a brand-new account has
+    # none, so this is INVISIBLE to a real new user — only a repeat-installing tester hits it. We only
+    # DETECT + GUIDE the manual deletion (no API key, no auto-delete, req 156); then re-join to claim it.
+    # Loop re-asks forever until the name is clean (interactive) — a bad/no-op answer never ends it; a
+    # non-interactive run can't delete nodes for a human, so it names the fix and stops (req 142).
+    while [ -n "$TSLABEL" ] && [ "$TSLABEL" != selfprivacy ]; do
+      msg ""
+      msg "${Y}${B}── the name ${C}$TSLABEL${Y}${B} is a leftover-node collision ──${X}"
+      msg "  A dead node from an earlier install still owns ${B}selfprivacy${X}, so Tailscale named this box"
+      msg "  ${B}$TSLABEL${X}. For a clean, stable URL, delete the leftover node(s) — then I'll re-claim it:"
+      msg "  ${B}1.${X} On ${B}this laptop${X} open ${C}https://login.tailscale.com/admin/machines${X}"
+      msg "  ${B}2.${X} Delete ${B}ALL${X} machines named ${B}selfprivacy${X} / ${B}selfprivacy-N${X} — ${B}including this ${C}$TSLABEL${X} (row menu → ${B}Delete${X})."
+      msg "     ${GR}A brand-new Tailscale account has none of these; only repeated re-installs create them.${X}"
+      if [ "$INTERACTIVE" != 1 ]; then
+        msg "${Y}non-interactive: delete the leftover ${B}selfprivacy*${X}${Y} node(s) at the URL above, then re-run this exact command.${X}"
+        break
+      fi
+      ask "  ▸ press ENTER once you've deleted them — I'll re-join and VERIFY the clean name: " >/dev/null
+      msg "${GR}re-joining to claim ${B}selfprivacy${X}${GR} (needs a FRESH single-use key — the last one is now spent) …${X}"
+      box "$TS --socket=$SOCK logout" >/dev/null 2>&1 || true   # drop the stale local identity so it re-registers fresh
+      TAILSCALE_AUTHKEY=""                                      # force a fresh key (explicit, never reused — req 155)
+      ts_join
+      TSHOST=$(ts_name); TSLABEL="${TSHOST%%.*}"
+    done
+    [ "$TSLABEL" = selfprivacy ] && msg "${G}✓ clean name:${X} ${B}$TSHOST${X}"
     # Turn Funnel on. Enabling Funnel is a ONE-TIME, browser-based approval that ONLY the tailnet owner
     # can give — it can't be done with the auth key or any CLI flag. So: try to start Funnel; if the
     # tailnet doesn't have it on yet, `tailscale funnel` prints the EXACT pre-filled enable URL for THIS

@@ -98,3 +98,18 @@ Product direction: **auto-detect and tier** — try direct IPv6, else Cloudflare
 
 eu.org is the only free source delegable to Cloudflare (tunnel route); DuckDNS/afraid are the free
 sources for the IPv6-direct / port-forward routes. See `tools/add-cloudflare.sh` for the implementations.
+
+
+# Tailscale Funnel — how the box gets its public name
+
+The Tailscale route gives a FREE, CGNAT-proof `https://<name>.ts.net` with a valid cert. The name is not
+random: it is **your hostname** (`selfprivacy`) + **your tailnet** (`<tailnet>.ts.net`, fixed to your
+account). You create an account, generate a **single-use auth key** (`tskey-auth-…`) and paste it in — that
+is the only key needed (an **API key** is only for deleting nodes by script, which we don't do; delete by
+hand in the browser). Two one-time, account-level things can block a clean result and the install checks
+both before continuing: a **stale node** still owning the `selfprivacy` name (→ you get `selfprivacy-N`), and
+**Funnel/HTTPS not yet enabled**. A brand-new user's account is empty, so neither triggers for them — only a
+repeat-installing tester hits the stale-node case (delete all `selfprivacy*` at admin/machines).
+
+![Tailscale Funnel — getting the box a public https URL, plus the stale-node and Funnel/HTTPS checks](docs/tailscale.svg)
+<!-- source: docs/tailscale.puml → rendered to docs/tailscale.svg by docs/render-diagrams.sh (edit the .puml, not the .svg) -->
