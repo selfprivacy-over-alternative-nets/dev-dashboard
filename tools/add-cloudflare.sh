@@ -31,7 +31,7 @@ set -uo pipefail
 
 PLAN=0; KEY=""; IP=""; METHOD=""; DOMAIN_KIND=""; DOMAIN=""; CF_MODE=""; NGROK_TOKEN=""; CF_TUNNEL_TOKEN=""
 PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""; TAILSCALE_AUTHKEY=""
-DEFAULT_DOMAIN=""; SETUP="${SP_SETUP:-lan-setup-0a}"
+DEFAULT_DOMAIN=""; SETUP="${SP_SETUP:-lan-setup-0a}"; EXPERT_MODE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)           PLAN=1;            shift 1;;
@@ -51,6 +51,7 @@ while [ $# -gt 0 ]; do
     --tailscale-authkey) TAILSCALE_AUTHKEY="$2"; shift 2;;  # Tailscale auth key (tskey-auth-…) for Funnel
     --default-domain) DEFAULT_DOMAIN="$2"; shift 2;;  # suggested domain (plan only)
     --setup)          SETUP="$2";        shift 2;;
+    --expert-mode)    EXPERT_MODE=1;      shift 1;;   # show the FULL method menu instead of the recommended default
     -h|--help)        sed -n '2,38p' "$0"; exit 0;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -182,10 +183,33 @@ run_wizard(){
   done
 }
 
+# Non-expert DEFAULT: recommend the ONE proven, always-free, always-works, ZERO-config path — Tailscale
+# Funnel. It needs no autodetection because it works on ANY network (incl. CGNAT / a router you don't
+# control) with only outbound internet. We deliberately do NOT auto-pick the others: the method is chosen
+# BEFORE the box exists (req 132), so a box's public IPv6 (ipv6+duckdns) is only knowable post-install
+# (req 140), and true inbound :443 reachability (router) can't be tested from behind the NAT without an
+# external probe. So we default to the universal path and expose the full list under --expert-mode. (For
+# now the only OTHER proven path we point at is ipv6+duckdns, surfaced when THIS machine has IPv6.)
+recommend_method(){
+  METHOD=tailscale; DOMAIN=""; DOMAIN_KIND=none
+  msg ""
+  msg "  ${G}▸ Using ${B}Tailscale Funnel${X}${G} — the proven free path that works on ANY home network:${X}"
+  msg "    ${GR}no port-forward, no router admin, no paid domain; reachable from anywhere (CGNAT-proof).${X}"
+  if curl -6 -s --max-time 4 https://api6.ipify.org >/dev/null 2>&1; then
+    msg "    ${GR}(This machine has IPv6 — a decentralised ${X}${B}ipv6 + DuckDNS${X}${GR} path is also proven, IF the box${X}"
+    msg "    ${GR} also gets public IPv6 on its final network. Choose it with ${X}${B}--expert-mode${X}${GR}.)${X}"
+  fi
+  msg "    ${GR}Want a different method? Re-run with ${X}${B}--expert-mode${X}${GR} for the full list.${X}"
+  msg ""
+}
+
 # ══ shared question phase (Q3 transport first — it governs how the domain is handled) ══════════════
 say "public reachability — how will the box be reached from the internet?"
 WIZARD_DONE=0
-if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then run_wizard; WIZARD_DONE=1; fi
+if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then
+  if [ "$EXPERT_MODE" = 1 ]; then run_wizard; else recommend_method; fi
+  WIZARD_DONE=1
+fi
 METHOD=$(need "$METHOD" --method "transport (cloudflare|tailscale|ipv6|ngrok|pinggy|localtunnel|router|none): ")
 
 # domain, TAILORED to the method (non-interactive / flag-driven path; the interactive wizard above

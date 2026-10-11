@@ -18,8 +18,16 @@ left to right direction
 rectangle "**Visitor**\nphone / laptop,\nanywhere" as V
 rectangle "**device B**\nSelfPrivacy backend :443\n(Host-routed vhosts)" as B #EEF3FB
 
-rectangle "**Tunnel relay**  (B dials OUT)\n**gives a FREE host:** cloudflare-quick /\nngrok / pinggy / localtunnel\n   → random *.trycloudflare.com, *.loca.lt …\n**named Cloudflare tunnel:** you bring your OWN domain" as T #F7E7A6
-rectangle "**DuckDNS** (free)\ngives you  name.duckdns.org\n(no domain to buy)\nsets AAAA / A" as DD #CDEBC5
+rectangle "**Tunnel relay**  (B dials OUT — centralised, CGNAT-proof)" as T #F7E7A6 {
+  rectangle "**Tailscale** Funnel\nstable *.ts.net, valid cert\n(recommended default)" as T_TS #FFF3C4
+  rectangle "**Cloudflare**\nquick *.trycloudflare.com\nOR named (your domain, all 5)" as T_CF #FFF3C4
+  rectangle "**ngrok**\n*.ngrok-free.app" as T_NG #FFF3C4
+  rectangle "**Pinggy**\n*.pinggy.link (~60 min free)" as T_PG #FFF3C4
+  rectangle "**LocalTunnel**\n*.loca.lt" as T_LT #FFF3C4
+}
+' DuckDNS is NOT a tunnel — it is dynamic DNS that publishes an AAAA at the box's OWN public IPv6;
+' the visitor connects DIRECTLY (no relay). That is why it is decentralised (score D), unlike the relays.
+rectangle "**DuckDNS** (free) — direct IPv6, NOT a tunnel\ngives you  name.duckdns.org\n(no domain to buy)\nsets AAAA → B's own IPv6" as DD #CDEBC5
 rectangle "**Registrar / DNS host**\ne.g. theory7\nA / AAAA / NS" as REG
 rectangle "**Router R**\nforward :443" as R
 

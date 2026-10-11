@@ -51,6 +51,12 @@ P4 --> TARGET  : **8** re-join (fresh key)
 TARGET --> IURL : **9** when name =\n**selfprivacy** → Funnel on
 IURL --> P5    : **10** reach it\nfrom anywhere
 
+' Order the USER meets the CLI prompts (dashed purple). P3+P4 happen ONLY on a name collision.
+P1 -[#6A1B9A,dashed]-> P2 : then
+P2 -[#6A1B9A,dashed]-> P3 : if\ncollision
+P3 -[#6A1B9A,dashed]-> P4 : then
+P4 -[#6A1B9A,dashed]-> P5 : once\nclean
+
 note bottom of WMACH
   A brand-new account has NO nodes → no collision, steps 5-8 never happen.
   Only a repeat-installing tester hits them. Enabling Funnel (step 9) is

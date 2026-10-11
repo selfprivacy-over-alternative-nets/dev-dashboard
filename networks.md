@@ -113,3 +113,15 @@ repeat-installing tester hits the stale-node case (delete all `selfprivacy*` at 
 
 ![Tailscale Funnel — getting the box a public https URL, plus the stale-node and Funnel/HTTPS checks](docs/tailscale.svg)
 <!-- source: docs/tailscale.puml → rendered to docs/tailscale.svg by docs/render-diagrams.sh (edit the .puml, not the .svg) -->
+
+
+# CLI flow — which questions each method asks, and what it creates
+
+The decision the installer walks you through: pick the device, choose how the box is reached from the
+internet (default **tailscale**, or `--expert-mode` for the full menu), answer that method's questions,
+then install → finish → launch the app. Each public-reachability method is a sub-flow (what you type and
+what gets created), composed into one view; same colour key as the Tailscale diagram above (purple = a CLI
+step, gray = a website step, orange = on the target box, green = what's created).
+
+![CLI flow — the questions per public-reachability method and what each creates](docs/cli-flow.svg)
+<!-- source: docs/cli-flow.puml → rendered to docs/cli-flow.svg by docs/render-diagrams.sh (edit the .puml, not the .svg) -->

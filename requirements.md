@@ -542,3 +542,105 @@
    (HttpClient does NOT do the TLS/SNI upgrade on a connectionFactory socket). The `/etc/hosts` IPv4 pin
    used while chasing this was unnecessary and removed. **Lesson: reproduce + confirm the root cause before
    writing the fix** (reinforces req 162: evidence, not assumptions).
+
+## Public-reachability: recommended default vs expert choice
+164. **Default (non-expert) public reachability = the ONE proven, zero-config, always-works path (Tailscale
+   Funnel); `--expert-mode` exposes the full method menu.** A non-technical user must not face an 8-way
+   choice. `add-cloudflare.sh` defaults to recommending **Tailscale Funnel** — it needs NO autodetection
+   because it works on ANY network (CGNAT / double-NAT / a router you don't control) with only outbound
+   internet. `--expert-mode` shows the full list (cloudflare/tailscale/ipv6/ngrok/pinggy/localtunnel/router/
+   none). **Why a full auto-pick of "the best path" is NOT possible up front:** the method is chosen BEFORE
+   the box exists (req 132), so a box's public IPv6 (the `ipv6`+DuckDNS path) is only knowable post-install
+   (req 140), and true inbound :443 reachability (the `router` path) can't be tested from behind the NAT
+   without an EXTERNAL probe. So those can't be reliably recommended up front. For now the only OTHER proven
+   path, **ipv6+DuckDNS**, is SURFACED (not auto-picked) when the operator's own machine has IPv6. Future
+   enhancement: post-install, detect the box's IPv6 (req 140 already probes it) and OFFER switching to the
+   decentralised ipv6+DuckDNS path. The `--expert-mode` flag currently lives on `add-cloudflare.sh`; thread
+   it through `resolve_flake.sh`/`dash` so an expert can choose during `find-target` too (follow-up).
+
+## Diagram conventions & CLI-flow visualisation
+165. **Every setup/flow diagram uses ONE shared colour convention; and `networks.md` carries a CLI-flow
+   diagram composing the per-method sub-flows.** Colour key (established by the Tailscale Funnel diagram
+   `docs/tailscale.svg`, reused everywhere): **blue** = the host / laptop and its CLI container; **purple**
+   = a CLI action/choice the user makes; **gray** = a website/browser step; **orange** = something that
+   happens on the target box; **green** = an information piece / what gets CREATED (auth key, node, name,
+   public URL, `.onion`). `docs/cli-flow.svg` (embedded in `networks.md`) shows WHICH questions the user is
+   asked for EACH public-reachability method and WHAT each creates — a composition of the per-method
+   sub-flows (tailscale, ipv6+DuckDNS, cloudflare quick/named, ngrok, pinggy, localtunnel, router, none)
+   between the common head (`find-target` → reachability choice) and tail (network-setup → install →
+   finish → `./dash app`); the tailscale sub-flow's full entity view is the standalone `tailscale.svg`.
+   `docs/tunneling.svg` shows the reachability ROUTES (the Tunnel-relay box holds one sub-box per provider:
+   Tailscale/Cloudflare/ngrok/Pinggy/LocalTunnel; DuckDNS-over-IPv6 is NOT a tunnel — direct IPv6, no
+   relay, so it is a separate route). All diagrams render deterministically via `docs/render-diagrams.sh`
+   (pinned plantuml; edit the `.puml`, never the `.svg`); the pre-commit hook + CI enforce they are current.
+
+## CLI-flow diagram requirements (`docs/cli-flow.puml`) — tracked, extend as specified
+166. **The CLI-flow diagram is a numbered, sovereign-first reachability decision tree** (reuses the
+   `setup-flow.puml` intelligence). Running list of its requirements:
+   1. **Every step is NUMBERED** so it can be referenced/edited precisely: `[0]` find-target, `[0b]`
+      host-IPv6 detect, `[S1]` onion, `[A.1..A.3]`, `[B.0..B.6]`, `[C1..C4]`. (Say "edit A.2" / "add B.7".)
+   2. **Fully-sovereign options (your own infra, NO third-party relay) are listed FIRST and coloured
+      ORANGE with a ⚠** — `.onion` (S1), router port-forward (A.1), direct IPv6 (A.2, B.6). NB: orange here
+      = "sovereign", which DIFFERS from `tailscale.svg` where orange = the target box (documented per-diagram
+      in each legend). [if you want one unified colour scheme across diagrams, say so.]
+   3. **Port-forward carries explicit warnings:** it is ⚠ difficult; and **the 5 DNS A-records are entered
+      DIFFERENTLY at each registrar**.
+   4. **`[0b]` auto-detects whether THIS host has working IPv6**; if yes, the direct-IPv6 options are
+      surfaced first. The host is only a HINT — the BOX's own IPv6 is re-verified post-install (req 140).
+   5. **Structured as A (I already have my own domain) vs B (I don't).** A: port-forward (A.1) / direct
+      IPv6 via your registrar's AAAA (A.2) / Cloudflare NAMED tunnel (A.3). B: get a free domain (B.0:
+      nic.eu.org delegable but ⚠ ~days approval, or DuckDNS/afraid instant A/AAAA-only) / Tailscale default
+      (B.1) / cf-quick (B.2) / ngrok (B.3) / pinggy (B.4) / localtunnel (B.5) / DuckDNS+direct-IPv6 (B.6).
+   6. **Facts the diagram must state (verified 2026-10-11):** Tailscale Funnel can NOT serve your own domain
+      (cert/SNI is `*.ts.net`); "DuckDNS without port-forward" is really **direct IPv6** (AAAA) — DuckDNS is
+      only a free-NAME provider, so with your own domain you set the AAAA at your own registrar; whether
+      port-forward is even possible is auto-checked via **CGNAT detection** (public IP vs WAN / `100.64/10`;
+      true inbound still needs an external probe).
+   7. Same shared colour key as req 165 otherwise (purple = CLI step, gray = website step, green = created).
+   8. **CORRECTION to item 2 (orange):** orange now means **the TARGET device** (consistent with
+      `tailscale.svg`), NOT sovereign — because this diagram now also draws the target. Sovereign options are
+      instead **listed FIRST and marked ⚠** (no orange fill).
+   9. **Containment:** a big **HOST** box (blue = your laptop) holds ONE box **per terminal** — Terminal 1 =
+      the `sudo ~/netboot/start-netboot-server.sh` server you START FIRST and leave running; Terminal 2 =
+      the `./dash` CLI holding the question + input boxes. The **TARGET device** is a separate orange box;
+      arrows show Terminal 1 netbooting it over the direct cable and it appearing as a find-target candidate
+      (by MAC). ALL CLI steps + the sudo command run on the HOST.
+   10. **Every question has an INPUT box to its RIGHT** showing the allowed input: a range (`[1..n]`,
+      `[1-8]`, `[1-4]`), a yes/no (`[y/N]`), or a format (`tskey-auth-…`, `<label.example.org>`, `<SSID>` +
+      `<password, 8..63 chars>`, `--domain <host> --token <token> --apex`). Values unknown a-priori (the box
+      LAN IP, the candidate MACs/IPs) are shown as **examples / `<placeholder>`**.
+   11. **`[0]` find-target shows the candidate list** to pick from (`[1] MAC… · IP…`) and the printed
+      Terminal-1 sudo command; **`[0b]` is a yes/no decision** (host IPv6? → yes: direct-IPv6 offered first /
+      no: relay · .onion).
+   12. **The flow is chained question → (answer) → next question** down to the green "public URL + .onion
+      ready" outcome.
+   13. **Colours in this diagram:** blue = host · white = terminal · purple = a question · **yellow = the
+      INPUT you give** · orange = the target device · green = what's created.
+   14. **After `[0b]` the flow BRANCHES into a method tree:** `[1.Y]` host-has-IPv6 → direct-IPv6 (1.Y.A ⚠
+      sovereign) · DuckDNS+IPv6 (1.Y.B ⚠) · Tailscale (1.Y.C) · relays CF/ngrok/pinggy/localtunnel (1.Y.D);
+      `[1.N]` no-IPv6 → IPv4 port-forward (1.N.A ⚠) · Tailscale (1.N.B, recommended) · relays (1.N.C). Each
+      method node carries its sub-question inline. Relays are dual-stack (so they appear in BOTH branches);
+      direct-IPv6 & DuckDNS-IPv6 REQUIRE IPv6 (1.Y only). A `[1.Y-check]` node sits AFTER `[Q2]` — see items 15-17 + req 167.
+   15. **The method options are stacked VERTICALLY WITHIN each branch box.** `[1.Y]` and `[1.N]` are
+      ENCLOSING boxes (restored); their options (`1.Y.A..D` / `1.N.A..C`) run top-to-bottom INSIDE each box,
+      never side-by-side — forced via hidden layout edges. The two branch boxes themselves may sit
+      side-by-side. Vertical spacing minimised (`skinparam ranksep`). A yellow INPUT box to the right of
+      its question is also permitted.
+   16. **`[1.Y-check]` is placed AFTER `[Q2]`** (it depends on the chosen network) and BRANCHES: **back to
+      `[1.Y]`** (re-pick a method) or **forward to run-it-now**. OPTIONAL — only for a 1.Y IPv6 method with
+      `[Q2]` = 0c/0d (a different network).
+   17. **`[Q2]` lists its real options:** 0a cable→R (no wifi) · 0b cable→R + wifi→R (SAME router) · 0c
+      cable→R + wifi→B (a DIFFERENT router) · 0d wifi-only (cable removed). (0b/0c corrected 2026-10-11.)
+
+## IPv6 must be verified on the TARGET, not assumed from the host
+167. **An IPv6-requiring method must be verified against the target's ACTUAL network — up-front AND
+   post-boot — never assumed from the host's IPv6.** The `[0b]` host-IPv6 detection is only a HINT: the host
+   may be on a different network than the box's final one (`lan-setup-0c` = other wifi, `0d` = wifi-only).
+   (a) **Up-front:** if an IPv6-only method (direct-IPv6 / DuckDNS+IPv6) is chosen AND `[Q2]` places the
+   target on a DIFFERENT network than this host, PROMPT **"ARE YOU SURE THE TARGET WILL ALSO HAVE IPV6?"**
+   before installing. (b) **Post-boot (regardless of that answer):** after the box reboots onto its final
+   network with internet, it SELF-VERIFIES a global IPv6 (`net_lib.sh box_global_ipv6`, req 140); if an
+   IPv6-requiring method was chosen but no global IPv6 is present, it prints a clear **"NO IPV6"** error —
+   not a silent failure and not a generic "unreachable". Extends req 137 (the `ipv6` method already
+   fails-fast when the box lacks v6) with the explicit host≠target warning + the named NO-IPV6 post-boot
+   error. (Script wiring of the prompt + the named error is a follow-up; the detection already exists.)

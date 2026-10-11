@@ -1,0 +1,97 @@
+@startuml cli-flow
+' CLI flow — NUMBERED, with per-question INPUT boxes (right of each question), host/terminal/target
+' containment, and after [0b] a BRANCHING METHOD TREE: [1.Y] host HAS IPv6 vs [1.N] no IPv6, each with its
+' compatible methods, each method with its sub-question (input shown inline for the tree leaves to keep it
+' readable). Reuses setup-flow.puml. Colour: blue=host · white=terminal · purple=a question/choice ·
+' yellow=the INPUT you give · orange=the TARGET device · green=what's created. Sovereign (no relay) marked ⚠.
+' Rendered to cli-flow.svg by docs/render-diagrams.sh (pinned plantuml; edit the .puml, not the .svg).
+title CLI flow — find-target, the IPv6 split, and the reachability method tree (numbered)
+
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+skinparam defaultFontSize 11
+skinparam ArrowColor #555555
+skinparam ranksep 12
+skinparam nodesep 16
+skinparam rectangle {
+  roundCorner 6
+}
+
+rectangle "**TARGET device** — the box you're installing\nboot it in UEFI network mode → it shows its **MAC**" as TARGET #FFE0B2;line:E65100
+
+rectangle "**HOST device — your laptop**  (ALL the steps below run HERE)" as HOST #DCE9F7;line:1565C0 {
+  rectangle "**Terminal 1** — netboot server · START FIRST, leave RUNNING\n(find-target PRINTS this when no cabled target is seen yet)" as T1 #FFFFFF;line:555555 {
+    rectangle "sudo bash &#126;/netboot/start-netboot-server.sh" as T1CMD #E1D5F2;line:6A1B9A
+  }
+  rectangle "**Terminal 2** — the ./dash CLI" as T2 #FFFFFF;line:555555 {
+
+    rectangle "**[0] ./dash find-target**\nlists candidates:  [1] MAC d8:cb:… · IP 192.168.100.50 (netbooted)\n[2] MAC … · IP 192.168.1.x — pick the MAC on the TARGET's screen" as Q0 #E1D5F2;line:6A1B9A
+    rectangle "input\n**[number 1..n]**\n(or n = cancel)" as I0 #FFF9C4;line:F9A825
+
+    rectangle "**[0b]** auto-detect: does THIS host have working IPv6?" as Q0b #E1D5F2;line:6A1B9A
+
+    rectangle "**[1.Y] YES — host has IPv6**  (pick ONE — sovereign first)" as BY #E1D5F2;line:6A1B9A {
+      rectangle "**[1.Y.A]** ⚠ router / DIRECT IPv6 — AAAA → box IPv6 (open firewall, NO relay)\nsub: enter **<your-domain>** (set the AAAA at your registrar)" as YA #E1D5F2;line:6A1B9A
+      rectangle "**[1.Y.B]** ⚠ DuckDNS + IPv6 — AAAA → box IPv6 (free name, NO relay)\nsub: **<name>.duckdns.org**  [+ DuckDNS token]" as YB #E1D5F2;line:6A1B9A
+      rectangle "**[1.Y.C]** Tailscale Funnel → *.ts.net (dual-stack; relay)\nsub: paste **auth key** (tskey-auth-…)" as YC #E1D5F2;line:6A1B9A
+      rectangle "**[1.Y.D]** relays: Cloudflare / ngrok / pinggy / localtunnel (outbound; v6 or v4)\nsub: per relay — domain / token (see B.* in req 166)" as YD #E1D5F2;line:6A1B9A
+    }
+    rectangle "**[1.N] NO — host has no IPv6**  (IPv4 only — pick ONE)" as BN #E1D5F2;line:6A1B9A {
+      rectangle "**[1.N.A]** ⚠ router port-forward :443 (needs PUBLIC IPv4, NOT CGNAT — auto-checked)\nsub: **<your-domain>** + 5 DNS A-records ⚠ (differ per registrar)" as NA #E1D5F2;line:6A1B9A
+      rectangle "**[1.N.B]** Tailscale Funnel → *.ts.net (IPv4; CGNAT-proof; RECOMMENDED)\nsub: paste **auth key** (tskey-auth-…)" as NB #E1D5F2;line:6A1B9A
+      rectangle "**[1.N.C]** relays: Cloudflare / ngrok / pinggy / localtunnel (outbound IPv4)\nsub: per relay — domain / token" as NC #E1D5F2;line:6A1B9A
+    }
+
+    rectangle "**[1.Y-check]** (OPTIONAL — only if a 1.Y IPv6 method was chosen AND [Q2] = 0c/0d, a different network)\n⚠ host IPv6 ≠ target IPv6! → ask **ARE YOU SURE THE TARGET WILL HAVE IPV6?**\n**not sure** → back to [1.Y] (re-pick a method)   ·   **yes** → run it now\n(the box ALSO re-checks after boot — prints **NO IPV6** if a v6-only method has none; req 167)" as YCHK #FFF9C4;line:F9A825
+
+    rectangle "**[Q2] network setup?** — how the box gets online AFTER install:\n**0a** cable → router R (no wifi)\n**0b** cable → R  +  wifi → R (same router)\n**0c** cable → R  +  wifi → B (a DIFFERENT router)\n**0d** wifi-only (cable removed)" as Q2 #E1D5F2;line:6A1B9A
+    rectangle "input\n**[1-4]**; if wifi: **<SSID>** + **<password 8..63>**" as I2 #FFF9C4;line:F9A825
+
+    rectangle "**run it now?**" as QR #E1D5F2;line:6A1B9A
+    rectangle "input **[y/N]**" as IR #FFF9C4;line:F9A825
+
+    rectangle "**[C3] finish** — type the box LAN IP; added the 5 DNS records? (port-forward only)" as QF #E1D5F2;line:6A1B9A
+    rectangle "input\n**<192.168.x.x>** (ex.) · **[y/N]**" as IF #FFF9C4;line:F9A825
+
+    rectangle "**[C4] ./dash app**" as QA #E1D5F2;line:6A1B9A
+    rectangle "input\n~--domain <host> ~--token <token> ~--apex" as IA #FFF9C4;line:F9A825
+  }
+}
+
+rectangle "**public URL + .onion ready** → the app connects from anywhere" as QEND #C8E6C9;line:2E7D32
+
+T1CMD ..> TARGET : netboot over the cable
+TARGET ..> Q0 : appears as a candidate (MAC)
+
+' stack the method options vertically within each branch (one below the other, not side-by-side)
+' stack the options VERTICALLY within each branch box (one below the other, never side-by-side)
+YA -[hidden]down-> YB
+YB -[hidden]down-> YC
+YC -[hidden]down-> YD
+NA -[hidden]down-> NB
+NB -[hidden]down-> NC
+
+Q0 -right-> I0
+Q2 -right-> I2
+QR -right-> IR
+QF -right-> IF
+QA -right-> IA
+
+Q0 --> Q0b
+Q0b --> BY : **yes**
+Q0b --> BN : **no**
+BY --> Q2
+BN --> Q2
+Q2 --> YCHK
+YCHK --> BY : not sure →\nre-pick a method
+YCHK --> QR : OK →\nrun it now
+QR ..> QF : after install
+QF --> QA
+QA --> QEND
+
+legend bottom
+  <back:#DCE9F7>  </back> host   <back:#FFFFFF>  </back> a terminal   <back:#E1D5F2>  </back> a question/choice   <back:#FFF9C4>  </back> the INPUT you give / a check   <back:#FFE0B2>  </back> the TARGET device   <back:#C8E6C9>  </back> created
+  Numbered for precise edits ("edit 1.Y.B"). ⚠ = fully-sovereign (no relay) or a caution. Tree-leaf inputs are inline (separate input boxes only for the linear steps, to stay readable). Default = 1.*.B/C Tailscale.
+endlegend
+
+@enduml
