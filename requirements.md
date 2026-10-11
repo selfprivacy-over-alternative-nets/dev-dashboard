@@ -517,12 +517,28 @@
    (`DnsProvider.NONE`).** For this instance/user the shown domain must be the live funnel URL
    **`https://selfprivacy.<tailnet>.ts.net`** (e.g. `https://selfprivacy.tail6ab1a9.ts.net`). "No DNS
    provider to manage" must degrade to "nothing to configure here", NOT to a blank/greyed Domain box.
-161. **Clicking that domain MUST SHOW THE LIST OF SERVICES — regardless of whether DNS is available — and
-   NEVER an infinitely-loading screen.** The service list/status loads over the API
-   (`services.allServices`) and does not depend on DNS; a missing DNS provider must not block or hang the
-   services view.
+161. **On the Domain & DNS screen (Providers → Domain and DNS) the per-service required-DNS-records
+   section — the `Services` / `Emails` / `Other` categories under "Type 'A' records required for each
+   service" — MUST RENDER, never skeleton-load forever.** For a tunnel / provider-NONE setup
+   `requiredDnsRecords` is `[]` (nothing to create), so this section must resolve to an empty / "no records
+   needed" state, NOT perpetual loading placeholders. (CONFIRMED via screenshot 2026-10-11: the domain
+   header shows the funnel URL `selfprivacy.tail6ab1a9.ts.net` and "Records are OK" renders — req 160 met —
+   but this required-records list is stuck on grey skeleton bars. handover13's "app needs NO change" claim
+   was wrong for this section. The left-nav **Services** tab, driven by `services.allServices`, loads fine;
+   this is specifically the Domain & DNS records list when there are zero required records.)
 162. **Both outcomes MUST BE CONFIRMED VISUALLY** — a screenshot of the running app showing (a) the domain
    and (b) the services list populated. **Logs / backend GraphQL probes are NOT sufficient evidence** —
    they have produced false positives. A "pass" requires the pixels, not just a 200 from `/graphql`. If a
    failure is only tunnel-propagation latency (the public `.ts.net` address not live yet), say so
    explicitly and distinguish it from an app/backend bug.
+163. **The app connects over a single-hostname tunnel on an IPv4-only client — and it DOES, no fix
+   needed.** Tailscale Funnel publishes BOTH AAAA (IPv6) + A (IPv4). VERIFIED 2026-10-11 with a standalone
+   Dart test: the default `HttpClient` returns **HTTP 200 in ~700ms** when AAAA+A both resolve on this
+   IPv4-only laptop — it falls back from the unreachable IPv6 to the working IPv4 by itself. **Correction of
+   an earlier wrong diagnosis in this file's history:** the original "Network is unreachable (errno 101) /
+   Domain grayed / lists spin" was because the **funnel was not publicly live yet** (propagation —
+   `wait_reachable` was still timing out; reqs 150/162), NOT an app fallback failure. An attempted
+   `connectionFactory` IPv4-forcing change was tried and **REVERTED** — a Dart test proved it broke TLS
+   (HttpClient does NOT do the TLS/SNI upgrade on a connectionFactory socket). The `/etc/hosts` IPv4 pin
+   used while chasing this was unnecessary and removed. **Lesson: reproduce + confirm the root cause before
+   writing the fix** (reinforces req 162: evidence, not assumptions).
