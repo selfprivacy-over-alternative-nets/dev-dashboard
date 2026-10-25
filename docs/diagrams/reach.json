@@ -1,0 +1,49 @@
+{
+  "edges": [],
+  "meta": {
+    "parent": "overview",
+    "title": "Make it reachable"
+  },
+  "nodes": [
+    {
+      "childDiagram": "",
+      "color": "created",
+      "h": 56,
+      "id": "ts",
+      "label": "Tailscale Funnel\n(default)",
+      "w": 190,
+      "x": 80,
+      "y": 80
+    },
+    {
+      "childDiagram": "",
+      "color": "created",
+      "h": 56,
+      "id": "cf",
+      "label": "Cloudflare tunnel",
+      "w": 190,
+      "x": 80,
+      "y": 180
+    },
+    {
+      "childDiagram": "",
+      "color": "note",
+      "h": 56,
+      "id": "v6",
+      "label": "Direct IPv6 + DuckDNS",
+      "w": 210,
+      "x": 80,
+      "y": 280
+    },
+    {
+      "childDiagram": "",
+      "color": "note",
+      "h": 56,
+      "id": "onion",
+      "label": ".onion (always on)",
+      "w": 190,
+      "x": 80,
+      "y": 380
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "edges": [
+    {
+      "from": "pick",
+      "id": "e1",
+      "label": "",
+      "to": "anywhere"
+    },
+    {
+      "from": "anywhere",
+      "id": "e2",
+      "label": "",
+      "to": "finish"
+    }
+  ],
+  "meta": {
+    "parent": "overview",
+    "title": "Install the box"
+  },
+  "nodes": [
+    {
+      "childDiagram": "",
+      "color": "cli",
+      "h": 80,
+      "id": "pick",
+      "label": "Pick method:\nnetboot / USB / VM",
+      "w": 190,
+      "x": 60,
+      "y": 160
+    },
+    {
+      "childDiagram": "",
+      "color": "target",
+      "h": 72,
+      "id": "anywhere",
+      "label": "nixos-anywhere\n(push closure)",
+      "w": 190,
+      "x": 330,
+      "y": 160
+    },
+    {
+      "childDiagram": "",
+      "color": "created",
+      "h": 72,
+      "id": "finish",
+      "label": "finish_box_setup",
+      "w": 180,
+      "x": 600,
+      "y": 160
+    }
+  ]
+}

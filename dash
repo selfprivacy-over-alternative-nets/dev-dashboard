@@ -1656,9 +1656,50 @@ def cmd_app(args):
 
 def cmd_serve(args):
     import http.server
+    import urllib.parse
     os.chdir(ROOT)
     port = args.port
     host = os.environ.get("DASH_HOST", "127.0.0.1")  # loopback by default; serves logs/media so don't expose on untrusted wifi. Set DASH_HOST=0.0.0.0 to share intentionally.
+
+    # The flow-diagram editor (flow.html) saves back to docs/diagrams/*.json via a POST endpoint so
+    # Claude and the user share ONE source of truth (flow_requirements.md FR8-FR10). Writing is a
+    # LOCALHOST-ONLY capability: enabled when we bind loopback; if DASH_HOST=0.0.0.0 (intentional
+    # share) it stays OFF unless DASH_ALLOW_REMOTE_EDIT=1, so a writable editor is never exposed on
+    # untrusted wifi (FR22-FR23). The public GitHub-Pages build ships no endpoint at all (static).
+    loopback = host.startswith("127.") or host in ("localhost", "::1")
+    writable = loopback or os.environ.get("DASH_ALLOW_REMOTE_EDIT") == "1"
+    DIAG = os.path.join(ROOT, "docs", "diagrams")
+    NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+    def _dump(obj):
+        # Deterministic serialisation — MUST mirror flow.js serialize() (sorted keys, 2-space indent,
+        # integer coords) so GUI saves and Claude's hand-edits produce clean diffs.
+        for n in obj.get("nodes", []):
+            for k in ("x", "y", "w", "h", "cdx", "cdy"):
+                if isinstance(n.get(k), (int, float)):
+                    n[k] = int(round(n[k]))
+        return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+    def _reindex():
+        os.makedirs(DIAG, exist_ok=True)
+        items = []
+        for fn in sorted(glob.glob(os.path.join(DIAG, "*.json"))):
+            b = os.path.basename(fn)[:-5]
+            if b == "index":
+                continue
+            try:
+                with open(fn) as f:
+                    d = json.load(f)
+                meta = d.get("meta") or {}
+                items.append({"id": b, "title": meta.get("title", b), "parent": meta.get("parent")})
+            except Exception:
+                pass
+        ids = {it["id"] for it in items}
+        root = "setup-map" if "setup-map" in ids else ("overview" if "overview" in ids else (items[0]["id"] if items else "overview"))
+        idx = {"diagrams": items, "root": root}
+        with open(os.path.join(DIAG, "index.json"), "w") as f:
+            f.write(json.dumps(idx, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+        return idx
 
     class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         # Dev board changes constantly; a cached index.html/app.js mismatch (old HTML + new JS)
@@ -1669,8 +1710,46 @@ def cmd_serve(args):
             self.send_header("Expires", "0")
             super().end_headers()
 
+        def _json(self, code, obj):
+            body = json.dumps(obj).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/api/ping":
+                return self._json(200, {"ok": True, "edit": writable})
+            if self.path == "/api/diagrams":
+                return self._json(200, _reindex())
+            return super().do_GET()
+
+        def do_POST(self):
+            if not self.path.startswith("/api/diagram/"):
+                return self._json(404, {"error": "not found"})
+            if not writable:
+                return self._json(403, {"error": "editing disabled on a non-loopback host; set DASH_ALLOW_REMOTE_EDIT=1 to override"})
+            name = urllib.parse.unquote(self.path[len("/api/diagram/"):]).strip("/")
+            if not NAME_RE.match(name or ""):   # also blocks path traversal (FR22)
+                return self._json(400, {"error": "bad diagram name (use a-z 0-9 - _)"})
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                obj = json.loads(self.rfile.read(n) or b"{}")
+            except Exception as e:
+                return self._json(400, {"error": f"invalid JSON: {e}"})
+            if not isinstance(obj, dict) or not isinstance(obj.get("nodes"), list) or not isinstance(obj.get("edges"), list):
+                return self._json(400, {"error": "diagram must be an object with nodes[] and edges[]"})
+            os.makedirs(DIAG, exist_ok=True)
+            p = os.path.join(DIAG, name + ".json")
+            with open(p, "w") as f:
+                f.write(_dump(obj))
+            _reindex()
+            return self._json(200, {"ok": True, "path": os.path.relpath(p, ROOT)})
+
     print(f"Dashboard:    http://localhost:{port}/   (bind {host}; Ctrl+C to stop)")
     print(f"Test matrix:  http://localhost:{port}/matrix.html")
+    print(f"Flow editor:  http://localhost:{port}/flow.html   (save-to-disk: {'ON' if writable else 'OFF'})")
     http.server.HTTPServer((host, port), NoCacheHandler).serve_forever()
 
 

@@ -1,0 +1,407 @@
+{
+  "edges": [
+    {
+      "from": "you",
+      "id": "e_cable",
+      "kind": "cable",
+      "label": "netboot",
+      "showWhen": {
+        "method": [
+          "cable"
+        ]
+      },
+      "to": "server"
+    },
+    {
+      "from": "you",
+      "id": "e_wifi",
+      "kind": "wifi",
+      "label": "install over wifi",
+      "showWhen": {
+        "method": [
+          "wifi"
+        ]
+      },
+      "to": "router"
+    },
+    {
+      "from": "you",
+      "id": "e_usb",
+      "kind": "usb",
+      "label": "USB stick",
+      "showWhen": {
+        "method": [
+          "usb"
+        ]
+      },
+      "to": "server"
+    },
+    {
+      "from": "server",
+      "id": "e_scable",
+      "kind": "cable",
+      "label": "",
+      "showWhen": {
+        "net": [
+          "0a",
+          "0b",
+          "0c",
+          "w1",
+          "ua",
+          "uc"
+        ]
+      },
+      "to": "router"
+    },
+    {
+      "from": "server",
+      "id": "e_swifi",
+      "kind": "wifi",
+      "label": "",
+      "showWhen": {
+        "net": [
+          "0d",
+          "w2",
+          "ub"
+        ]
+      },
+      "to": "router"
+    },
+    {
+      "from": "server",
+      "id": "e_sY",
+      "kind": "wifi",
+      "label": "",
+      "showWhen": {
+        "net": [
+          "0c",
+          "uc"
+        ]
+      },
+      "to": "routerY"
+    },
+    {
+      "color": "#8b949e",
+      "from": "router",
+      "id": "e_rinet",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#8b949e",
+      "from": "you",
+      "id": "e_vminet",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "method": [
+          "vm"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "server",
+      "id": "e_relay",
+      "kind": "pipe",
+      "label": "outbound tunnel",
+      "showWhen": {
+        "reach": [
+          "tailscale",
+          "cloudflare"
+        ]
+      },
+      "to": "relay"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "relay",
+      "id": "e_relayinet",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "tailscale",
+          "cloudflare"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "server",
+      "id": "e_tor",
+      "kind": "pipe",
+      "label": "hidden service",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tor"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tor",
+      "id": "e_torinet",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#8b949e",
+      "from": "friend",
+      "id": "e_friend",
+      "kind": "pipe",
+      "label": "opens the link",
+      "to": "inet"
+    }
+  ],
+  "meta": {
+    "parent": null,
+    "title": "Setup map",
+    "toggles": [
+      {
+        "default": "cable",
+        "id": "method",
+        "label": "Install",
+        "options": [
+          {
+            "label": "LAN cable",
+            "value": "cable"
+          },
+          {
+            "label": "Wifi",
+            "value": "wifi"
+          },
+          {
+            "label": "USB stick",
+            "value": "usb"
+          },
+          {
+            "label": "VM",
+            "value": "vm"
+          }
+        ]
+      },
+      {
+        "default": "0a",
+        "id": "net",
+        "label": "Network",
+        "options": [
+          {
+            "label": "cable→R",
+            "value": "0a"
+          },
+          {
+            "label": "cable+wifi→R",
+            "value": "0b"
+          },
+          {
+            "label": "cable→R, wifi→Y",
+            "value": "0c"
+          },
+          {
+            "label": "wifi-only",
+            "value": "0d"
+          },
+          {
+            "label": "B via LAN",
+            "value": "w1"
+          },
+          {
+            "label": "B via wifi",
+            "value": "w2"
+          },
+          {
+            "label": "cable→R",
+            "value": "ua"
+          },
+          {
+            "label": "wifi→R",
+            "value": "ub"
+          },
+          {
+            "label": "cable→R, wifi→Y",
+            "value": "uc"
+          }
+        ],
+        "optionsWhen": {
+          "method": {
+            "cable": [
+              "0a",
+              "0b",
+              "0c",
+              "0d"
+            ],
+            "usb": [
+              "ua",
+              "ub",
+              "uc"
+            ],
+            "vm": [],
+            "wifi": [
+              "w1",
+              "w2"
+            ]
+          }
+        }
+      },
+      {
+        "default": "tailscale",
+        "id": "reach",
+        "label": "Reach",
+        "options": [
+          {
+            "label": "Tailscale",
+            "value": "tailscale"
+          },
+          {
+            "label": "Cloudflare",
+            "value": "cloudflare"
+          },
+          {
+            "label": "Direct IPv6",
+            "value": "ipv6"
+          },
+          {
+            "label": "Port-forward",
+            "value": "portfwd"
+          },
+          {
+            "label": ".onion",
+            "value": "onion"
+          }
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "color": "host",
+      "h": 90,
+      "icon": "laptop",
+      "id": "you",
+      "label": "Your computer",
+      "w": 190,
+      "x": 60,
+      "y": 230
+    },
+    {
+      "cdx": 16,
+      "cdy": 60,
+      "color": "target",
+      "container": "you",
+      "containerWhen": {
+        "method": [
+          "vm"
+        ]
+      },
+      "h": 84,
+      "icon": "server",
+      "id": "server",
+      "label": "Your new\nprivate server",
+      "w": 180,
+      "x": 340,
+      "y": 230
+    },
+    {
+      "color": "note",
+      "h": 80,
+      "icon": "router",
+      "id": "router",
+      "label": "Your home router",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ]
+      },
+      "w": 180,
+      "x": 340,
+      "y": 400
+    },
+    {
+      "color": "note",
+      "h": 80,
+      "icon": "router",
+      "id": "routerY",
+      "label": "Another router (Y)",
+      "showWhen": {
+        "net": [
+          "0c",
+          "uc"
+        ]
+      },
+      "w": 170,
+      "x": 600,
+      "y": 400
+    },
+    {
+      "color": "created",
+      "h": 84,
+      "icon": "relay",
+      "id": "relay",
+      "label": "Tunnel relay\n(Tailscale/Cloudflare)",
+      "showWhen": {
+        "reach": [
+          "tailscale",
+          "cloudflare"
+        ]
+      },
+      "w": 200,
+      "x": 600,
+      "y": 70
+    },
+    {
+      "color": "created",
+      "h": 80,
+      "icon": "tor",
+      "id": "tor",
+      "label": "Tor network",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 160,
+      "x": 615,
+      "y": 46
+    },
+    {
+      "color": "web",
+      "h": 84,
+      "icon": "cloud",
+      "id": "inet",
+      "label": "The internet",
+      "w": 160,
+      "x": 880,
+      "y": 230
+    },
+    {
+      "color": "input",
+      "h": 84,
+      "icon": "phone",
+      "id": "friend",
+      "label": "A friend's phone",
+      "w": 150,
+      "x": 1120,
+      "y": 230
+    }
+  ]
+}

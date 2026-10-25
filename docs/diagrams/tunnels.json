@@ -1,0 +1,474 @@
+{
+  "edges": [
+    {
+      "color": "#8b949e",
+      "from": "server",
+      "id": "p_lan",
+      "kind": "pipe",
+      "label": "home LAN",
+      "path": [
+        {
+          "x": 230,
+          "y": 585
+        },
+        {
+          "x": 360,
+          "y": 585
+        }
+      ],
+      "to": "router"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "router",
+      "id": "p_ts_up",
+      "kind": "pipe",
+      "label": "",
+      "path": [
+        {
+          "x": 410,
+          "y": 620
+        },
+        {
+          "x": 410,
+          "y": 150
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "tailscale"
+        ]
+      },
+      "to": "relayTS"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "relayTS",
+      "id": "p_ts_run",
+      "kind": "pipe",
+      "label": "IPv4 + IPv6",
+      "path": [
+        {
+          "x": 500,
+          "y": 110
+        },
+        {
+          "x": 1150,
+          "y": 110
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "tailscale"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#f38020",
+      "from": "router",
+      "id": "p_cf_up",
+      "kind": "pipe",
+      "label": "",
+      "path": [
+        {
+          "x": 470,
+          "y": 620
+        },
+        {
+          "x": 470,
+          "y": 265
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "cloudflare"
+        ]
+      },
+      "to": "relayCF"
+    },
+    {
+      "color": "#f38020",
+      "from": "relayCF",
+      "id": "p_cf_run",
+      "kind": "pipe",
+      "label": "IPv4 + IPv6",
+      "path": [
+        {
+          "x": 560,
+          "y": 225
+        },
+        {
+          "x": 1150,
+          "y": 225
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "cloudflare"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#2bb673",
+      "from": "router",
+      "id": "p_v6_up",
+      "kind": "pipe",
+      "label": "",
+      "path": [
+        {
+          "x": 520,
+          "y": 620
+        },
+        {
+          "x": 520,
+          "y": 390
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "ipv6"
+        ]
+      },
+      "to": "duck"
+    },
+    {
+      "color": "#2bb673",
+      "from": "duck",
+      "id": "p_v6_run",
+      "kind": "pipe",
+      "label": "IPv6 only",
+      "path": [
+        {
+          "x": 615,
+          "y": 345
+        },
+        {
+          "x": 1150,
+          "y": 345
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "ipv6"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "router",
+      "id": "p_tor_up",
+      "kind": "pipe",
+      "label": "no company",
+      "path": [
+        {
+          "x": 630,
+          "y": 620
+        },
+        {
+          "x": 630,
+          "y": 495
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "to": "tornet"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tornet",
+      "id": "p_tor_run",
+      "kind": "pipe",
+      "label": "",
+      "path": [
+        {
+          "x": 715,
+          "y": 455
+        },
+        {
+          "x": 1150,
+          "y": 455
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#eab308",
+      "from": "router",
+      "id": "p_pf_up",
+      "kind": "pipe",
+      "label": "",
+      "path": [
+        {
+          "x": 575,
+          "y": 620
+        },
+        {
+          "x": 575,
+          "y": 605
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "portfwd"
+        ]
+      },
+      "to": "portcfg"
+    },
+    {
+      "color": "#eab308",
+      "from": "portcfg",
+      "id": "p_pf_run",
+      "kind": "pipe",
+      "label": "needs public IPv4",
+      "path": [
+        {
+          "x": 670,
+          "y": 565
+        },
+        {
+          "x": 1150,
+          "y": 565
+        }
+      ],
+      "showWhen": {
+        "show": [
+          "all",
+          "portfwd"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#8b949e",
+      "from": "inet",
+      "id": "p_friend",
+      "kind": "pipe",
+      "label": "opens the link",
+      "path": [
+        {
+          "x": 1320,
+          "y": 355
+        },
+        {
+          "x": 1420,
+          "y": 355
+        }
+      ],
+      "to": "friend"
+    }
+  ],
+  "meta": {
+    "background": "#5c94fc",
+    "ground": 640,
+    "parent": "setup-map",
+    "title": "Tunnels (Mario style)",
+    "toggles": [
+      {
+        "default": "all",
+        "id": "show",
+        "label": "Show",
+        "options": [
+          {
+            "label": "All",
+            "value": "all"
+          },
+          {
+            "label": "Tailscale",
+            "value": "tailscale"
+          },
+          {
+            "label": "Cloudflare",
+            "value": "cloudflare"
+          },
+          {
+            "label": "Direct IPv6 (DuckDNS)",
+            "value": "ipv6"
+          },
+          {
+            "label": "Port-forward",
+            "value": "portfwd"
+          },
+          {
+            "label": "Tor / .onion",
+            "value": "tor"
+          }
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "color": "target",
+      "h": 140,
+      "icon": "server",
+      "id": "server",
+      "label": "Your new\nprivate server",
+      "w": 170,
+      "x": 60,
+      "y": 500
+    },
+    {
+      "color": "note",
+      "h": 170,
+      "icon": "router",
+      "id": "router",
+      "label": "Your home router\n(see-through)",
+      "seeThrough": true,
+      "w": 300,
+      "x": 360,
+      "y": 470
+    },
+    {
+      "color": "created",
+      "h": 80,
+      "icon": "relay",
+      "id": "relayTS",
+      "label": "Tailscale relay\n(a company)",
+      "showWhen": {
+        "show": [
+          "all",
+          "tailscale"
+        ]
+      },
+      "w": 180,
+      "x": 320,
+      "y": 70
+    },
+    {
+      "color": "created",
+      "h": 80,
+      "icon": "relay",
+      "id": "relayCF",
+      "label": "Cloudflare edge\n(a company)",
+      "showWhen": {
+        "show": [
+          "all",
+          "cloudflare"
+        ]
+      },
+      "w": 180,
+      "x": 380,
+      "y": 185
+    },
+    {
+      "color": "created",
+      "h": 90,
+      "icon": "cloud",
+      "id": "duck",
+      "label": "DuckDNS = name only\n(traffic is direct)",
+      "showWhen": {
+        "show": [
+          "all",
+          "ipv6"
+        ]
+      },
+      "w": 190,
+      "x": 425,
+      "y": 300
+    },
+    {
+      "color": "note",
+      "h": 66,
+      "icon": "block",
+      "id": "ip4block",
+      "label": "IPv4 blocked\nIPv6 only",
+      "showWhen": {
+        "show": [
+          "all",
+          "ipv6"
+        ]
+      },
+      "w": 150,
+      "x": 820,
+      "y": 312
+    },
+    {
+      "color": "created",
+      "h": 80,
+      "icon": "tor",
+      "id": "tornet",
+      "label": "Tor network\n(no company — direct)",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 170,
+      "x": 545,
+      "y": 415
+    },
+    {
+      "color": "created",
+      "h": 72,
+      "icon": "onion",
+      "id": "onion",
+      "label": ".onion",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 90,
+      "x": 585,
+      "y": 343
+    },
+    {
+      "color": "input",
+      "h": 80,
+      "icon": "gate",
+      "id": "portcfg",
+      "label": "You must open\nport 443 (manual)",
+      "showWhen": {
+        "show": [
+          "all",
+          "portfwd"
+        ]
+      },
+      "w": 190,
+      "x": 480,
+      "y": 525
+    },
+    {
+      "color": "web",
+      "h": 540,
+      "icon": "cloud",
+      "id": "inet",
+      "label": "The internet",
+      "w": 170,
+      "x": 1150,
+      "y": 80
+    },
+    {
+      "color": "input",
+      "h": 110,
+      "icon": "phone",
+      "id": "friend",
+      "label": "A friend's phone",
+      "w": 160,
+      "x": 1420,
+      "y": 300
+    }
+  ]
+}

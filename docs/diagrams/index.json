@@ -1,0 +1,30 @@
+{
+  "diagrams": [
+    {
+      "id": "install",
+      "parent": "overview",
+      "title": "Install the box"
+    },
+    {
+      "id": "overview",
+      "parent": null,
+      "title": "Overview"
+    },
+    {
+      "id": "reach",
+      "parent": "overview",
+      "title": "Make it reachable"
+    },
+    {
+      "id": "setup-map",
+      "parent": null,
+      "title": "Setup map"
+    },
+    {
+      "id": "tunnels",
+      "parent": "setup-map",
+      "title": "Tunnels (Mario style)"
+    }
+  ],
+  "root": "setup-map"
+}

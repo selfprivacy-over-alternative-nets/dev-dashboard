@@ -1,0 +1,68 @@
+{
+  "edges": [
+    {
+      "from": "host",
+      "id": "e1",
+      "label": "netboot / usb",
+      "to": "install"
+    },
+    {
+      "from": "install",
+      "id": "e2",
+      "label": "",
+      "to": "reach"
+    },
+    {
+      "from": "reach",
+      "id": "e3",
+      "label": "public URL",
+      "to": "app"
+    }
+  ],
+  "meta": {
+    "parent": null,
+    "title": "Overview"
+  },
+  "nodes": [
+    {
+      "childDiagram": "",
+      "color": "host",
+      "h": 64,
+      "id": "host",
+      "label": "Your laptop (host)",
+      "w": 180,
+      "x": 60,
+      "y": 200
+    },
+    {
+      "childDiagram": "install",
+      "color": "target",
+      "h": 64,
+      "id": "install",
+      "label": "Install the box ⊕",
+      "w": 180,
+      "x": 320,
+      "y": 200
+    },
+    {
+      "childDiagram": "reach",
+      "color": "created",
+      "h": 64,
+      "id": "reach",
+      "label": "Make it reachable ⊕",
+      "w": 190,
+      "x": 580,
+      "y": 200
+    },
+    {
+      "childDiagram": "",
+      "color": "cli",
+      "h": 64,
+      "id": "app",
+      "label": "Connect the app",
+      "w": 180,
+      "x": 860,
+      "y": 200
+    }
+  ]
+}
