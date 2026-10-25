@@ -42,17 +42,56 @@ def _dedupe(pts):
     return o
 
 
-def zroute(a, b):   # orthogonal border-to-border route (H/V, 90° only) — mirrors flow.js zRoute
+EDGE_SNAP = 28   # within this perpendicular gap a near-aligned connector snaps to a straight line
+
+
+def zroute(a, b):   # orthogonal route anchored at side-MIDPOINTS (H/V, 90° only), snap-straight — mirrors flow.js
     cax, cay, cbx, cby = a[0] + a[2] / 2, a[1] + a[3] / 2, b[0] + b[2] / 2, b[1] + b[3] / 2
     if abs(cbx - cax) >= abs(cby - cay):
         sx = a[0] + a[2] if cbx >= cax else a[0]
         ex = b[0] if cbx >= cax else b[0] + b[2]
+        if abs(cay - cby) <= EDGE_SNAP:
+            y = (cay + cby) / 2
+            return [(sx, y), (ex, y)]
         mx = (sx + ex) / 2
         return [(sx, cay), (mx, cay), (mx, cby), (ex, cby)]
     sy = a[1] + a[3] if cby >= cay else a[1]
     ey = b[1] if cby >= cay else b[1] + b[3]
+    if abs(cax - cbx) <= EDGE_SNAP:
+        x = (cax + cbx) / 2
+        return [(x, sy), (x, ey)]
     my = (sy + ey) / 2
     return [(cax, sy), (cax, my), (cbx, my), (cbx, ey)]
+
+
+def arrow_head(poly, which, size, color, fb):   # hand-drawn triangle at the box edge — mirrors flow.js
+    if not poly:
+        return ""
+    end = which == "end"
+    tip = poly[-1] if end else poly[0]
+    prev = (poly[-2] if end else poly[1]) if len(poly) >= 2 else None
+    if prev:
+        dx, dy = tip[0] - prev[0], tip[1] - prev[1]
+    else:
+        dx, dy = (fb[0], fb[1]) if end else (-fb[0], -fb[1])
+    L = (dx * dx + dy * dy) ** 0.5 or 1.0
+    dx, dy = dx / L, dy / L
+    bx, by, px, py, half = tip[0] - dx * size, tip[1] - dy * size, -dy, dx, size * 0.55
+    return (f'<polygon points="{tip[0]:.1f},{tip[1]:.1f} {bx + px * half:.1f},{by + py * half:.1f} '
+            f'{bx - px * half:.1f},{by - py * half:.1f}" fill="{color}"/>')
+
+
+def mid_of_poly(poly):   # point at half the total polyline length (label/icon placement) — mirrors flow.js
+    if not poly or len(poly) < 2:
+        return poly[0] if poly else (0, 0)
+    seg = [((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5 for i in range(1, len(poly))]
+    half = sum(seg) / 2
+    for i in range(1, len(poly)):
+        if half <= seg[i - 1]:
+            t = half / seg[i - 1] if seg[i - 1] else 0
+            return (poly[i - 1][0] + (poly[i][0] - poly[i - 1][0]) * t, poly[i - 1][1] + (poly[i][1] - poly[i - 1][1]) * t)
+        half -= seg[i - 1]
+    return poly[-1]
 
 
 def pipe_poly(a, b, e):
@@ -149,15 +188,24 @@ def active_container(n, state):
     return c if (c and when_ok(n.get("containerWhen"), state)) else None
 
 
+def side_mid(b, s):
+    x, y, w, h = b
+    return {"n": (x + w / 2.0, y), "s": (x + w / 2.0, y + h), "w": (x, y + h / 2.0)}.get(s, (x + w, y + h / 2.0))
+
+
 def rbox(n, nodes_by_id, vis_ids, state, depth=0):
     x, y, w, h = n["x"], n["y"], n["w"], n["h"]
     c = active_container(n, state)
     if c and depth < 6 and c in nodes_by_id:
         p = nodes_by_id[c]
-        x = p["x"] + n.get("cdx", 16)
-        y = p["y"] + n.get("cdy", 56)
-    for k in nodes_by_id.values():
-        if k["id"] in vis_ids and active_container(k, state) == n["id"]:
+        if n.get("snapSide"):   # FR75: centre pinned on the parent's side-midpoint
+            mx, my = side_mid(rbox(p, nodes_by_id, vis_ids, state, depth + 1), n["snapSide"])
+            x, y = mx - w / 2.0, my - h / 2.0
+        else:
+            x = p["x"] + n.get("cdx", 16)
+            y = p["y"] + n.get("cdy", 56)
+    for k in nodes_by_id.values():   # edge-snapped children sit ON the border → don't grow for them
+        if k["id"] in vis_ids and active_container(k, state) == n["id"] and not k.get("snapSide"):
             r = rbox(k, nodes_by_id, vis_ids, state, depth + 1)
             w = max(w, r[0] + r[2] + 14 - x)
             h = max(h, r[1] + r[3] + 14 - y)
@@ -180,6 +228,13 @@ def border(fr, to):
 
 def is_container(n, nodes, vis_ids, state):
     return any(k["id"] in vis_ids and active_container(k, state) == n["id"] for k in nodes)
+
+
+def auto_see_through(n, nodes, edges, vis_ids, state):
+    """FR76: a box holding a child that has drawn pipes/arrows turns translucent (derived, not saved)."""
+    drawn = [e for e in edges if when_ok(e.get("showWhen"), state) and e["from"] in vis_ids and e["to"] in vis_ids]
+    return any(k["id"] in vis_ids and active_container(k, state) == n["id"]
+               and any(k["id"] in (e["from"], e["to"]) for e in drawn) for k in nodes)
 
 
 def render(d):
@@ -225,13 +280,21 @@ def render(d):
             mp = poly[max(1, len(poly) // 2) - 1]
             mx, my = mp[0], mp[1]
         else:
-            p1, p2 = border(a, b), border(b, a)
-            sw = 3 if kind in ("cable", "lan") else 1.6
+            # arrows connect side-MIDPOINT → side-midpoint, straight or 90° only (mirrors flow.js)
+            poly = _dedupe(pipe_poly(a, b, e))
+            d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in poly)
+            lw = e.get("lw") if isinstance(e.get("lw"), (int, float)) else (3 if kind in ("cable", "lan") else 2)
             dash = ' stroke-dasharray="6 4"' if kind in ("wifi", "tunnel", "tor") else ""
             stroke = e.get("color") or DIM
-            o.append(f'<line x1="{p1[0]:.1f}" y1="{p1[1]:.1f}" x2="{p2[0]:.1f}" y2="{p2[1]:.1f}" '
-                     f'stroke="{stroke}" stroke-width="{sw}"{dash} marker-end="url(#arrow)"/>')
-            mx, my = (p1[0] + p2[0]) / 2.0, (p1[1] + p2[1]) / 2.0
+            o.append(f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{lw}"{dash}/>')
+            _dir = e.get("dir", "to")
+            ah = e.get("ah") if isinstance(e.get("ah"), (int, float)) else 12
+            fb = (center(b)[0] - center(a)[0], center(b)[1] - center(a)[1])
+            if _dir in ("to", "both"):
+                o.append(arrow_head(poly, "end", ah, stroke, fb))
+            if _dir in ("from", "both"):
+                o.append(arrow_head(poly, "start", ah, stroke, fb))
+            mx, my = mid_of_poly(poly)
             if kind in EDGE_ICON:
                 o.append(f'<use href="#ic-{EDGE_ICON[kind]}" x="{mx - 9:.1f}" y="{my - 20:.1f}" width="18" height="18" style="color:#8b949e"/>')
         if e.get("label"):
@@ -242,7 +305,8 @@ def render(d):
     for n in sorted(vis, key=rank):
         fill, stroke = PALETTE.get(n.get("color"), PALETTE["note"])
         bx = box[n["id"]]
-        op = ' fill-opacity="0.3"' if n.get("seeThrough") else (' fill-opacity="0.55"' if is_container(n, vis, vis_ids, state) else "")
+        see = n.get("seeThrough") or auto_see_through(n, vis, edges, vis_ids, state)
+        op = ' fill-opacity="0.3"' if see else (' fill-opacity="0.55"' if is_container(n, vis, vis_ids, state) else "")
         o.append(f'<rect x="{bx[0]:.0f}" y="{bx[1]:.0f}" width="{bx[2]:.0f}" height="{bx[3]:.0f}" rx="8" ry="8" '
                  f'fill="{fill}"{op} stroke="{stroke}" stroke-width="2"/>')
         cx = bx[0] + bx[2] / 2.0

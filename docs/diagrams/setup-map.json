@@ -300,6 +300,22 @@
         ]
       },
       "to": "duck"
+    },
+    {
+      "dir": "to",
+      "from": "cfbuy",
+      "id": "e1",
+      "kind": "plain",
+      "label": "",
+      "to": "relayCF"
+    },
+    {
+      "dir": "from",
+      "from": "cffree",
+      "id": "e2",
+      "kind": "plain",
+      "label": "",
+      "to": "relayCF"
     }
   ],
   "meta": {
@@ -452,7 +468,7 @@
     },
     {
       "color": "note",
-      "h": 80,
+      "h": 256,
       "icon": "router",
       "id": "router",
       "label": "Your home router",
@@ -463,8 +479,8 @@
           "usb"
         ]
       },
-      "w": 180,
-      "x": 342,
+      "w": 294,
+      "x": 341,
       "y": 371
     },
     {
@@ -541,12 +557,12 @@
         ]
       },
       "w": 131,
-      "x": 646,
-      "y": -74
+      "x": 655,
+      "y": -61
     },
     {
       "color": "created",
-      "h": 80,
+      "h": 94,
       "icon": "relay",
       "id": "relayCF",
       "label": "Cloudflare\n(a company)",
@@ -556,8 +572,8 @@
         ]
       },
       "w": 190,
-      "x": 620,
-      "y": 50
+      "x": 652,
+      "y": 35
     },
     {
       "childDiagram": "registrar",
@@ -572,8 +588,8 @@
         ]
       },
       "w": 210,
-      "x": 620,
-      "y": 150
+      "x": 448,
+      "y": -77
     },
     {
       "color": "note",
@@ -587,8 +603,8 @@
         ]
       },
       "w": 210,
-      "x": 620,
-      "y": 240
+      "x": 759,
+      "y": -60
     },
     {
       "color": "note",
@@ -633,12 +649,12 @@
         ]
       },
       "w": 230,
-      "x": 322,
-      "y": 487
+      "x": 385,
+      "y": 437
     },
     {
       "color": "input",
-      "h": 90,
+      "h": 80,
       "icon": "gate",
       "id": "pfgate",
       "label": "Open port 443\nby hand in your\nrouter settings",
@@ -647,9 +663,9 @@
           "portfwd"
         ]
       },
-      "w": 210,
-      "x": 324,
-      "y": 570
+      "w": 155,
+      "x": 568,
+      "y": 530
     },
     {
       "childDiagram": "registrar",
@@ -664,8 +680,8 @@
         ]
       },
       "w": 210,
-      "x": 657,
-      "y": 433
+      "x": 669,
+      "y": 175
     },
     {
       "color": "red",

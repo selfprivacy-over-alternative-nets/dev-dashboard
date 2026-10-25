@@ -33,7 +33,7 @@
     sel: null, selEdge: null,
     toggle: {},                       // active toggle state {toggleId: value}
     view: { x: 40, y: 40, k: 1 },
-    mode: "idle", pending: null, drag: null, panStart: null, resize: null,
+    mode: "idle", pending: null, drag: null, panStart: null, resize: null, draw: null, rubber: null, ctrl: false,
   };
 
   /* ---------- deterministic serialisation (mirrors the Python writer in `dash`) ---------- */
@@ -54,6 +54,11 @@
   function status(m) { $("status").innerHTML = m; }
   function markDirty(on) { S.dirty = on; document.body.classList.toggle("dirty", on); }
   function node(id) { return S.data.nodes.find((n) => n.id === id); }
+  function nodeAtWorld(wp) {   // topmost visible node whose box contains the world point (for edge-draw targeting)
+    const hit = S.data.nodes.filter(visible).filter((n) => { const b = rbox(n);
+      return wp.x >= b.x && wp.x <= b.x + b.w && wp.y >= b.y && wp.y <= b.y + b.h; });
+    return hit.length ? hit[hit.length - 1].id : null;
+  }
 
   /* ---------- toggle logic (FR34 + FR29 dependent options) ---------- */
   function toggles() { return (S.data.meta && S.data.meta.toggles) || []; }
@@ -91,12 +96,13 @@
     depth = depth || 0;
     let x = n.x, y = n.y, w = n.w, h = n.h;
     const c = activeContainerOf(n);
-    if (c && depth < 6) { const p = node(c); if (p) { const pb = { x: p.x, y: p.y };
-      x = pb.x + (typeof n.cdx === "number" ? n.cdx : 16);
-      y = pb.y + (typeof n.cdy === "number" ? n.cdy : 56); } }
-    // grow to enclose active contained children (if this node is a container)
+    if (c && depth < 6) { const p = node(c); if (p) {
+      if (n.snapSide) { const m = sideMid(rbox(p, depth + 1), n.snapSide); x = m.x - w / 2; y = m.y - h / 2; }   // FR75: centre pinned on the parent's side-midpoint
+      else { x = p.x + (typeof n.cdx === "number" ? n.cdx : 16);
+        y = p.y + (typeof n.cdy === "number" ? n.cdy : 56); } } }
+    // grow to enclose active contained children (if this node is a container); edge-snapped ones sit ON the border
     for (const k of S.data.nodes) {
-      if (!visible(k) || activeContainerOf(k) !== n.id) continue;
+      if (!visible(k) || activeContainerOf(k) !== n.id || k.snapSide) continue;
       const r = rbox(k, depth + 1);
       w = Math.max(w, r.x + r.w + 14 - x);
       h = Math.max(h, r.y + r.h + 14 - y);
@@ -104,6 +110,17 @@
     return { x, y, w, h };
   }
   const center = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+  function sideMid(b, s) {
+    return s === "n" ? { x: b.x + b.w / 2, y: b.y } : s === "s" ? { x: b.x + b.w / 2, y: b.y + b.h }
+         : s === "w" ? { x: b.x, y: b.y + b.h / 2 } : { x: b.x + b.w, y: b.y + b.h / 2 };
+  }
+  function onSide(b, P, s) {   // FR75: is box b dropped ON side s of P? (line through b's middle half) → perp distance, else -1
+    const c = center(b);
+    if (s === "n" || s === "s") { const ly = s === "n" ? P.y : P.y + P.h, d = Math.abs(c.y - ly);
+      return d <= b.h / 4 && c.x >= P.x && c.x <= P.x + P.w ? d : -1; }
+    const lx = s === "w" ? P.x : P.x + P.w, d = Math.abs(c.x - lx);
+    return d <= b.w / 4 && c.y >= P.y && c.y <= P.y + P.h ? d : -1;
+  }
   function border(fromB, toB) {
     const a = center(fromB), b = center(toB);
     let dx = b.x - a.x, dy = b.y - a.y;
@@ -124,6 +141,10 @@
     if (parent) parent.appendChild(e); return e;
   }
   function isContainer(n) { return S.data.nodes.some((k) => visible(k) && activeContainerOf(k) === n.id); }
+  const edgeDrawn = (e) => visible(e) && [e.from, e.to].every((id) => { const x = node(id); return x && visible(x); });
+  // FR76: a box holding a child that has pipes/arrows attached turns translucent automatically (derived, not saved)
+  const autoSeeThrough = (n) => S.data.nodes.some((k) => visible(k) && activeContainerOf(k) === n.id &&
+    S.data.edges.some((e) => (e.from === k.id || e.to === k.id) && edgeDrawn(e)));
 
   // Super-Mario-style warp pipes (FR42/FR52): ORTHOGONAL routing (H/V, 90° elbows — never diagonal),
   // authentic lip + shaded body + black outline. Routing: explicit e.path if given, else an auto Z-route.
@@ -134,14 +155,43 @@
     return "#" + h(r) + h(g) + h(b);
   }
   function dedupe(pts) { const o = []; for (const p of pts) { const q = o[o.length - 1]; if (!q || Math.abs(q.x - p.x) > 0.5 || Math.abs(q.y - p.y) > 0.5) o.push({ x: p.x, y: p.y }); } return o; }
-  function zRoute(a, b) {   // orthogonal border-to-border route (H-V-H or V-H-V)
+  const EDGE_SNAP = 28;    // within this perpendicular gap a near-aligned connector snaps to a straight line
+  function zRoute(a, b) {   // orthogonal route anchored at side-MIDPOINTS (H-V-H / V-H-V), 90° only, snap-straight
     const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
     if (Math.abs(cb.x - ca.x) >= Math.abs(cb.y - ca.y)) {
-      const sx = cb.x >= ca.x ? a.x + a.w : a.x, ex = cb.x >= ca.x ? b.x : b.x + b.w, mx = (sx + ex) / 2;
+      const sx = cb.x >= ca.x ? a.x + a.w : a.x, ex = cb.x >= ca.x ? b.x : b.x + b.w;
+      if (Math.abs(ca.y - cb.y) <= EDGE_SNAP) { const y = (ca.y + cb.y) / 2; return [{ x: sx, y }, { x: ex, y }]; }
+      const mx = (sx + ex) / 2;
       return [{ x: sx, y: ca.y }, { x: mx, y: ca.y }, { x: mx, y: cb.y }, { x: ex, y: cb.y }];
     }
-    const sy = cb.y >= ca.y ? a.y + a.h : a.y, ey = cb.y >= ca.y ? b.y : b.y + b.h, my = (sy + ey) / 2;
+    const sy = cb.y >= ca.y ? a.y + a.h : a.y, ey = cb.y >= ca.y ? b.y : b.y + b.h;
+    if (Math.abs(ca.x - cb.x) <= EDGE_SNAP) { const x = (ca.x + cb.x) / 2; return [{ x, y: sy }, { x, y: ey }]; }
+    const my = (sy + ey) / 2;
     return [{ x: ca.x, y: sy }, { x: ca.x, y: my }, { x: cb.x, y: my }, { x: cb.x, y: ey }];
+  }
+  function drawArrowHead(parent, poly, whichEnd, size, color, fb) {
+    if (!poly || !poly.length) return;
+    const end = whichEnd === "end";
+    const tip = end ? poly[poly.length - 1] : poly[0];
+    const prev = end ? poly[poly.length - 2] : poly[1];
+    let dx, dy;
+    if (prev) { dx = tip.x - prev.x; dy = tip.y - prev.y; }   // point toward the tip (into the box)
+    else { dx = end ? fb.x : -fb.x; dy = end ? fb.y : -fb.y; }   // degenerate path → use centre-to-centre
+    const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const bx = tip.x - dx * size, by = tip.y - dy * size, px = -dy, py = dx, half = size * 0.55;
+    el("polygon", { points: `${tip.x},${tip.y} ${bx + px * half},${by + py * half} ${bx - px * half},${by - py * half}`, fill: color }, parent);
+  }
+  function midOfPoly(poly) {   // point at half the total polyline length (for label/icon placement)
+    if (!poly || poly.length < 2) return (poly && poly[0]) || { x: 0, y: 0 };
+    const seg = []; let total = 0;
+    for (let i = 1; i < poly.length; i++) { const L = Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y); seg.push(L); total += L; }
+    let half = total / 2;
+    for (let i = 1; i < poly.length; i++) {
+      if (half <= seg[i - 1]) { const t = seg[i - 1] ? half / seg[i - 1] : 0;
+        return { x: poly[i - 1].x + (poly[i].x - poly[i - 1].x) * t, y: poly[i - 1].y + (poly[i].y - poly[i - 1].y) * t }; }
+      half -= seg[i - 1];
+    }
+    return poly[poly.length - 1];
   }
   const pipePoly = (aBox, bBox, e) => (Array.isArray(e.path) && e.path.length >= 2) ? e.path.map((p) => ({ x: p.x, y: p.y })) : zRoute(aBox, bBox);
   // bodyW (edge.pw, default 22) = pipe-body width. A wide translucent casing + two thin inner pipes drawn
@@ -195,11 +245,21 @@
         drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
         const m = poly[Math.max(1, Math.floor(poly.length / 2)) - 1]; mx = m.x; my = m.y;
       } else {
-        const p1 = border(a, b), p2 = border(b, a);
-        el("line", { class: "hit", x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }, g);
-        const w = el("line", { class: "wire", x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, "marker-end": "url(#arrow)" }, g);
+        // arrows connect side-MIDPOINT → side-midpoint, straight or 90° only, snap-to-straight (via zRoute)
+        const poly = dedupe(pipePoly(a, b, e));
+        const d = "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L ");
+        el("path", { class: "hit", d, fill: "none" }, g);
+        const lw = typeof e.lw === "number" ? e.lw : (kind === "cable" || kind === "lan" ? 3 : 2);
+        const col = e.color || (S.selEdge === e.id ? "#58a6ff" : "#6e7681");
+        const w = el("path", { class: "wire", d, fill: "none" }, g);
+        w.setAttribute("stroke-width", lw);
         if (e.color) w.setAttribute("stroke", e.color);
-        mx = (p1.x + p2.x) / 2; my = (p1.y + p2.y) / 2;
+        // arrowheads drawn by hand → always sit AT the box edge (no min-length blind spot), size/colour-settable
+        const dir = e.dir || "to", ah = typeof e.ah === "number" ? e.ah : 12;   // to=A→B, from=B→A, both=A↔B
+        const fb = { x: center(b).x - center(a).x, y: center(b).y - center(a).y };
+        if (dir === "to" || dir === "both") drawArrowHead(g, poly, "end", ah, col, fb);
+        if (dir === "from" || dir === "both") drawArrowHead(g, poly, "start", ah, col, fb);
+        const m = midOfPoly(poly); mx = m.x; my = m.y;
         if (kind !== "plain" && EDGE_ICON[kind]) {
           const u = el("use", { href: "#ic-" + EDGE_ICON[kind], x: mx - 9, y: my - 20, width: 18, height: 18 }, g);
           u.style.color = "#8b949e";
@@ -215,7 +275,8 @@
       const g = el("g", { class: "node" + (isContainer(n) ? " container" : "") + (S.sel === n.id ? " sel" : ""),
                           "data-id": n.id }, gNodes);
       const rect = el("rect", { x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: 8, ry: 8, fill: pal.fill, stroke: pal.stroke }, g);
-      if (n.seeThrough) rect.setAttribute("fill-opacity", "0.3");   // FR54: pipes visible through the router
+      // FR54/FR76: pipes visible through the box (inline style — must beat the .container CSS opacity)
+      if (n.seeThrough || autoSeeThrough(n)) rect.style.fillOpacity = "0.3";
       const cx = bx.x + bx.w / 2;
       let ty = bx.y + bx.h / 2 + 4;
       if (n.icon) {
@@ -230,6 +291,31 @@
     }
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(boxOf[sn.id]); }
+    updateEdgePanel();
+  }
+  function updateEdgePanel() {   // contextual box for the selected arrow: direction + head size + width + colour
+    const p = $("edgepanel");
+    const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
+    const a = e && node(e.from) && visible(node(e.from)) ? rbox(node(e.from)) : null;
+    const b = e && node(e.to) && visible(node(e.to)) ? rbox(node(e.to)) : null;
+    if (!e || !a || !b) { p.style.display = "none"; S._panelEdge = null; return; }
+    const mid = midOfPoly(dedupe(pipePoly(a, b, e)));
+    p.style.left = (S.view.x + mid.x * S.view.k) + "px";
+    p.style.top = Math.max(2, S.view.y + mid.y * S.view.k - 104) + "px";
+    p.style.display = "block";
+    const isPipe = e.kind === "pipe";   // heads/direction don't apply to pipe tubes; colour still does
+    $("ep-dirrow").style.display = isPipe ? "none" : "flex";
+    $("ep-sizerow").style.display = isPipe ? "none" : "flex";
+    const dir = e.dir || "to";
+    for (const btn of p.querySelectorAll("#ep-dirrow button")) btn.classList.toggle("on", btn.getAttribute("data-dir") === dir);
+    if (S._panelEdge !== e.id) {   // populate inputs only when the selected edge changes (don't fight a live drag)
+      S._panelEdge = e.id;
+      const lw = typeof e.lw === "number" ? e.lw : (e.kind === "cable" || e.kind === "lan" ? 3 : 2);
+      const ah = typeof e.ah === "number" ? e.ah : 12;
+      $("ep-ah").value = ah; $("ep-ahv").textContent = ah;
+      $("ep-lw").value = lw; $("ep-lwv").textContent = lw;
+      $("ep-color").value = /^#[0-9a-f]{6}$/i.test(e.color || "") ? e.color : "#6e7681";
+    }
   }
   const HANDLE_CUR = { nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize",
                        se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize" };
@@ -242,7 +328,7 @@
       const [cx, cy] = spots[dir];
       const h = el("rect", { class: "handle", "data-dir": dir, x: cx - z / 2, y: cy - z / 2, width: z, height: z,
                              rx: z * 0.15, fill: "#58a6ff", stroke: "#0b0e14", "stroke-width": 1 / (S.view.k || 1) }, gNodes);
-      h.style.cursor = HANDLE_CUR[dir];
+      h.style.cursor = S.ctrl ? "crosshair" : HANDLE_CUR[dir];
     }
   }
   const EDGE_ICON = { cable: "ethernet", lan: "ethernet", wifi: "wifi", usb: "usb", tunnel: "relay", tor: "tor" };
@@ -400,7 +486,7 @@
     if (!S.sel) { status("nothing selected"); return; }
     S.data.nodes = S.data.nodes.filter((n) => n.id !== S.sel);
     S.data.edges = S.data.edges.filter((e) => e.from !== S.sel && e.to !== S.sel);
-    S.data.nodes.forEach((n) => { if (n.container === S.sel) { delete n.container; delete n.containerWhen; } });
+    S.data.nodes.forEach((n) => { if (n.container === S.sel) { delete n.container; delete n.containerWhen; delete n.snapSide; } });
     status(`deleted <b>${S.sel}</b>`); S.sel = null; markDirty(true); render();
   }
   function relabel() {
@@ -450,6 +536,7 @@
     const ids = S.data.nodes.filter((x) => x.id !== n.id).map((x) => x.id).join(", ");
     const v = prompt(`Nest this node inside which node? (blank = none)\nnodes: ${ids}`, n.container || "");
     if (v == null) return;
+    delete n.snapSide;
     if (!v.trim()) { delete n.container; delete n.containerWhen; markDirty(true); render(); status("un-nested"); return; }
     if (!node(v.trim())) { status(`no node '${v}'`); return; }
     n.container = v.trim();
@@ -460,6 +547,39 @@
       else delete n.containerWhen;
     }
     markDirty(true); render(); status(`nested ${n.id} in ${n.container}${n.containerWhen ? " (conditional)" : ""}`);
+  }
+  function descendantsOf(id) {   // every node nested (in ANY toggle state) under id — never a valid drop parent
+    const out = new Set(); let grew = true;
+    while (grew) { grew = false;
+      for (const k of S.data.nodes) if (k.container && (k.container === id || out.has(k.container)) && !out.has(k.id)) { out.add(k.id); grew = true; } }
+    return out;
+  }
+  // FR75: on release, a box dropped ON a side of a bigger box snaps its centre onto that side's midpoint (snapSide,
+  // stays pinned there; nearest side line wins); else one fully INSIDE a bigger box becomes contained (cdx/cdy,
+  // innermost wins); else free.
+  function dropSnap(n, orig) {
+    if (n.container && !activeContainerOf(n)) return "";   // conditional nesting inactive in this state → keep it
+    const b = rbox(n);
+    delete n.container; delete n.containerWhen; delete n.snapSide; delete n.cdx; delete n.cdy;
+    n.x = b.x; n.y = b.y;
+    const desc = descendantsOf(n.id);
+    let edge = null, inner = null;
+    for (const p of S.data.nodes) {
+      if (p.id === n.id || !visible(p) || desc.has(p.id)) continue;
+      const P = rbox(p);
+      if (P.w * P.h <= b.w * b.h) continue;   // only snap into/onto a BIGGER box
+      for (const s of ["n", "e", "s", "w"]) { const d = onSide(b, P, s);
+        if (d >= 0 && (!edge || d < edge.d)) edge = { p, P, side: s, d }; }
+      if (b.x > P.x && b.y > P.y && b.x + b.w < P.x + P.w && b.y + b.h < P.y + P.h && (!inner || P.w * P.h < inner.P.w * inner.P.h))
+        inner = { p, P, side: null };
+    }
+    const best = edge || inner;
+    if (!best) return `<b>${n.id}</b> free`;
+    n.container = best.p.id;
+    if (orig && orig.container === best.p.id && orig.containerWhen) n.containerWhen = orig.containerWhen;
+    if (best.side) { n.snapSide = best.side; return `<b>${n.id}</b> snapped onto the ${({ n: "top", e: "right", s: "bottom", w: "left" })[best.side]} edge of <b>${best.p.id}</b>`; }
+    n.cdx = b.x - best.P.x; n.cdy = b.y - best.P.y;
+    return `<b>${n.id}</b> placed inside <b>${best.p.id}</b>`;
   }
   function editToggles() {
     const cur = JSON.stringify(toggles(), null, 2);
@@ -495,11 +615,23 @@
   svg.addEventListener("wheel", (ev) => { ev.preventDefault(); zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: false });
 
   svg.addEventListener("pointerdown", (ev) => {
-    // resize handle on the selected node takes priority over move/pan
     const hdir = ev.target.classList && ev.target.classList.contains("handle") ? ev.target.getAttribute("data-dir") : null;
+    const nidDown = nodeIdFromEvent(ev);
+    // Ctrl + press on a box (or its edge-dot) = DRAW A NEW ARROW from that box (instead of resize/move)
+    const drawSrc = hdir ? S.sel : nidDown;
+    if ((ev.ctrlKey || S.ctrl) && drawSrc) {
+      ev.preventDefault();
+      S.draw = { src: drawSrc }; S.mode = "drawedge";
+      const c = center(rbox(node(drawSrc)));
+      S.rubber = el("path", { id: "rubber", d: `M ${c.x} ${c.y} L ${c.x} ${c.y}` }, gEdges);
+      svg.setPointerCapture(ev.pointerId);
+      status(`drawing arrow from <b>${drawSrc}</b> — release on the target box (Esc cancels)`);
+      return;
+    }
+    // resize handle on the selected node takes priority over move/pan
     if (hdir && S.sel) {
       const n = node(S.sel), wp = toWorld(ev);
-      S.resize = { dir: hdir, contained: !!activeContainerOf(n), wx0: wp.x, wy0: wp.y,
+      S.resize = { dir: hdir, contained: !!activeContainerOf(n), snapped: !!(activeContainerOf(n) && n.snapSide), wx0: wp.x, wy0: wp.y,
                    x0: n.x, y0: n.y, w0: n.w, h0: n.h,
                    cdx0: typeof n.cdx === "number" ? n.cdx : 16, cdy0: typeof n.cdy === "number" ? n.cdy : 56 };
       S.mode = "resize"; svg.setPointerCapture(ev.pointerId); return;
@@ -517,8 +649,12 @@
     }
     if (nid) {
       S.sel = nid; S.selEdge = null; refreshSwatchSel(); render();
-      const n = node(nid), w = toWorld(ev), contained = !!activeContainerOf(n);
-      S.drag = { id: nid, contained, wx0: w.x, wy0: w.y,
+      const n = node(nid), w = toWorld(ev);
+      const orig = { container: n.container, containerWhen: n.containerWhen, snapSide: n.snapSide, x: n.x, y: n.y };
+      if (activeContainerOf(n) && n.snapSide) {   // edge-snapped: unpin and drag freely; dropSnap re-attaches on release
+        const b = rbox(n); delete n.container; delete n.containerWhen; delete n.snapSide; n.x = b.x; n.y = b.y; }
+      const contained = !!activeContainerOf(n);
+      S.drag = { id: nid, contained, orig, moved: false, wx0: w.x, wy0: w.y,
                  x0: n.x, y0: n.y, cdx0: typeof n.cdx === "number" ? n.cdx : 16, cdy0: typeof n.cdy === "number" ? n.cdy : 56 };
       S.mode = "drag"; svg.setPointerCapture(ev.pointerId);
     } else {
@@ -531,19 +667,25 @@
     }
   });
   svg.addEventListener("pointermove", (ev) => {
+    if (S.mode === "drawedge" && S.draw) {
+      const wp = toWorld(ev), c = center(rbox(node(S.draw.src)));
+      if (S.rubber) S.rubber.setAttribute("d", `M ${c.x} ${c.y} L ${wp.x} ${wp.y}`);
+      return;
+    }
     if (S.mode === "resize" && S.resize) {
       const r = S.resize, wp = toWorld(ev), n = node(S.sel), MIN = 40, d = r.dir;
       let dx = wp.x - r.wx0, dy = wp.y - r.wy0;
       if (d.includes("e")) n.w = Math.max(MIN, r.w0 + dx);
       if (d.includes("s")) n.h = Math.max(MIN, r.h0 + dy);
       if (d.includes("w")) { let nw = r.w0 - dx; if (nw < MIN) { dx = r.w0 - MIN; nw = MIN; } n.w = nw;
-        if (r.contained) n.cdx = r.cdx0 + dx; else n.x = r.x0 + dx; }
+        if (r.snapped) {} else if (r.contained) n.cdx = r.cdx0 + dx; else n.x = r.x0 + dx; }   // snapped: centre stays pinned
       if (d.includes("n")) { let nh = r.h0 - dy; if (nh < MIN) { dy = r.h0 - MIN; nh = MIN; } n.h = nh;
-        if (r.contained) n.cdy = r.cdy0 + dy; else n.y = r.y0 + dy; }
+        if (r.snapped) {} else if (r.contained) n.cdy = r.cdy0 + dy; else n.y = r.y0 + dy; }
       markDirty(true); render(); return;
     }
     if (S.mode === "drag" && S.drag) {
       const w = toWorld(ev), n = node(S.drag.id), dx = w.x - S.drag.wx0, dy = w.y - S.drag.wy0;
+      if (Math.abs(dx) + Math.abs(dy) > 3 / S.view.k) S.drag.moved = true;
       if (S.drag.contained) { n.cdx = S.drag.cdx0 + dx; n.cdy = S.drag.cdy0 + dy; }
       else { n.x = S.drag.x0 + dx; n.y = S.drag.y0 + dy; }
       markDirty(true); render();
@@ -551,10 +693,31 @@
       S.view.x = S.panStart.vx + (ev.clientX - S.panStart.x); S.view.y = S.panStart.vy + (ev.clientY - S.panStart.y); applyView();
     }
   });
+  function clearRubber() { if (S.rubber) { S.rubber.remove(); S.rubber = null; } S.draw = null; }
   function endPointer(ev) { if (S.mode) { try { svg.releasePointerCapture(ev.pointerId); } catch (_) {} }
     S.mode = "idle"; S.drag = null; S.panStart = null; S.resize = null; svg.classList.remove("panning"); }
-  svg.addEventListener("pointerup", endPointer);
-  svg.addEventListener("pointercancel", endPointer);
+  svg.addEventListener("pointerup", (ev) => {
+    if (S.mode === "drawedge" && S.draw) {
+      const tgt = nodeAtWorld(toWorld(ev)), src = S.draw.src;
+      if (tgt && tgt !== src) {
+        const id = uid("e", (x) => S.data.edges.some((e) => e.id === x));
+        S.data.edges.push({ id, from: src, to: tgt, label: "", kind: "plain", dir: "to" });
+        S.selEdge = id; S.sel = null; markDirty(true);
+        status(`arrow <b>${src} → ${tgt}</b> added — set its direction in the box, or ✎ label`);
+      } else { status("arrow cancelled (release on a target box)"); }
+      clearRubber(); endPointer(ev); render(); return;
+    }
+    if (S.mode === "drag" && S.drag) {
+      const n = node(S.drag.id), o = S.drag.orig;
+      if (S.drag.moved) { const msg = dropSnap(n, o); markDirty(true); if (msg) status(msg); }
+      else if (!n.container && o.container) {   // a click (no move) on an edge-snapped box: put it back
+        n.container = o.container; if (o.containerWhen) n.containerWhen = o.containerWhen;
+        if (o.snapSide) n.snapSide = o.snapSide; n.x = o.x; n.y = o.y; }
+      endPointer(ev); render(); return;
+    }
+    endPointer(ev);
+  });
+  svg.addEventListener("pointercancel", (ev) => { clearRubber(); endPointer(ev); });
   svg.addEventListener("dblclick", (ev) => {
     const nid = nodeIdFromEvent(ev); if (!nid) return; const n = node(nid);
     if (n.childDiagram) openDiagram(n.childDiagram); else if (S.backend) relabel();
@@ -578,12 +741,42 @@
   $("save").onclick = save;
   $("copy").onclick = copyJSON;
   $("newdiag").onclick = newDiagram;
+  // arrow box: direction (A→B / A←B / A↔B), head size, line width, colour
+  const selEdgeObj = () => S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
+  for (const btn of document.querySelectorAll("#ep-dirrow button")) {
+    btn.onclick = () => { const e = selEdgeObj(); if (!e) return; e.dir = btn.getAttribute("data-dir"); markDirty(true); render(); };
+  }
+  $("ep-ah").addEventListener("input", (ev) => { const e = selEdgeObj(); if (!e) return; e.ah = +ev.target.value; $("ep-ahv").textContent = e.ah; markDirty(true); render(); });
+  $("ep-lw").addEventListener("input", (ev) => { const e = selEdgeObj(); if (!e) return; e.lw = +ev.target.value; $("ep-lwv").textContent = e.lw; markDirty(true); render(); });
+  $("ep-color").addEventListener("input", (ev) => { const e = selEdgeObj(); if (!e) return; e.color = ev.target.value; markDirty(true); render(); });
+  $("ep-colorclear").onclick = () => { const e = selEdgeObj(); if (!e) return; delete e.color; markDirty(true); render(); };
+  // hover help on toolbar controls (clearer than native title)
+  const tip = $("tooltip");
+  function showTip(t) { const h = t.getAttribute("data-help"); if (!h) return; tip.innerHTML = h;
+    const r = t.getBoundingClientRect(); tip.style.display = "block";
+    tip.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 352)) + "px";
+    tip.style.top = (r.bottom + 6) + "px"; }
+  for (const t of document.querySelectorAll("[data-help]")) {
+    t.addEventListener("mouseenter", () => showTip(t));
+    t.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  }
+  function setCtrl(on) {   // Ctrl held = "draw a new arrow" mode (cursor + handle hint)
+    if (S.ctrl === on) return;
+    S.ctrl = on; svg.classList.toggle("drawmode", on);
+    if (S.sel) render();   // refresh handle cursors
+  }
   window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Control" || ev.key === "Meta") setCtrl(true);
     if (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") return;
     if (ev.key === "Delete" || ev.key === "Backspace") { if (S.sel || S.selEdge) { ev.preventDefault(); delSel(); } }
-    else if (ev.key === "Escape") { if (S.pending) { S.pending = null; svg.classList.remove("addedge"); status("cancelled"); } }
+    else if (ev.key === "Escape") {
+      if (S.mode === "drawedge") { clearRubber(); S.mode = "idle"; status("arrow cancelled"); render(); }
+      else if (S.pending) { S.pending = null; svg.classList.remove("addedge"); status("cancelled"); }
+    }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); }
   });
+  window.addEventListener("keyup", (ev) => { if (ev.key === "Control" || ev.key === "Meta") setCtrl(false); });
+  window.addEventListener("blur", () => setCtrl(false));
   window.addEventListener("beforeunload", (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
 
   /* ---------- boot ---------- */

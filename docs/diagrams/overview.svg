@@ -49,10 +49,13 @@
   <circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
 </symbol></defs>
 <rect x="30" y="170" width="1040" height="124" fill="#0b0e14"/>
-<line x1="240.0" y1="232.0" x2="320.0" y2="232.0" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 240.0 232.0 L 320.0 232.0" fill="none" stroke="#6e7681" stroke-width="2"/>
+<polygon points="320.0,232.0 308.0,238.6 308.0,225.4" fill="#6e7681"/>
 <text x="280.0" y="228.0" text-anchor="middle" font-size="11" fill="#6e7681">netboot / usb</text>
-<line x1="500.0" y1="232.0" x2="580.0" y2="232.0" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arrow)"/>
-<line x1="770.0" y1="232.0" x2="860.0" y2="232.0" stroke="#6e7681" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 500.0 232.0 L 580.0 232.0" fill="none" stroke="#6e7681" stroke-width="2"/>
+<polygon points="580.0,232.0 568.0,238.6 568.0,225.4" fill="#6e7681"/>
+<path d="M 770.0 232.0 L 860.0 232.0" fill="none" stroke="#6e7681" stroke-width="2"/>
+<polygon points="860.0,232.0 848.0,238.6 848.0,225.4" fill="#6e7681"/>
 <text x="815.0" y="228.0" text-anchor="middle" font-size="11" fill="#6e7681">public URL</text>
 <rect x="60" y="200" width="180" height="64" rx="8" ry="8" fill="#13233a" stroke="#58a6ff" stroke-width="2"/>
 <text x="150.0" y="236.0" text-anchor="middle" font-size="12" fill="#c9d1d9">Your laptop (host)</text>

@@ -40,7 +40,7 @@
     #svg { width: 100%; height: 100%; display: block; background:
            radial-gradient(circle, #141a24 1px, transparent 1px) 0 0 / 22px 22px, var(--bg); cursor: grab; }
     #svg.panning { cursor: grabbing; }
-    #svg.addedge { cursor: crosshair; }
+    #svg.addedge, #svg.drawmode { cursor: crosshair; }
     .node rect { stroke-width: 2; }
     .node.sel rect { stroke-dasharray: 5 3; }
     .node.container rect { fill-opacity: .55; }
@@ -48,11 +48,33 @@
     .node .drill { fill: var(--dim); font-size: 11px; }
     .edge .hit { stroke: transparent; stroke-width: 14; fill: none; }
     .edge.sel .hit { stroke: rgba(88,166,255,.35); }
-    .edge line.wire { stroke: var(--dim); stroke-width: 1.6; fill: none; }
-    .edge.sel line.wire { stroke: var(--blue); }
-    .edge.k-cable line.wire { stroke-width: 3; }
-    .edge.k-wifi line.wire, .edge.k-tunnel line.wire, .edge.k-tor line.wire { stroke-dasharray: 6 4; }
+    /* .wire is a <path> (orthogonal arrows) or <line>; style by class, not element, so both render */
+    .edge .wire { stroke: var(--dim); stroke-width: 1.6; fill: none; }
+    .edge.sel .wire { stroke: var(--blue); }
+    .edge.k-cable .wire { stroke-width: 3; }
+    .edge.k-wifi .wire, .edge.k-tunnel .wire, .edge.k-tor .wire { stroke-dasharray: 6 4; }
     .edge text { fill: var(--dim); font: 11px ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
+    #rubber { stroke: var(--blue); stroke-width: 2; stroke-dasharray: 6 4; fill: none; pointer-events: none; }
+    /* custom hover help (clearer than native title) */
+    #tooltip { position: fixed; z-index: 60; max-width: 340px; background: var(--panel2); color: var(--fg);
+               border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px;
+               line-height: 1.45; box-shadow: 0 6px 20px rgba(0,0,0,.55); pointer-events: none; display: none; }
+    #tooltip b { color: var(--blue); }
+    /* contextual box for a selected arrow */
+    #edgepanel { position: absolute; z-index: 40; background: var(--panel2); border: 1px solid var(--border);
+                 border-radius: 8px; padding: 6px 8px; color: var(--fg); display: none;
+                 box-shadow: 0 6px 20px rgba(0,0,0,.55); }
+    #edgepanel .row { display: flex; align-items: center; gap: 6px; }
+    #edgepanel label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+    #edgepanel button { background: var(--panel); color: var(--dim); border: 1px solid var(--border);
+                        border-radius: 5px; padding: 3px 9px; cursor: pointer; font-size: 13px; }
+    #edgepanel button.on { background: #13233a; color: var(--fg); border-color: var(--blue); }
+    #edgepanel .row { margin-bottom: 4px; }
+    #edgepanel input[type=range] { width: 82px; vertical-align: middle; }
+    #edgepanel input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--border);
+                                   background: var(--panel); border-radius: 4px; cursor: pointer; }
+    #edgepanel .val { color: var(--dim); font-size: 11px; width: 22px; display: inline-block; text-align: right; }
+    #edgepanel .hint { color: var(--dim2); font-size: 10px; margin-top: 3px; }
     #status { flex: none; height: 22px; line-height: 22px; padding: 0 16px; font-size: 11px;
               color: var(--dim); background: var(--panel); border-top: 1px solid var(--border);
               white-space: nowrap; overflow: hidden; }
@@ -73,32 +95,32 @@
 
   <div class="toolbar" id="toolbar">
     <span class="grp">
-      <button class="btn" id="addnode">＋ node</button>
-      <button class="btn" id="addedge">＋ edge</button>
-      <button class="btn" id="del" title="Delete selection (Del)">🗑 delete</button>
+      <button class="btn" id="addnode" data-help="<b>Add a box</b> to the diagram. A new box appears in the middle — drag it where you want, then rename it (✎ label), give it an icon (★), or recolour it.">＋ node</button>
+      <button class="btn" id="addedge" data-help="<b>Draw an arrow</b> between two boxes. Click this, then click the <b>source</b> box, then the <b>target</b> box. Shortcut: hold <b>Ctrl</b> and drag from a box's edge-dot to another box.">＋ edge</button>
+      <button class="btn" id="del" data-help="<b>Delete</b> the selected box or arrow. Shortcut: <b>Delete</b> / <b>Backspace</b>.">🗑 delete</button>
     </span>
     <span class="grp">
-      <button class="btn" id="relabel">✎ label</button>
-      <button class="btn" id="seticon" title="Set a device icon on the selected node">★ icon</button>
-      <button class="btn" id="setkind" title="Set the selected edge's kind (cable/wifi/…)">～ edge kind</button>
-      <button class="btn" id="setchild" title="Link this node to a sub-diagram (drill-down)">↳ sub-diagram</button>
+      <button class="btn" id="relabel" data-help="<b>Rename</b> the selected box or arrow. Type <b>\\n</b> for a line break inside a box.">✎ label</button>
+      <button class="btn" id="seticon" data-help="<b>Icon</b> — put a device picture on the selected box (laptop, server, router, phone, cloud, relay, tor, …).">★ icon</button>
+      <button class="btn" id="setkind" data-help="<b>Arrow style</b> for the selected arrow: plain, cable (thick), wifi (dashed), usb, tunnel, pipe, tor. Changes how it's drawn.">～ edge kind</button>
+      <button class="btn" id="setchild" data-help="<b>Sub-diagram</b> — link the selected box to another diagram. Double-clicking that box then drills down into it.">↳ sub-diagram</button>
     </span>
     <span class="grp">
-      <button class="btn" id="setwhen" title="Show the selection only in the current toggle state">👁 show-when</button>
-      <button class="btn" id="setcontainer" title="Nest the selected node inside another (e.g. VM in your computer)">⊏ contain</button>
-      <button class="btn" id="edittoggles" title="Edit the diagram's toggles (JSON)">⚙ toggles</button>
+      <button class="btn" id="setwhen" data-help="<b>Show-when</b> — make the selected box/arrow appear <b>only</b> for the current toggle value (e.g. only when Reach = Port-forward). Pick a toggle first with the buttons below the toolbar.">👁 show-when</button>
+      <button class="btn" id="setcontainer" data-help="<b>Contain</b> — nest the selected box <b>inside</b> another box; it's drawn within and moves with it. Example: a VM inside 'Your computer'. <b>Faster:</b> just drag a box and drop it inside a bigger box (it nests), or drop it on a box's edge (its centre snaps to that edge's middle and stays there).">⊏ contain</button>
+      <button class="btn" id="edittoggles" data-help="<b>Toggles</b> — edit the segmented buttons across the top (the controls that reconfigure the diagram, e.g. Install / Network / Reach). Edited as JSON.">⚙ toggles</button>
     </span>
     <span class="grp">
-      <label>colour</label><span id="swatches"></span>
+      <label data-help="<b>Colour</b> the selected box using the shared palette (host, server/target, created, input, note, alert-red, …).">colour</label><span id="swatches"></span>
     </span>
     <span class="grp">
-      <button class="btn" id="fit">⤢ fit</button>
-      <button class="btn" id="zin">＋</button>
-      <button class="btn" id="zout">－</button>
+      <button class="btn" id="fit" data-help="<b>Fit</b> the whole diagram to the screen.">⤢ fit</button>
+      <button class="btn" id="zin" data-help="<b>Zoom in.</b> (Mouse wheel also zooms.)">＋</button>
+      <button class="btn" id="zout" data-help="<b>Zoom out.</b> (Mouse wheel also zooms.)">－</button>
     </span>
     <span class="grp">
-      <button class="btn" id="save">💾 save</button>
-      <button class="btn" id="copy" title="Copy the diagram JSON (paste it to Claude)">⧉ copy JSON</button>
+      <button class="btn" id="save" data-help="<b>Save</b> to disk (on localhost) so Claude can read the change. On the public site this downloads the JSON instead.">💾 save</button>
+      <button class="btn" id="copy" data-help="<b>Copy JSON</b> of this diagram to the clipboard — paste it to Claude.">⧉ copy JSON</button>
     </span>
   </div>
 
@@ -116,8 +138,25 @@
         <g id="nodes"></g>
       </g>
     </svg>
+    <div id="edgepanel">
+      <div class="row" id="ep-dirrow">
+        <label>arrow</label>
+        <button data-dir="to" title="Arrow points from A to B">A →&nbsp;B</button>
+        <button data-dir="from" title="Arrow points from B to A">A ←&nbsp;B</button>
+        <button data-dir="both" title="Bidirectional (both ends)">A ↔&nbsp;B</button>
+      </div>
+      <div class="row" id="ep-sizerow">
+        <label>head</label><input id="ep-ah" type="range" min="6" max="48" step="1"><span class="val" id="ep-ahv"></span>
+        <label>width</label><input id="ep-lw" type="range" min="1" max="24" step="1"><span class="val" id="ep-lwv"></span>
+      </div>
+      <div class="row" id="ep-colorrow">
+        <label>colour</label><input id="ep-color" type="color"><button id="ep-colorclear" title="Use the theme default colour">reset</button>
+      </div>
+      <div class="hint">A = source box · B = target box</div>
+    </div>
   </div>
   <div id="status"></div>
+  <div id="tooltip"></div>
 
   <script src="flow.js"></script>
 </body>

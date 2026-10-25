@@ -397,8 +397,75 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   requirement concerns. The committed `*.svg` renders only the DEFAULT toggle state (FR38) and is a
   Pages/README embed, NOT the source of truth for reviewing toggle-dependent behaviour. Harness:
   `tools/shot_flow.py '<id>;<toggles>' out.png`.
+- **FR69. Arrows anchored at side-midpoints, orthogonal, snap-to-straight.** Plain/arrow edges (and
+  auto-routed pipes) connect the **mid-point of one node's side to the mid-point of another's** and route
+  with **straight lines or 90° elbows only** (never diagonal) — H-V-H / V-H-V via the shared `zRoute`
+  (flow.js ↔ gen_flow_svg.py). When the two anchors are within `EDGE_SNAP` (28px) of being aligned, the
+  connector **snaps to a single straight line**. An explicit `edge.path` still wins; arrows render as a
+  `<path>` polyline with the arrowhead at the end, label/icon at the polyline's length-midpoint.
 - **FR68. Resize nodes by drag (width / height / diagonal).** The selected node shows 8 resize handles —
   4 edge-midpoints (grab to change **width** [e/w] or **height** [n/s]) and 4 corners (grab to resize
   **diagonally** [nw/ne/se/sw]). Left/top handles move the opposite edge in place (adjust `x`/`y`, or
   `cdx`/`cdy` for a contained node); min size 40. Handles stay ~constant size on screen across zoom. The
   new `w`/`h` (and `x`/`y`/`cdx`/`cdy`) round-trip through the deterministic save (FR8).
+- **FR70. Arrow lines must always render (regression guard).** The `.wire` is a `<path>` (orthogonal
+  arrows, FR69), so CSS must style it **by class** (`.edge .wire`), not by element (`line.wire`) — otherwise
+  the arrow line disappears while only the edge's mid-icon shows (the install `netboot` / `install over
+  wifi` arrows regressed this way). Both `<path>` and `<line>` wires must get stroke/width/dash/selection
+  colour.
+- **FR71. Ctrl-drag to draw a new arrow (discoverable).** Holding **Ctrl** switches the editor to
+  "draw arrow" mode: the cursor becomes a crosshair and the box edge-dots (normally resize handles, which
+  show ↕/↔ resize cursors) become arrow-start anchors. **Ctrl-press on a box (or its edge-dot) and drag to
+  another box** draws a new arrow between them; a rubber-band line follows the cursor; releasing on a target
+  box creates the arrow (releasing on empty space cancels; Esc cancels). The existing `＋ edge` click-click
+  flow still works.
+- **FR72. Arrow-direction box on a selected arrow.** Selecting an arrow pops a small contextual box near it
+  with **A → B · A ← B · A ↔ B** (A = source box, B = target box), setting `edge.dir` ∈
+  `to` / `from` / `both`. The renderer maps this to `marker-end` / `marker-start` / both (shared flow.js ↔
+  gen_flow_svg.py); default `to`. Round-trips through the deterministic save.
+- **FR74. Arrowheads: hand-drawn, always at the box edge, and styleable.** The arrowhead is a drawn
+  triangle (not an SVG `marker`) placed with its tip **exactly on the box border** at the connection point,
+  so it is always visible — even for very short arrows (the old `marker` had a min-length blind spot and
+  scaled with stroke width). The arrow box (FR72) gains three more controls that write per-edge fields:
+  **head size** `edge.ah` (px, default 12), **line width** `edge.lw` (px, default 3 for cable/lan else 2),
+  and **arrow colour** `edge.color` (colour picker + *reset* to the theme default). Head direction still
+  follows `edge.dir`. For `kind:"pipe"` edges the direction/size rows hide (pipes are tubes), but the colour
+  control still applies. All fields round-trip through the deterministic save and are mirrored in
+  `gen_flow_svg.py` (shared `drawArrowHead`/`arrow_head`).
+- **FR73. Hover help on every toolbar control.** Each control (`＋ node`, `＋ edge`, delete, label, icon,
+  edge kind, sub-diagram, show-when, contain, toggles, colour, fit/zoom, save, copy) carries a `data-help`
+  string shown as a **clear styled textbox on hover** (not the terse/slow native `title`) that says what the
+  button does AND how to use it.
+- **FR75. Drag-snap a box into another, or onto an edge-centre (all boxes).** When a box is dragged and
+  released so it lands **inside** another box (fully within, not overlapping the parent's borders), it
+  becomes **contained** by that box (sets `container` + `cdx`/`cdy`, sits inside, and moves with the parent
+  — FR36). When it is dragged so it lands **on an edge** of another box (overlapping/straddling one of the
+  four sides), its **centre snaps/fixates to the centre of that side** of the box (plop onto the edge-mid),
+  like the `pfgate` "Open port 443…" box sitting on the "Your home router" box. This applies to **every**
+  box, not just that one. Releasing in empty space leaves the box free (clears any container). The resulting
+  `container`/`cdx`/`cdy`/`x`/`y` round-trip through the deterministic save (FR8).
+  *Implemented as:* edge-snap stores `container` + **`snapSide`** ∈ `n|e|s|w` (no cdx/cdy) — the box's centre
+  is then **pinned** to that side-midpoint of the parent's rendered box, so it stays on the edge when the
+  parent moves or is resized, and the parent's auto-grow (FR36) ignores edge-snapped children. Rules on
+  release (dragged box `b`, every other visible box `P`, the dragged box detached first so its old parent's
+  auto-grow doesn't skew the test): (1) only a **bigger** box (area) is a target — so dragging a container over
+  a small box never snaps the container onto it; (2) **on an edge** = the side line passes through the middle
+  half of `b` and `b`'s centre lies within that side's extent — a box that merely clips a neighbour does NOT
+  snap; nearest side line wins; (3) else **inside** = `b` strictly within `P`, innermost (smallest) wins;
+  (4) else free. A drag shorter than ~3 screen px is a click and changes nothing. Dragging an edge-snapped
+  box unpins it; release re-applies the rules. A node with a **conditional** container (`containerWhen`)
+  that is inactive in the current toggle state is moved but never re-snapped (would clobber the per-state
+  nesting); re-dropping into the same container keeps its `containerWhen`. Never snaps into its own
+  descendants. Mirrored in `docs/gen_flow_svg.py` (`side_mid`, `rbox`). Known quirk: an edge-snapped box's
+  centre coincides with the selected parent's side resize-handle, so grab the child off-centre to drag it.
+- **FR76. Auto see-through parent when a contained box has pipes/arrows.** If a box is placed inside another
+  box AND that inner box has edges (pipes or arrows) attached to it, the **surrounding (parent) box is made
+  translucent automatically** (`seeThrough`, reusing FR54) so the incoming pipe/arrow is visible passing
+  through it — the user shouldn't have to toggle see-through by hand. (Reverts to opaque when the inner box
+  no longer has attached edges / is removed from the container.)
+  *Implemented as:* **derived at render time, never saved** (so it reverts by itself): a box is translucent
+  if `seeThrough` is set OR any visible child it contains (inside or edge-snapped, FR75) has a *drawn* edge
+  (edge visible in this toggle state AND both endpoints visible). Same in flow.js (`autoSeeThrough`) and the
+  snapshot (`auto_see_through`). The live view applies it as an inline `fill-opacity: 0.3` style, because the
+  `.node.container rect { fill-opacity: .55 }` CSS rule otherwise overrode the attribute (this also fixes
+  explicit `seeThrough` containers such as Tor rendering at 0.55 live vs 0.3 in the snapshot).
