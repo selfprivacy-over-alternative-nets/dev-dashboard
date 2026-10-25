@@ -316,6 +316,16 @@
       "kind": "plain",
       "label": "",
       "to": "relayCF"
+    },
+    {
+      "color": "#f66151",
+      "dir": "to",
+      "from": "relayTS",
+      "id": "e3",
+      "kind": "plain",
+      "label": "",
+      "lw": 9,
+      "to": "tsname"
     }
   ],
   "meta": {

@@ -81,6 +81,20 @@ def arrow_head(poly, which, size, color, fb):   # hand-drawn triangle at the box
             f'{bx - px * half:.1f},{by - py * half:.1f}" fill="{color}"/>')
 
 
+def trim_end(poly, which, length):   # shorten the last (or first) segment by length — mirrors flow.js trimEnd
+    if not poly or len(poly) < 2:
+        return poly
+    p = [tuple(q) for q in poly]
+    i, j = (len(p) - 1, len(p) - 2) if which == "end" else (0, 1)
+    dx, dy = p[i][0] - p[j][0], p[i][1] - p[j][1]
+    L = (dx * dx + dy * dy) ** 0.5
+    if not L:
+        return p
+    t = min(length, L) / L
+    p[i] = (p[i][0] - dx * t, p[i][1] - dy * t)
+    return p
+
+
 def mid_of_poly(poly):   # point at half the total polyline length (label/icon placement) — mirrors flow.js
     if not poly or len(poly) < 2:
         return poly[0] if poly else (0, 0)
@@ -282,13 +296,18 @@ def render(d):
         else:
             # arrows connect side-MIDPOINT → side-midpoint, straight or 90° only (mirrors flow.js)
             poly = _dedupe(pipe_poly(a, b, e))
-            d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in poly)
             lw = e.get("lw") if isinstance(e.get("lw"), (int, float)) else (3 if kind in ("cable", "lan") else 2)
+            _dir = e.get("dir", "to")
+            ah = max(e.get("ah") if isinstance(e.get("ah"), (int, float)) else 12, lw * 2.5)   # head never thinner than the line
+            wp = poly   # line stops at the head's base (mirrors flow.js trimEnd)
+            if _dir in ("to", "both"):
+                wp = trim_end(wp, "end", ah * 0.8)
+            if _dir in ("from", "both"):
+                wp = trim_end(wp, "start", ah * 0.8)
+            d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in wp)
             dash = ' stroke-dasharray="6 4"' if kind in ("wifi", "tunnel", "tor") else ""
             stroke = e.get("color") or DIM
             o.append(f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{lw}"{dash}/>')
-            _dir = e.get("dir", "to")
-            ah = e.get("ah") if isinstance(e.get("ah"), (int, float)) else 12
             fb = (center(b)[0] - center(a)[0], center(b)[1] - center(a)[1])
             if _dir in ("to", "both"):
                 o.append(arrow_head(poly, "end", ah, stroke, fb))

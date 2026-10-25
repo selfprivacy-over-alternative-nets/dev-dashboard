@@ -181,6 +181,15 @@
     const bx = tip.x - dx * size, by = tip.y - dy * size, px = -dy, py = dx, half = size * 0.55;
     el("polygon", { points: `${tip.x},${tip.y} ${bx + px * half},${by + py * half} ${bx - px * half},${by - py * half}`, fill: color }, parent);
   }
+  function trimEnd(poly, whichEnd, len) {   // shorten the last (or first) segment by len, never past its other end
+    if (!poly || poly.length < 2) return poly;
+    const p = poly.map((q) => ({ x: q.x, y: q.y })), end = whichEnd === "end";
+    const i = end ? p.length - 1 : 0, j = end ? p.length - 2 : 1;
+    const dx = p[i].x - p[j].x, dy = p[i].y - p[j].y, L = Math.hypot(dx, dy);
+    if (!L) return p;
+    const t = Math.min(len, L) / L; p[i] = { x: p[i].x - dx * t, y: p[i].y - dy * t };
+    return p;
+  }
   function midOfPoly(poly) {   // point at half the total polyline length (for label/icon placement)
     if (!poly || poly.length < 2) return (poly && poly[0]) || { x: 0, y: 0 };
     const seg = []; let total = 0;
@@ -247,15 +256,20 @@
       } else {
         // arrows connect side-MIDPOINT → side-midpoint, straight or 90° only, snap-to-straight (via zRoute)
         const poly = dedupe(pipePoly(a, b, e));
-        const d = "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L ");
-        el("path", { class: "hit", d, fill: "none" }, g);
         const lw = typeof e.lw === "number" ? e.lw : (kind === "cable" || kind === "lan" ? 3 : 2);
+        const dir = e.dir || "to", ah = Math.max(typeof e.ah === "number" ? e.ah : 12, lw * 2.5);   // to=A→B, from=B→A, both=A↔B; head never thinner than the line
+        let wp = poly;   // line stops at the head's base so a thick line's butt never pokes past the tip
+        if (dir === "to" || dir === "both") wp = trimEnd(wp, "end", ah * 0.8);
+        if (dir === "from" || dir === "both") wp = trimEnd(wp, "start", ah * 0.8);
+        const d = "M " + wp.map((p) => `${p.x} ${p.y}`).join(" L ");
+        const hit = el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         const col = e.color || (S.selEdge === e.id ? "#58a6ff" : "#6e7681");
         const w = el("path", { class: "wire", d, fill: "none" }, g);
-        w.setAttribute("stroke-width", lw);
-        if (e.color) w.setAttribute("stroke", e.color);
+        // FR77: inline style, NOT attributes — the .edge .wire / .k-cable CSS rules would override stroke-width/stroke
+        w.style.strokeWidth = lw;
+        if (e.color) w.style.stroke = e.color;
+        hit.style.strokeWidth = Math.max(14, lw + 10);   // keep a thick line easy to click
         // arrowheads drawn by hand → always sit AT the box edge (no min-length blind spot), size/colour-settable
-        const dir = e.dir || "to", ah = typeof e.ah === "number" ? e.ah : 12;   // to=A→B, from=B→A, both=A↔B
         const fb = { x: center(b).x - center(a).x, y: center(b).y - center(a).y };
         if (dir === "to" || dir === "both") drawArrowHead(g, poly, "end", ah, col, fb);
         if (dir === "from" || dir === "both") drawArrowHead(g, poly, "start", ah, col, fb);

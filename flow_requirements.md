@@ -469,3 +469,10 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   snapshot (`auto_see_through`). The live view applies it as an inline `fill-opacity: 0.3` style, because the
   `.node.container rect { fill-opacity: .55 }` CSS rule otherwise overrode the attribute (this also fixes
   explicit `seeThrough` containers such as Tor rendering at 0.55 live vs 0.3 in the snapshot).
+- **FR77. Changing an arrow's width (and colour) must visibly change the drawn line.** The arrow box's
+  *width* slider (`edge.lw`, FR74) and *colour* (`edge.color`) are applied to the `.wire` as **inline style**
+  — `.edge .wire { stroke-width; stroke }` / `.k-cable` CSS rules otherwise silently override SVG attributes
+  (regression: the slider moved but the line stayed 1.6/3 px). The click target (`.hit`) widens with the line.
+  A thick line keeps reading as an arrow: the drawn head is `max(ah, 2.5 × lw)` (the *head* slider is the
+  minimum) and the line is trimmed back to the head's base so its butt never pokes past the tip; the tip
+  stays exactly on the box edge. Mirrored in `docs/gen_flow_svg.py` (`trim_end`, head size).

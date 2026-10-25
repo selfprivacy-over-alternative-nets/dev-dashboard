@@ -49,9 +49,9 @@
   <circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>
 </symbol></defs>
 <rect x="30" y="130" width="780" height="140" fill="#0b0e14"/>
-<path d="M 250.0 198.0 L 330.0 198.0" fill="none" stroke="#6e7681" stroke-width="2"/>
+<path d="M 250.0 198.0 L 320.4 198.0" fill="none" stroke="#6e7681" stroke-width="2"/>
 <polygon points="330.0,198.0 318.0,204.6 318.0,191.4" fill="#6e7681"/>
-<path d="M 520.0 196.0 L 600.0 196.0" fill="none" stroke="#6e7681" stroke-width="2"/>
+<path d="M 520.0 196.0 L 590.4 196.0" fill="none" stroke="#6e7681" stroke-width="2"/>
 <polygon points="600.0,196.0 588.0,202.6 588.0,189.4" fill="#6e7681"/>
 <rect x="60" y="160" width="190" height="80" rx="8" ry="8" fill="#1c1430" stroke="#a371f7" stroke-width="2"/>
 <text x="155.0" y="196.0" text-anchor="middle" font-size="12" fill="#c9d1d9">Pick method:</text>
