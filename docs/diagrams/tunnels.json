@@ -1,7 +1,7 @@
 {
   "edges": [
     {
-      "color": "#8b949e",
+      "color": "#6e7681",
       "from": "server",
       "id": "p_lan",
       "kind": "pipe",
@@ -9,17 +9,17 @@
       "path": [
         {
           "x": 230,
-          "y": 585
+          "y": 595
         },
         {
           "x": 360,
-          "y": 585
+          "y": 595
         }
       ],
       "to": "router"
     },
     {
-      "color": "#3b82f6",
+      "color": "#8b949e",
       "from": "router",
       "id": "p_ts_up",
       "kind": "pipe",
@@ -31,7 +31,7 @@
         },
         {
           "x": 410,
-          "y": 150
+          "y": 110
         }
       ],
       "showWhen": {
@@ -43,19 +43,19 @@
       "to": "relayTS"
     },
     {
-      "color": "#3b82f6",
+      "color": "#8b949e",
       "from": "relayTS",
       "id": "p_ts_run",
       "kind": "pipe",
-      "label": "IPv4 + IPv6",
+      "label": "works for everyone (IPv4 + IPv6)",
       "path": [
         {
-          "x": 500,
-          "y": 110
+          "x": 520,
+          "y": 100
         },
         {
-          "x": 1150,
-          "y": 110
+          "x": 1320,
+          "y": 100
         }
       ],
       "showWhen": {
@@ -79,7 +79,7 @@
         },
         {
           "x": 470,
-          "y": 265
+          "y": 230
         }
       ],
       "showWhen": {
@@ -99,11 +99,11 @@
       "path": [
         {
           "x": 560,
-          "y": 225
+          "y": 220
         },
         {
-          "x": 1150,
-          "y": 225
+          "x": 1320,
+          "y": 220
         }
       ],
       "showWhen": {
@@ -115,59 +115,104 @@
       "to": "inet"
     },
     {
-      "color": "#2bb673",
+      "casing": true,
+      "color": "#8b949e",
       "from": "router",
-      "id": "p_v6_up",
+      "id": "p_dir_case",
       "kind": "pipe",
-      "label": "",
+      "label": "the normal (direct) connection",
       "path": [
         {
-          "x": 520,
-          "y": 620
+          "x": 470,
+          "y": 585
         },
         {
-          "x": 520,
-          "y": 390
+          "x": 1320,
+          "y": 585
         }
       ],
+      "pw": 62,
       "showWhen": {
         "show": [
           "all",
-          "ipv6"
-        ]
-      },
-      "to": "duck"
-    },
-    {
-      "color": "#2bb673",
-      "from": "duck",
-      "id": "p_v6_run",
-      "kind": "pipe",
-      "label": "IPv6 only",
-      "path": [
-        {
-          "x": 615,
-          "y": 345
-        },
-        {
-          "x": 1150,
-          "y": 345
-        }
-      ],
-      "showWhen": {
-        "show": [
-          "all",
-          "ipv6"
+          "direct",
+          "duckdns"
         ]
       },
       "to": "inet"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "router",
+      "id": "p_v6",
+      "kind": "pipe",
+      "label": "IPv6",
+      "path": [
+        {
+          "x": 470,
+          "y": 571
+        },
+        {
+          "x": 1320,
+          "y": 571
+        }
+      ],
+      "pw": 16,
+      "showWhen": {
+        "show": [
+          "all",
+          "direct",
+          "duckdns"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#eab308",
+      "from": "router",
+      "id": "p_v4",
+      "kind": "pipe",
+      "label": "IPv4",
+      "path": [
+        {
+          "x": 470,
+          "y": 599
+        },
+        {
+          "x": 1320,
+          "y": 599
+        }
+      ],
+      "pw": 16,
+      "showWhen": {
+        "show": [
+          "all",
+          "direct",
+          "duckdns"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#e5484d",
+      "from": "friend",
+      "id": "p_duck",
+      "kind": "plain",
+      "label": "looks up the name",
+      "showWhen": {
+        "show": [
+          "all",
+          "duckdns"
+        ]
+      },
+      "to": "duck"
     },
     {
       "color": "#9b59b6",
       "from": "router",
       "id": "p_tor_up",
       "kind": "pipe",
-      "label": "no company",
+      "label": "hidden service",
       "path": [
         {
           "x": 630,
@@ -175,33 +220,69 @@
         },
         {
           "x": 630,
-          "y": 495
+          "y": 420
+        },
+        {
+          "x": 800,
+          "y": 420
         }
       ],
+      "pw": 16,
       "showWhen": {
         "show": [
           "all",
           "tor"
         ]
       },
-      "to": "tornet"
+      "to": "tt1"
     },
     {
       "color": "#9b59b6",
-      "from": "tornet",
+      "from": "tt1",
+      "id": "p_tor_h1",
+      "kind": "pipe",
+      "label": "",
+      "pw": 13,
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "to": "tt2"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tt2",
+      "id": "p_tor_h2",
+      "kind": "pipe",
+      "label": "",
+      "pw": 13,
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "to": "tt3"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tt3",
       "id": "p_tor_run",
       "kind": "pipe",
       "label": "",
       "path": [
         {
-          "x": 715,
-          "y": 455
+          "x": 1140,
+          "y": 405
         },
         {
-          "x": 1150,
-          "y": 455
+          "x": 1320,
+          "y": 405
         }
       ],
+      "pw": 16,
       "showWhen": {
         "show": [
           "all",
@@ -211,55 +292,49 @@
       "to": "inet"
     },
     {
-      "color": "#eab308",
-      "from": "router",
-      "id": "p_pf_up",
-      "kind": "pipe",
+      "color": "#9b59b6",
+      "from": "tt1",
+      "id": "m1",
+      "kind": "plain",
       "label": "",
-      "path": [
-        {
-          "x": 575,
-          "y": 620
-        },
-        {
-          "x": 575,
-          "y": 605
-        }
-      ],
       "showWhen": {
         "show": [
           "all",
-          "portfwd"
+          "tor"
         ]
       },
-      "to": "portcfg"
+      "to": "tt4"
     },
     {
-      "color": "#eab308",
-      "from": "portcfg",
-      "id": "p_pf_run",
-      "kind": "pipe",
-      "label": "needs public IPv4",
-      "path": [
-        {
-          "x": 670,
-          "y": 565
-        },
-        {
-          "x": 1150,
-          "y": 565
-        }
-      ],
+      "color": "#9b59b6",
+      "from": "tt4",
+      "id": "m2",
+      "kind": "plain",
+      "label": "",
       "showWhen": {
         "show": [
           "all",
-          "portfwd"
+          "tor"
         ]
       },
-      "to": "inet"
+      "to": "tt3"
     },
     {
-      "color": "#8b949e",
+      "color": "#9b59b6",
+      "from": "tt2",
+      "id": "m3",
+      "kind": "plain",
+      "label": "",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "to": "tt4"
+    },
+    {
+      "color": "#6e7681",
       "from": "inet",
       "id": "p_friend",
       "kind": "pipe",
@@ -267,11 +342,11 @@
       "path": [
         {
           "x": 1320,
-          "y": 355
+          "y": 400
         },
         {
-          "x": 1420,
-          "y": 355
+          "x": 1560,
+          "y": 400
         }
       ],
       "to": "friend"
@@ -279,7 +354,7 @@
   ],
   "meta": {
     "background": "#5c94fc",
-    "ground": 640,
+    "ground": 700,
     "parent": "setup-map",
     "title": "Tunnels (Mario style)",
     "toggles": [
@@ -301,12 +376,12 @@
             "value": "cloudflare"
           },
           {
-            "label": "Direct IPv6 (DuckDNS)",
-            "value": "ipv6"
+            "label": "Direct (IPv4+IPv6)",
+            "value": "direct"
           },
           {
-            "label": "Port-forward",
-            "value": "portfwd"
+            "label": "DuckDNS",
+            "value": "duckdns"
           },
           {
             "label": "Tor / .onion",
@@ -319,24 +394,44 @@
   "nodes": [
     {
       "color": "target",
-      "h": 140,
+      "h": 150,
       "icon": "server",
       "id": "server",
       "label": "Your new\nprivate server",
       "w": 170,
       "x": 60,
-      "y": 500
+      "y": 520
     },
     {
       "color": "note",
-      "h": 170,
+      "h": 240,
       "icon": "router",
       "id": "router",
       "label": "Your home router\n(see-through)",
       "seeThrough": true,
-      "w": 300,
+      "w": 360,
       "x": 360,
-      "y": 470
+      "y": 460
+    },
+    {
+      "color": "web",
+      "h": 640,
+      "icon": "cloud",
+      "id": "inet",
+      "label": "The internet",
+      "w": 170,
+      "x": 1320,
+      "y": 60
+    },
+    {
+      "color": "input",
+      "h": 120,
+      "icon": "phone",
+      "id": "friend",
+      "label": "A friend's phone",
+      "w": 170,
+      "x": 1560,
+      "y": 340
     },
     {
       "color": "created",
@@ -350,9 +445,24 @@
           "tailscale"
         ]
       },
-      "w": 180,
+      "w": 200,
       "x": 320,
-      "y": 70
+      "y": 60
+    },
+    {
+      "color": "note",
+      "h": 60,
+      "icon": "tag",
+      "id": "tsname",
+      "label": "Free name: *.ts.net\n(nothing to buy)",
+      "showWhen": {
+        "show": [
+          "tailscale"
+        ]
+      },
+      "w": 220,
+      "x": 120,
+      "y": 170
     },
     {
       "color": "created",
@@ -366,61 +476,122 @@
           "cloudflare"
         ]
       },
-      "w": 180,
-      "x": 380,
-      "y": 185
+      "w": 200,
+      "x": 360,
+      "y": 190
     },
     {
-      "color": "created",
-      "h": 90,
-      "icon": "cloud",
-      "id": "duck",
-      "label": "DuckDNS = name only\n(traffic is direct)",
+      "childDiagram": "registrar",
+      "color": "input",
+      "h": 70,
+      "icon": "cart",
+      "id": "cfbuy",
+      "label": "Buy a domain (registrar)\nor free *.trycloudflare.com",
       "showWhen": {
         "show": [
-          "all",
-          "ipv6"
+          "cloudflare"
         ]
       },
-      "w": 190,
-      "x": 425,
+      "w": 260,
+      "x": 90,
       "y": 300
     },
     {
-      "color": "note",
-      "h": 66,
-      "icon": "block",
-      "id": "ip4block",
-      "label": "IPv4 blocked\nIPv6 only",
-      "showWhen": {
-        "show": [
-          "all",
-          "ipv6"
-        ]
-      },
-      "w": 150,
-      "x": 820,
-      "y": 312
-    },
-    {
       "color": "created",
-      "h": 80,
+      "h": 150,
       "icon": "tor",
       "id": "tornet",
-      "label": "Tor network\n(no company — direct)",
+      "label": "Tor network\n1000s of volunteer relays · no company",
+      "seeThrough": true,
       "showWhen": {
         "show": [
           "all",
           "tor"
         ]
       },
-      "w": 170,
-      "x": 545,
-      "y": 415
+      "w": 440,
+      "x": 760,
+      "y": 300
+    },
+    {
+      "cdx": 40,
+      "cdy": 80,
+      "color": "created",
+      "container": "tornet",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tt1",
+      "label": "",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cdx": 170,
+      "cdy": 55,
+      "color": "created",
+      "container": "tornet",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tt2",
+      "label": "",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cdx": 300,
+      "cdy": 85,
+      "color": "created",
+      "container": "tornet",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tt3",
+      "label": "",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cdx": 220,
+      "cdy": 100,
+      "color": "created",
+      "container": "tornet",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tt4",
+      "label": "",
+      "showWhen": {
+        "show": [
+          "all",
+          "tor"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
     },
     {
       "color": "created",
-      "h": 72,
+      "h": 74,
       "icon": "onion",
       "id": "onion",
       "label": ".onion",
@@ -430,45 +601,90 @@
           "tor"
         ]
       },
-      "w": 90,
-      "x": 585,
-      "y": 343
+      "w": 110,
+      "x": 870,
+      "y": 225
+    },
+    {
+      "color": "note",
+      "h": 50,
+      "icon": "onion",
+      "id": "tornote",
+      "label": "No domain to buy — the .onion name is free & automatic",
+      "showWhen": {
+        "show": [
+          "tor"
+        ]
+      },
+      "w": 440,
+      "x": 760,
+      "y": 470
     },
     {
       "color": "input",
-      "h": 80,
+      "h": 74,
       "icon": "gate",
-      "id": "portcfg",
-      "label": "You must open\nport 443 (manual)",
+      "id": "pfgate",
+      "label": "Open port 443\nby hand (IPv4)",
       "showWhen": {
         "show": [
           "all",
-          "portfwd"
+          "direct",
+          "duckdns"
         ]
       },
       "w": 190,
-      "x": 480,
-      "y": 525
+      "x": 560,
+      "y": 600
     },
     {
-      "color": "web",
-      "h": 540,
-      "icon": "cloud",
-      "id": "inet",
-      "label": "The internet",
-      "w": 170,
-      "x": 1150,
-      "y": 80
+      "color": "note",
+      "h": 66,
+      "icon": "block",
+      "id": "v6block",
+      "label": "IPv4-only friend\ncan't open IPv6",
+      "showWhen": {
+        "show": [
+          "all",
+          "direct"
+        ]
+      },
+      "w": 180,
+      "x": 1010,
+      "y": 500
     },
     {
+      "childDiagram": "registrar",
       "color": "input",
-      "h": 110,
-      "icon": "phone",
-      "id": "friend",
-      "label": "A friend's phone",
-      "w": 160,
-      "x": 1420,
-      "y": 300
+      "h": 70,
+      "icon": "cart",
+      "id": "dirbuy",
+      "label": "Buy a domain\n(registrar, €/yr)",
+      "showWhen": {
+        "show": [
+          "direct"
+        ]
+      },
+      "w": 200,
+      "x": 110,
+      "y": 600
+    },
+    {
+      "color": "red",
+      "h": 80,
+      "icon": "tag",
+      "id": "duck",
+      "label": "DuckDNS: free NAME only\ntraffic goes direct",
+      "showWhen": {
+        "show": [
+          "all",
+          "duckdns",
+          "direct"
+        ]
+      },
+      "w": 240,
+      "x": 1330,
+      "y": 490
     }
   ]
 }

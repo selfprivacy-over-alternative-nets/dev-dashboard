@@ -16,6 +16,11 @@
       "title": "Make it reachable"
     },
     {
+      "id": "registrar",
+      "parent": "setup-map",
+      "title": "Registrar / DNS records"
+    },
+    {
       "id": "setup-map",
       "parent": null,
       "title": "Setup map"

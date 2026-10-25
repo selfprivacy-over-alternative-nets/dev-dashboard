@@ -21,6 +21,7 @@ PALETTE = {  # must match flow.js PALETTE / requirements.md req 165
     "host": ("#13233a", "#58a6ff"), "cli": ("#1c1430", "#a371f7"), "web": ("#1a1d23", "#8b949e"),
     "target": ("#2a1d10", "#e3882d"), "created": ("#10231a", "#3fb950"),
     "input": ("#2a2410", "#d6a015"), "note": ("#14181f", "#6e7681"),
+    "red": ("#2a1113", "#e5484d"),
 }
 FG, DIM = "#c9d1d9", "#6e7681"
 EDGE_ICON = {"cable": "ethernet", "lan": "ethernet", "wifi": "wifi", "usb": "usb", "tunnel": "relay", "tor": "tor"}
@@ -61,28 +62,34 @@ def pipe_poly(a, b, e):
     return zroute(a, b)
 
 
-def mario_pipe_svg(poly, color):
+def mario_pipe_svg(poly, color, body_w=None, casing=False):
+    # body_w (edge.pw, default 22) = pipe width; casing = translucent wide outer tube so the two thin inner
+    # pipes drawn on the same lane stay visible — "two tunnels within one tunnel" (FR59). Mirrors flow.js.
     pts = _dedupe(poly)
     if len(pts) < 2:
         return ""
-    dark, light, OL, BODY = shade(color, 0.5), shade(color, 1.55), "#0a140a", 22
+    W = body_w or 22
+    dark, light, OL = shade(color, 0.5), shade(color, 1.55), "#0a140a"
+    off, sw, rimH, rimOL, rimC, rimL = W * 0.3, max(3, W * 0.18), W * 0.86, W * 0.82, W * 0.59, max(2, W * 0.14)
+    bop = ' stroke-opacity="0.35"' if casing else ""
+    sop = ' stroke-opacity="0.5"' if casing else ""
     d = "M " + " L ".join(f"{p[0]:.1f} {p[1]:.1f}" for p in pts)
-    out = [f'<path d="{d}" fill="none" stroke="{OL}" stroke-width="{BODY + 6}" stroke-linejoin="round"/>',
-           f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{BODY}" stroke-linejoin="round"/>']
-    ln = lambda x1, y1, x2, y2, s, w: f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{s}" stroke-width="{w}"/>'
+    out = [f'<path d="{d}" fill="none" stroke="{OL}" stroke-width="{W + 6}" stroke-linejoin="round"/>',
+           f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{W}" stroke-linejoin="round"{bop}/>']
+    ln = lambda x1, y1, x2, y2, s, w, op="": f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{s}" stroke-width="{w}"{op}/>'
     for i in range(1, len(pts)):
         A, B = pts[i - 1], pts[i]
         if abs(A[1] - B[1]) < 0.5:
-            out.append(ln(A[0], A[1] - 6, B[0], B[1] - 6, light, 4)); out.append(ln(A[0], A[1] + 7, B[0], B[1] + 7, dark, 4))
+            out.append(ln(A[0], A[1] - off, B[0], B[1] - off, light, sw, sop)); out.append(ln(A[0], A[1] + off, B[0], B[1] + off, dark, sw, sop))
         else:
-            out.append(ln(A[0] - 6, A[1], B[0] - 6, B[1], light, 4)); out.append(ln(A[0] + 7, A[1], B[0] + 7, B[1], dark, 4))
+            out.append(ln(A[0] - off, A[1], B[0] - off, B[1], light, sw, sop)); out.append(ln(A[0] + off, A[1], B[0] + off, B[1], dark, sw, sop))
     def rim(p, q):
         dx, dy = p[0] - q[0], p[1] - q[1]
         L = (dx * dx + dy * dy) ** 0.5 or 1.0
-        px, py = -dy / L * 19, dx / L * 19
-        return (ln(p[0] - px, p[1] - py, p[0] + px, p[1] + py, OL, 18)
-                + ln(p[0] - px * 0.9, p[1] - py * 0.9, p[0] + px * 0.9, p[1] + py * 0.9, color, 13)
-                + ln(p[0] - px * 0.9, p[1] - py * 0.9, p[0] + px * 0.9, p[1] + py * 0.9, light, 3))
+        px, py = -dy / L * rimH, dx / L * rimH
+        return (ln(p[0] - px, p[1] - py, p[0] + px, p[1] + py, OL, rimOL)
+                + ln(p[0] - px * 0.9, p[1] - py * 0.9, p[0] + px * 0.9, p[1] + py * 0.9, color, rimC)
+                + ln(p[0] - px * 0.9, p[1] - py * 0.9, p[0] + px * 0.9, p[1] + py * 0.9, light, rimL))
     out.append(rim(pts[0], pts[1])); out.append(rim(pts[-1], pts[-2]))
     return "".join(out)
 
@@ -214,7 +221,7 @@ def render(d):
         kind = e.get("kind", "plain")
         if kind == "pipe":
             poly = _dedupe(pipe_poly(a, b, e))
-            o.append(mario_pipe_svg(poly, e.get("color") or "#8b949e"))
+            o.append(mario_pipe_svg(poly, e.get("color") or "#8b949e", e.get("pw"), e.get("casing")))
             mp = poly[max(1, len(poly) // 2) - 1]
             mx, my = mp[0], mp[1]
         else:

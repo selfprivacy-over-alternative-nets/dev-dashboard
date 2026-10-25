@@ -81,22 +81,7 @@
       "to": "routerY"
     },
     {
-      "color": "#8b949e",
-      "from": "router",
-      "id": "e_rinet",
-      "kind": "pipe",
-      "label": "",
-      "showWhen": {
-        "method": [
-          "cable",
-          "wifi",
-          "usb"
-        ]
-      },
-      "to": "inet"
-    },
-    {
-      "color": "#8b949e",
+      "color": "#6e7681",
       "from": "you",
       "id": "e_vminet",
       "kind": "pipe",
@@ -109,66 +94,212 @@
       "to": "inet"
     },
     {
-      "color": "#3b82f6",
-      "from": "server",
-      "id": "e_relay",
-      "kind": "pipe",
-      "label": "outbound tunnel",
-      "showWhen": {
-        "reach": [
-          "tailscale",
-          "cloudflare"
-        ]
-      },
-      "to": "relay"
-    },
-    {
-      "color": "#3b82f6",
-      "from": "relay",
-      "id": "e_relayinet",
-      "kind": "pipe",
-      "label": "",
-      "showWhen": {
-        "reach": [
-          "tailscale",
-          "cloudflare"
-        ]
-      },
-      "to": "inet"
-    },
-    {
-      "color": "#9b59b6",
-      "from": "server",
-      "id": "e_tor",
-      "kind": "pipe",
-      "label": "hidden service",
-      "showWhen": {
-        "reach": [
-          "onion"
-        ]
-      },
-      "to": "tor"
-    },
-    {
-      "color": "#9b59b6",
-      "from": "tor",
-      "id": "e_torinet",
-      "kind": "pipe",
-      "label": "",
-      "showWhen": {
-        "reach": [
-          "onion"
-        ]
-      },
-      "to": "inet"
-    },
-    {
-      "color": "#8b949e",
+      "color": "#6e7681",
       "from": "friend",
       "id": "e_friend",
       "kind": "pipe",
       "label": "opens the link",
       "to": "inet"
+    },
+    {
+      "color": "#8b949e",
+      "from": "server",
+      "id": "e_ts_up",
+      "kind": "pipe",
+      "label": "outbound tunnel",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "to": "relayTS"
+    },
+    {
+      "color": "#8b949e",
+      "from": "relayTS",
+      "id": "e_ts_run",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#f38020",
+      "from": "server",
+      "id": "e_cf_up",
+      "kind": "pipe",
+      "label": "outbound tunnel",
+      "showWhen": {
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "to": "relayCF"
+    },
+    {
+      "color": "#f38020",
+      "from": "relayCF",
+      "id": "e_cf_run",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#3b82f6",
+      "from": "router",
+      "id": "e_v6",
+      "kind": "pipe",
+      "label": "Direct · IPv6 only",
+      "showWhen": {
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#eab308",
+      "from": "router",
+      "id": "e_pf_a",
+      "kind": "pipe",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "to": "pfgate"
+    },
+    {
+      "color": "#eab308",
+      "from": "pfgate",
+      "id": "e_pf_b",
+      "kind": "pipe",
+      "label": "Direct · IPv4 · needs public IP",
+      "showWhen": {
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "server",
+      "id": "e_tor_up",
+      "kind": "pipe",
+      "label": "hidden service",
+      "pw": 16,
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn1"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn1",
+      "id": "e_tor_h1",
+      "kind": "pipe",
+      "label": "",
+      "pw": 14,
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn2"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn2",
+      "id": "e_tor_h2",
+      "kind": "pipe",
+      "label": "",
+      "pw": 14,
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn3"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn3",
+      "id": "e_tor_run",
+      "kind": "pipe",
+      "label": "",
+      "pw": 16,
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn2",
+      "id": "e_m1",
+      "kind": "plain",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn4"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn1",
+      "id": "e_m2",
+      "kind": "plain",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn3"
+    },
+    {
+      "color": "#9b59b6",
+      "from": "tn3",
+      "id": "e_m3",
+      "kind": "plain",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "to": "tn4"
+    },
+    {
+      "color": "#e5484d",
+      "from": "friend",
+      "id": "e_duck",
+      "kind": "plain",
+      "label": "looks up the name",
+      "showWhen": {
+        "reach": [
+          "ipv6",
+          "portfwd"
+        ]
+      },
+      "to": "duck"
     }
   ],
   "meta": {
@@ -333,8 +464,8 @@
         ]
       },
       "w": 180,
-      "x": 340,
-      "y": 400
+      "x": 342,
+      "y": 371
     },
     {
       "color": "note",
@@ -348,60 +479,312 @@
           "uc"
         ]
       },
+      "w": 180,
+      "x": 340,
+      "y": 520
+    },
+    {
+      "color": "web",
+      "h": 120,
+      "icon": "cloud",
+      "id": "inet",
+      "label": "The internet",
       "w": 170,
-      "x": 600,
-      "y": 400
+      "x": 1000,
+      "y": 210
+    },
+    {
+      "color": "input",
+      "h": 100,
+      "icon": "phone",
+      "id": "friend",
+      "label": "A friend's phone",
+      "w": 160,
+      "x": 1366,
+      "y": 18
+    },
+    {
+      "childDiagram": "tunnels",
+      "color": "cli",
+      "h": 70,
+      "icon": "pipe",
+      "id": "seeroutes",
+      "label": "▸ Compare all\n6 routes (pipes)",
+      "w": 190,
+      "x": 59,
+      "y": 401
     },
     {
       "color": "created",
-      "h": 84,
+      "h": 107,
       "icon": "relay",
-      "id": "relay",
-      "label": "Tunnel relay\n(Tailscale/Cloudflare)",
+      "id": "relayTS",
+      "label": "Tailscale\n(a company)",
       "showWhen": {
         "reach": [
-          "tailscale",
-          "cloudflare"
+          "tailscale"
         ]
       },
-      "w": 200,
-      "x": 600,
-      "y": 70
+      "w": 190,
+      "x": 620,
+      "y": 50
+    },
+    {
+      "color": "note",
+      "h": 66,
+      "icon": "tag",
+      "id": "tsname",
+      "label": "Free name: *.ts.net\n(nothing to buy)",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 131,
+      "x": 646,
+      "y": -74
     },
     {
       "color": "created",
       "h": 80,
+      "icon": "relay",
+      "id": "relayCF",
+      "label": "Cloudflare\n(a company)",
+      "showWhen": {
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 190,
+      "x": 620,
+      "y": 50
+    },
+    {
+      "childDiagram": "registrar",
+      "color": "input",
+      "h": 70,
+      "icon": "cart",
+      "id": "cfbuy",
+      "label": "Buy a domain\nat a registrar (€/yr)",
+      "showWhen": {
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 210,
+      "x": 620,
+      "y": 150
+    },
+    {
+      "color": "note",
+      "h": 50,
+      "icon": "",
+      "id": "cffree",
+      "label": "or free *.trycloudflare.com",
+      "showWhen": {
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 210,
+      "x": 620,
+      "y": 240
+    },
+    {
+      "color": "note",
+      "h": 90,
+      "icon": "block",
+      "id": "v6block",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "showWhen": {
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 240,
+      "x": 639,
+      "y": 307
+    },
+    {
+      "childDiagram": "registrar",
+      "color": "input",
+      "h": 70,
+      "icon": "cart",
+      "id": "v6buy",
+      "label": "Buy a domain\n(registrar, €/yr)",
+      "showWhen": {
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 210,
+      "x": 663,
+      "y": 223
+    },
+    {
+      "color": "input",
+      "h": 70,
+      "icon": "warn",
+      "id": "pfwarn",
+      "label": "This route = manual work\n(router + registrar)",
+      "showWhen": {
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "w": 230,
+      "x": 322,
+      "y": 487
+    },
+    {
+      "color": "input",
+      "h": 90,
+      "icon": "gate",
+      "id": "pfgate",
+      "label": "Open port 443\nby hand in your\nrouter settings",
+      "showWhen": {
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "w": 210,
+      "x": 324,
+      "y": 570
+    },
+    {
+      "childDiagram": "registrar",
+      "color": "input",
+      "h": 70,
+      "icon": "cart",
+      "id": "pfbuy",
+      "label": "Buy a domain\n(registrar, €/yr)",
+      "showWhen": {
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "w": 210,
+      "x": 657,
+      "y": 433
+    },
+    {
+      "color": "red",
+      "h": 90,
+      "icon": "tag",
+      "id": "duck",
+      "label": "DuckDNS: free NAME only\n(no domain to buy)\ntraffic goes direct",
+      "showWhen": {
+        "reach": [
+          "ipv6",
+          "portfwd"
+        ]
+      },
+      "w": 250,
+      "x": 1324,
+      "y": 358
+    },
+    {
+      "color": "created",
+      "h": 190,
       "icon": "tor",
       "id": "tor",
-      "label": "Tor network",
+      "label": "Tor network\n1000s of volunteer relays\nno company · no owner",
+      "seeThrough": true,
       "showWhen": {
         "reach": [
           "onion"
         ]
       },
-      "w": 160,
-      "x": 615,
-      "y": 46
+      "w": 380,
+      "x": 590,
+      "y": 30
     },
     {
-      "color": "web",
-      "h": 84,
-      "icon": "cloud",
-      "id": "inet",
-      "label": "The internet",
-      "w": 160,
-      "x": 880,
-      "y": 230
+      "cdx": 40,
+      "cdy": 120,
+      "color": "created",
+      "container": "tor",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tn1",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
     },
     {
-      "color": "input",
-      "h": 84,
-      "icon": "phone",
-      "id": "friend",
-      "label": "A friend's phone",
-      "w": 150,
-      "x": 1120,
-      "y": 230
+      "cdx": 150,
+      "cdy": 95,
+      "color": "created",
+      "container": "tor",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tn2",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cdx": 250,
+      "cdy": 130,
+      "color": "created",
+      "container": "tor",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tn3",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cdx": 320,
+      "cdy": 90,
+      "color": "created",
+      "container": "tor",
+      "h": 40,
+      "icon": "tornode",
+      "id": "tn4",
+      "label": "",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 44,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "color": "note",
+      "h": 60,
+      "icon": "onion",
+      "id": "onionfree",
+      "label": "No domain needed —\nthe .onion name is free & automatic",
+      "showWhen": {
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 380,
+      "x": 588,
+      "y": -40
     }
   ]
 }

@@ -1,0 +1,79 @@
+{
+  "edges": [],
+  "meta": {
+    "parent": "setup-map",
+    "title": "Registrar / DNS records"
+  },
+  "nodes": [
+    {
+      "color": "input",
+      "h": 64,
+      "icon": "cart",
+      "id": "title",
+      "label": "Add these records at your\ndomain registrar / DNS host",
+      "w": 560,
+      "x": 60,
+      "y": 40
+    },
+    {
+      "color": "created",
+      "h": 46,
+      "icon": "",
+      "id": "rA",
+      "label": "A        api.yourname.org   →   your public IPv4",
+      "w": 560,
+      "x": 60,
+      "y": 124
+    },
+    {
+      "color": "created",
+      "h": 46,
+      "icon": "",
+      "id": "rAAAA",
+      "label": "AAAA   api.yourname.org   →   your public IPv6",
+      "w": 560,
+      "x": 60,
+      "y": 180
+    },
+    {
+      "color": "created",
+      "h": 46,
+      "icon": "",
+      "id": "rSub",
+      "label": "A / AAAA   cloud · git · matrix · meet   →   same IP",
+      "w": 560,
+      "x": 60,
+      "y": 236
+    },
+    {
+      "color": "note",
+      "h": 46,
+      "icon": "",
+      "id": "rCNAME",
+      "label": "Cloudflare tunnel:   CNAME  api  →  <id>.cfargotunnel.com",
+      "w": 560,
+      "x": 60,
+      "y": 302
+    },
+    {
+      "color": "note",
+      "h": 46,
+      "icon": "",
+      "id": "rNS",
+      "label": "Cloudflare DNS:   set nameservers → Cloudflare (at the registrar)",
+      "w": 560,
+      "x": 60,
+      "y": 358
+    },
+    {
+      "color": "red",
+      "h": 72,
+      "icon": "onion",
+      "id": "noteB",
+      "label": "Port-forward & Direct-IPv6 need A/AAAA pointing at your home IP.\n.onion needs NONE of this — no registrar, no records.",
+      "w": 560,
+      "x": 60,
+      "y": 424
+    }
+  ]
+}

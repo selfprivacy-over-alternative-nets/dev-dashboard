@@ -17,9 +17,11 @@
     created: { fill: "#10231a", stroke: "#3fb950", label: "created / reachable" },
     input:   { fill: "#2a2410", stroke: "#d6a015", label: "input" },
     note:    { fill: "#14181f", stroke: "#6e7681", label: "note" },
+    red:     { fill: "#2a1113", stroke: "#e5484d", label: "alert / name-only" },
   };
   const COLOR_KEYS = Object.keys(PALETTE);
-  const ICONS = ["laptop", "server", "router", "cloud", "phone", "usb", "ethernet", "wifi", "safe", "relay", "tor"];
+  const ICONS = ["laptop", "server", "router", "cloud", "phone", "usb", "ethernet", "wifi", "safe", "relay",
+    "tor", "onion", "gear", "block", "pipe", "gate", "warn", "tag", "cart", "tornode"];
   const EDGE_KINDS = ["plain", "cable", "wifi", "usb", "lan", "internet", "tunnel", "tor"];
 
   const $ = (id) => document.getElementById(id);
@@ -31,7 +33,7 @@
     sel: null, selEdge: null,
     toggle: {},                       // active toggle state {toggleId: value}
     view: { x: 40, y: 40, k: 1 },
-    mode: "idle", pending: null, drag: null, panStart: null,
+    mode: "idle", pending: null, drag: null, panStart: null, resize: null,
   };
 
   /* ---------- deterministic serialisation (mirrors the Python writer in `dash`) ---------- */
@@ -142,21 +144,26 @@
     return [{ x: ca.x, y: sy }, { x: ca.x, y: my }, { x: cb.x, y: my }, { x: cb.x, y: ey }];
   }
   const pipePoly = (aBox, bBox, e) => (Array.isArray(e.path) && e.path.length >= 2) ? e.path.map((p) => ({ x: p.x, y: p.y })) : zRoute(aBox, bBox);
-  function drawMarioPipe(parent, poly, color) {
+  // bodyW (edge.pw, default 22) = pipe-body width. A wide translucent casing + two thin inner pipes drawn
+  // on the same lane = "two tunnels within one tunnel" (FR59, the IPv4/IPv6 nesting). rimOnly skips the
+  // body so a casing can be drawn without hiding the inner pipes behind it.
+  function drawMarioPipe(parent, poly, color, bodyW, casing) {
     const pts = dedupe(poly); if (pts.length < 2) return;
-    const dark = shade(color, 0.5), light = shade(color, 1.55), OL = "#0a140a", BODY = 22;
-    const ln = (x1, y1, x2, y2, s, w) => el("line", { x1, y1, x2, y2, stroke: s, "stroke-width": w }, parent);
+    const W = bodyW || 22, dark = shade(color, 0.5), light = shade(color, 1.55), OL = "#0a140a";
+    const off = W * 0.3, sw = Math.max(3, W * 0.18), rimH = W * 0.86, rimOL = W * 0.82, rimC = W * 0.59, rimL = Math.max(2, W * 0.14);
+    const ln = (x1, y1, x2, y2, s, w, op) => { const l = el("line", { x1, y1, x2, y2, stroke: s, "stroke-width": w }, parent); if (op != null) l.setAttribute("stroke-opacity", op); return l; };
     const d = "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
-    el("path", { d, fill: "none", stroke: OL, "stroke-width": BODY + 6, "stroke-linejoin": "round" }, parent);
-    el("path", { d, fill: "none", stroke: color, "stroke-width": BODY, "stroke-linejoin": "round" }, parent);
+    el("path", { d, fill: "none", stroke: OL, "stroke-width": W + 6, "stroke-linejoin": "round" }, parent);
+    const bodyEl = el("path", { d, fill: "none", stroke: color, "stroke-width": W, "stroke-linejoin": "round" }, parent);
+    if (casing) bodyEl.setAttribute("stroke-opacity", "0.35");
     for (let i = 1; i < pts.length; i++) {
-      const A = pts[i - 1], B = pts[i];
-      if (Math.abs(A.y - B.y) < 0.5) { ln(A.x, A.y - 6, B.x, B.y - 6, light, 4); ln(A.x, A.y + 7, B.x, B.y + 7, dark, 4); }
-      else { ln(A.x - 6, A.y, B.x - 6, B.y, light, 4); ln(A.x + 7, A.y, B.x + 7, B.y, dark, 4); }
+      const A = pts[i - 1], B = pts[i], cop = casing ? 0.5 : null;
+      if (Math.abs(A.y - B.y) < 0.5) { ln(A.x, A.y - off, B.x, B.y - off, light, sw, cop); ln(A.x, A.y + off, B.x, B.y + off, dark, sw, cop); }
+      else { ln(A.x - off, A.y, B.x - off, B.y, light, sw, cop); ln(A.x + off, A.y, B.x + off, B.y, dark, sw, cop); }
     }
-    const rim = (p, q) => { const dx = p.x - q.x, dy = p.y - q.y, L = Math.hypot(dx, dy) || 1, px = -dy / L * 19, py = dx / L * 19;
-      ln(p.x - px, p.y - py, p.x + px, p.y + py, OL, 18); ln(p.x - px * 0.9, p.y - py * 0.9, p.x + px * 0.9, p.y + py * 0.9, color, 13);
-      ln(p.x - px * 0.9, p.y - py * 0.9, p.x + px * 0.9, p.y + py * 0.9, light, 3); };
+    const rim = (p, q) => { const dx = p.x - q.x, dy = p.y - q.y, L = Math.hypot(dx, dy) || 1, px = -dy / L * rimH, py = dx / L * rimH;
+      ln(p.x - px, p.y - py, p.x + px, p.y + py, OL, rimOL); ln(p.x - px * 0.9, p.y - py * 0.9, p.x + px * 0.9, p.y + py * 0.9, color, rimC);
+      ln(p.x - px * 0.9, p.y - py * 0.9, p.x + px * 0.9, p.y + py * 0.9, light, rimL); };
     rim(pts[0], pts[1]); rim(pts[pts.length - 1], pts[pts.length - 2]);
   }
   function drawGround(parent, gy) {   // SMB brick ground strip (FR53)
@@ -185,7 +192,7 @@
       if (kind === "pipe") {
         const poly = dedupe(pipePoly(a, b, e));
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
-        drawMarioPipe(g, poly, e.color || "#8b949e");
+        drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
         const m = poly[Math.max(1, Math.floor(poly.length / 2)) - 1]; mx = m.x; my = m.y;
       } else {
         const p1 = border(a, b), p2 = border(b, a);
@@ -220,6 +227,22 @@
       const startY = n.icon ? ty : ty - (lines.length - 1) * 8;
       lines.forEach((ln, i) => { const t = el("text", { x: cx, y: startY + i * 15, "text-anchor": "middle" }, g); t.textContent = ln; });
       if (n.childDiagram) { const d = el("text", { x: bx.x + bx.w - 8, y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
+    }
+    // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
+    if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(boxOf[sn.id]); }
+  }
+  const HANDLE_CUR = { nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize",
+                       se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize" };
+  function drawHandles(bx) {
+    const z = 9 / (S.view.k || 1);   // keep handles ~constant size on screen regardless of zoom
+    const spots = { nw: [bx.x, bx.y], n: [bx.x + bx.w / 2, bx.y], ne: [bx.x + bx.w, bx.y],
+                    e: [bx.x + bx.w, bx.y + bx.h / 2], se: [bx.x + bx.w, bx.y + bx.h],
+                    s: [bx.x + bx.w / 2, bx.y + bx.h], sw: [bx.x, bx.y + bx.h], w: [bx.x, bx.y + bx.h / 2] };
+    for (const dir in spots) {
+      const [cx, cy] = spots[dir];
+      const h = el("rect", { class: "handle", "data-dir": dir, x: cx - z / 2, y: cy - z / 2, width: z, height: z,
+                             rx: z * 0.15, fill: "#58a6ff", stroke: "#0b0e14", "stroke-width": 1 / (S.view.k || 1) }, gNodes);
+      h.style.cursor = HANDLE_CUR[dir];
     }
   }
   const EDGE_ICON = { cable: "ethernet", lan: "ethernet", wifi: "wifi", usb: "usb", tunnel: "relay", tor: "tor" };
@@ -472,6 +495,15 @@
   svg.addEventListener("wheel", (ev) => { ev.preventDefault(); zoomAt(ev.clientX, ev.clientY, ev.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: false });
 
   svg.addEventListener("pointerdown", (ev) => {
+    // resize handle on the selected node takes priority over move/pan
+    const hdir = ev.target.classList && ev.target.classList.contains("handle") ? ev.target.getAttribute("data-dir") : null;
+    if (hdir && S.sel) {
+      const n = node(S.sel), wp = toWorld(ev);
+      S.resize = { dir: hdir, contained: !!activeContainerOf(n), wx0: wp.x, wy0: wp.y,
+                   x0: n.x, y0: n.y, w0: n.w, h0: n.h,
+                   cdx0: typeof n.cdx === "number" ? n.cdx : 16, cdy0: typeof n.cdy === "number" ? n.cdy : 56 };
+      S.mode = "resize"; svg.setPointerCapture(ev.pointerId); return;
+    }
     const nid = nodeIdFromEvent(ev);
     if (S.pending) {
       if (nid) {
@@ -499,6 +531,17 @@
     }
   });
   svg.addEventListener("pointermove", (ev) => {
+    if (S.mode === "resize" && S.resize) {
+      const r = S.resize, wp = toWorld(ev), n = node(S.sel), MIN = 40, d = r.dir;
+      let dx = wp.x - r.wx0, dy = wp.y - r.wy0;
+      if (d.includes("e")) n.w = Math.max(MIN, r.w0 + dx);
+      if (d.includes("s")) n.h = Math.max(MIN, r.h0 + dy);
+      if (d.includes("w")) { let nw = r.w0 - dx; if (nw < MIN) { dx = r.w0 - MIN; nw = MIN; } n.w = nw;
+        if (r.contained) n.cdx = r.cdx0 + dx; else n.x = r.x0 + dx; }
+      if (d.includes("n")) { let nh = r.h0 - dy; if (nh < MIN) { dy = r.h0 - MIN; nh = MIN; } n.h = nh;
+        if (r.contained) n.cdy = r.cdy0 + dy; else n.y = r.y0 + dy; }
+      markDirty(true); render(); return;
+    }
     if (S.mode === "drag" && S.drag) {
       const w = toWorld(ev), n = node(S.drag.id), dx = w.x - S.drag.wx0, dy = w.y - S.drag.wy0;
       if (S.drag.contained) { n.cdx = S.drag.cdx0 + dx; n.cdy = S.drag.cdy0 + dy; }
@@ -509,7 +552,7 @@
     }
   });
   function endPointer(ev) { if (S.mode) { try { svg.releasePointerCapture(ev.pointerId); } catch (_) {} }
-    S.mode = "idle"; S.drag = null; S.panStart = null; svg.classList.remove("panning"); }
+    S.mode = "idle"; S.drag = null; S.panStart = null; S.resize = null; svg.classList.remove("panning"); }
   svg.addEventListener("pointerup", endPointer);
   svg.addEventListener("pointercancel", endPointer);
   svg.addEventListener("dblclick", (ev) => {

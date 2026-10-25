@@ -344,3 +344,61 @@ sky over a brick ground). Replaces the flat capsule pipes.
 - **Verified:** both `tunnels.svg` and `setup-map.svg` rasterised (cairosvg) — orthogonal coloured pipes,
   pipes visibly passing through the translucent router, brick ground, port-443 gate, onion, IPv4-blocked
   badge. Deterministic save preserved (`path`/`seeThrough`/`ground` round-trip through sorted-key dump).
+
+---
+
+# v4 — reach colours, split routes, naming, decentralised Tor (FR59+)
+
+**Added 2026-10-25** from the user's message (re-colour the tunnels, split Tailscale/Cloudflare, show the
+things each route actually *requires*). **Governing instruction for this round: the deliverable is the
+LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=portfwd`,
+**NOT** the static `*.svg` snapshot. Verify every item below by screenshotting the running `flow.html` at the
+*actual* toggle state it concerns (the snapshot only ever renders the DEFAULT toggle state — see FR67).
+
+- **FR59. Reach-route colour key (user-chosen; OVERRIDES FR43).** Each reach route has a fixed colour,
+  applied in BOTH `setup-map` reach pipes and the `tunnels` drill-down:
+  **Tailscale = gray `#8b949e`, Cloudflare = orange `#f38020`, Direct IPv6 = blue `#3b82f6`,
+  DuckDNS = red `#e5484d`, Port-forward = yellow `#eab308`, Tor/.onion = purple `#9b59b6`.** The plain
+  local/home + friend pipes use a dim neutral `#6e7681` so they don't compete with the route colours.
+- **FR60. Tailscale and Cloudflare are SEPARATE routes.** Not one shared blue "Tunnel relay" node — each
+  has its own company node (`Tailscale (a company)` gray · `Cloudflare (a company)` orange) and its own
+  coloured pipe, because they differ in colour, naming, and what the user must provide.
+- **FR61. `setup-map` must render a reach path for EVERY `reach` option.** Today `ipv6` and `portfwd`
+  render NOTHING (only tailscale/cloudflare/onion have edges) — so the user's `reach=portfwd` view is blank
+  of any reach info. Every option (tailscale · cloudflare · ipv6 · portfwd · onion) must draw its path from
+  the server to the friend.
+- **FR62. Port-forward shows the MANUAL work.** The `portfwd` route is the only one needing hand
+  configuration: a `gate` node ON the router — "Open port 443 by hand in your router settings" (with a
+  `warn`) — sits on the yellow pipe, and the route also surfaces the registrar settings (FR63). A
+  non-technical user must see "this route = I have to go into the router AND the registrar myself".
+- **FR63. Domain must be bought at a registrar (if not .onion).** Non-onion public routes need a domain
+  name you **purchase at a registrar (€/yr)** — show a `cart`/`tag` "Buy a domain" node on the routes that
+  need it (cloudflare, direct ipv6, port-forward), drilling down (`childDiagram`) to a **`registrar`
+  diagram listing the exact DNS records to add** (A → your public IPv4, AAAA → your public IPv6, CNAME for
+  tunnels, nameserver change for Cloudflare). **.onion needs NO domain** — call that out explicitly (free,
+  automatic name).
+- **FR64. DuckDNS = name only (red).** Visualise that DuckDNS gives only a **name** (dynamic DNS pointing
+  at your changing home IP) — **the traffic goes direct, not through DuckDNS** (contrast with the relay
+  companies, whose pipe the traffic actually flows through). It is the **free alternative to buying a
+  domain**, used together with a direct route (ipv6 / port-forward): draw it as a red name-tag with a thin
+  "just the name" lookup line, not a fat traffic pipe.
+- **FR65. IPv4 + IPv6 = two tunnels within one "normal" tunnel.** The direct connection is drawn as ONE
+  wide translucent outer tube (`edge.casing:true`, `edge.pw` sets pipe width) containing **two inner pipes
+  — IPv4 (yellow) and IPv6 (blue)** — so a non-technical user sees the normal/direct connection carries
+  both, and that **IPv6 may not be available for everyone** (a friend on an IPv4-only network cannot open
+  an IPv6-only link — the `block` "not everyone has IPv6" badge, ties to round0 R5/R8). Rendered by
+  `drawMarioPipe`/`mario_pipe_svg` honouring `pw` + `casing` (shared flow.js ↔ gen_flow_svg.py).
+- **FR66. Tor is decentralised.** Visualise the Tor route as passing through a **network of many
+  independent volunteer relays** (a mesh of `tornode` dots / multiple hops inside a see-through "Tor
+  network" box) with **no single company or owner** — in deliberate contrast to Tailscale/Cloudflare, which
+  route through ONE company. Label it so the sovereignty point (no company, nothing to buy) is explicit.
+- **FR67. Verify against the LIVE view at the real toggle state — not the snapshot.** Review/QA must
+  screenshot the running `flow.html#<id>;<toggles>` (e.g. via Playwright) at each toggle state a
+  requirement concerns. The committed `*.svg` renders only the DEFAULT toggle state (FR38) and is a
+  Pages/README embed, NOT the source of truth for reviewing toggle-dependent behaviour. Harness:
+  `tools/shot_flow.py '<id>;<toggles>' out.png`.
+- **FR68. Resize nodes by drag (width / height / diagonal).** The selected node shows 8 resize handles —
+  4 edge-midpoints (grab to change **width** [e/w] or **height** [n/s]) and 4 corners (grab to resize
+  **diagonally** [nw/ne/se/sw]). Left/top handles move the opposite edge in place (adjust `x`/`y`, or
+  `cdx`/`cdy` for a contained node); min size 40. Handles stay ~constant size on screen across zoom. The
+  new `w`/`h` (and `x`/`y`/`cdx`/`cdy`) round-trip through the deterministic save (FR8).
