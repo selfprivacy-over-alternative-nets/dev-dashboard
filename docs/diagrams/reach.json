@@ -11,6 +11,7 @@
       "h": 56,
       "id": "ts",
       "label": "Tailscale Funnel\n(default)",
+      "nodeType": "action",
       "w": 190,
       "x": 80,
       "y": 80
@@ -21,6 +22,7 @@
       "h": 56,
       "id": "cf",
       "label": "Cloudflare tunnel",
+      "nodeType": "action",
       "w": 190,
       "x": 80,
       "y": 180
@@ -31,6 +33,7 @@
       "h": 56,
       "id": "v6",
       "label": "Direct IPv6 + DuckDNS",
+      "nodeType": "action",
       "w": 210,
       "x": 80,
       "y": 280
@@ -41,6 +44,7 @@
       "h": 56,
       "id": "onion",
       "label": ".onion (always on)",
+      "nodeType": "action",
       "w": 190,
       "x": 80,
       "y": 380

@@ -24,6 +24,7 @@
       "h": 80,
       "id": "pick",
       "label": "Pick method:\nnetboot / USB / VM",
+      "nodeType": "action",
       "w": 190,
       "x": 60,
       "y": 160
@@ -34,6 +35,7 @@
       "h": 72,
       "id": "anywhere",
       "label": "nixos-anywhere\n(push closure)",
+      "nodeType": "action",
       "w": 190,
       "x": 330,
       "y": 160
@@ -44,6 +46,7 @@
       "h": 72,
       "id": "finish",
       "label": "finish_box_setup",
+      "nodeType": "action",
       "w": 180,
       "x": 600,
       "y": 160

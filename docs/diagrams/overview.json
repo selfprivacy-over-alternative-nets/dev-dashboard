@@ -30,6 +30,7 @@
       "h": 64,
       "id": "host",
       "label": "Your laptop (host)",
+      "nodeType": "device",
       "w": 180,
       "x": 60,
       "y": 200
@@ -40,6 +41,7 @@
       "h": 64,
       "id": "install",
       "label": "Install the box ⊕",
+      "nodeType": "action",
       "w": 180,
       "x": 320,
       "y": 200
@@ -50,6 +52,7 @@
       "h": 64,
       "id": "reach",
       "label": "Make it reachable ⊕",
+      "nodeType": "action",
       "w": 190,
       "x": 580,
       "y": 200
@@ -60,6 +63,7 @@
       "h": 64,
       "id": "app",
       "label": "Connect the app",
+      "nodeType": "action",
       "w": 180,
       "x": 860,
       "y": 200

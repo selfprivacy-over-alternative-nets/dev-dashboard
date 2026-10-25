@@ -45,23 +45,35 @@ def _dedupe(pts):
 EDGE_SNAP = 28   # within this perpendicular gap a near-aligned connector snaps to a straight line
 
 
-def zroute(a, b):   # orthogonal route anchored at side-MIDPOINTS (H/V, 90° only), snap-straight — mirrors flow.js
-    cax, cay, cbx, cby = a[0] + a[2] / 2, a[1] + a[3] / 2, b[0] + b[2] / 2, b[1] + b[3] / 2
-    if abs(cbx - cax) >= abs(cby - cay):
-        sx = a[0] + a[2] if cbx >= cax else a[0]
-        ex = b[0] if cbx >= cax else b[0] + b[2]
-        if abs(cay - cby) <= EDGE_SNAP:
-            y = (cay + cby) / 2
-            return [(sx, y), (ex, y)]
-        mx = (sx + ex) / 2
-        return [(sx, cay), (mx, cay), (mx, cby), (ex, cby)]
-    sy = a[1] + a[3] if cby >= cay else a[1]
-    ey = b[1] if cby >= cay else b[1] + b[3]
-    if abs(cax - cbx) <= EDGE_SNAP:
-        x = (cax + cbx) / 2
-        return [(x, sy), (x, ey)]
-    my = (sy + ey) / 2
-    return [(cax, sy), (cax, my), (cbx, my), (cbx, ey)]
+def zroute(a, b, e=None):   # orthogonal route anchored at side-MIDPOINTS (H/V, 90° only), snap-straight — mirrors flow.js zRouteSegs
+    e = e or {}
+    o = lambda k: e[k] if isinstance(e.get(k), (int, float)) else 0   # FR79 dragged offsets so/eo/mo/ss/es
+    horiz = abs(b[0] + b[2] / 2 - a[0] - a[2] / 2) >= abs(b[1] + b[3] / 2 - a[1] - a[3] / 2)
+    U = (lambda q: q) if horiz else (lambda q: (q[1], q[0], q[3], q[2]))   # (u, v, wu, wv): u = main axis
+    A, B = U(a), U(b)
+    cau, cbu = A[0] + A[2] / 2, B[0] + B[2] / 2
+    su = A[0] + A[2] if cbu >= cau else A[0]
+    eu = B[0] if cbu >= cau else B[0] + B[2]
+    sv, ev = A[1] + A[3] / 2 + o("so"), B[1] + B[3] / 2 + o("eo")
+    if abs(sv - ev) <= EDGE_SNAP and o("so") == o("eo"):   # a set attachment (FR81) stays exact
+        v = (sv + ev) / 2
+        pts = [(su, v), (eu, v)]
+    else:
+        mu = (su + eu) / 2 + o("mo")
+        pts = [(su, sv), (mu, sv), (mu, ev), (eu, ev)]
+
+    def stub(q, v, off):   # v beyond the box's side → enter via its top/bottom (left/right) side instead
+        if q[1] <= v <= q[1] + q[3]:
+            return None
+        u = q[0] + q[2] / 2 + max(-q[2] / 2, min(q[2] / 2, off))
+        return [(u, q[1] if v < q[1] else q[1] + q[3]), (u, v)]
+    s0 = stub(A, pts[0][1], o("ss"))
+    if s0:
+        pts = s0 + pts[1:]
+    s1 = stub(B, pts[-1][1], o("es"))
+    if s1:
+        pts = pts[:-1] + s1[::-1]
+    return [(u, v) if horiz else (v, u) for u, v in pts]
 
 
 def arrow_head(poly, which, size, color, fb):   # hand-drawn triangle at the box edge — mirrors flow.js
@@ -79,6 +91,40 @@ def arrow_head(poly, which, size, color, fb):   # hand-drawn triangle at the box
     bx, by, px, py, half = tip[0] - dx * size, tip[1] - dy * size, -dy, dx, size * 0.55
     return (f'<polygon points="{tip[0]:.1f},{tip[1]:.1f} {bx + px * half:.1f},{by + py * half:.1f} '
             f'{bx - px * half:.1f},{by - py * half:.1f}" fill="{color}"/>')
+
+
+# FR82: three block types told apart by SHAPE (mirrors flow.js NODE_TYPES). Untyped = plain box.
+NODE_TYPES = {
+    "action": {"label": "action — something you do", "rx": lambda b: min(b[3] / 2.0, 26), "sw": 2},
+    "info": {"label": "information", "rx": lambda b: 8, "sw": 1.6, "dash": "2 4"},
+    "device": {"label": "(hardware) device", "rx": lambda b: 2, "sw": 3.5},
+}
+DOG = 14
+LEGEND_W, LEGEND_H = 190, 70
+
+
+def dog_ear_svg(b, stroke, bg):   # folded "document" corner, top-right of an info block — mirrors flow.js drawDogEar
+    x, y = b[0] + b[2], b[1]
+    return (f'<path d="M {x - DOG:g} {y:g} L {x:g} {y + DOG:g} L {x:g} {y:g} Z" fill="{bg}"/>'
+            f'<path d="M {x - DOG:g} {y:g} L {x - DOG:g} {y + DOG:g} L {x:g} {y + DOG:g} Z" fill="{stroke}" fill-opacity="0.5" '
+            f'stroke="{stroke}" stroke-width="1.2"/>')
+
+
+def legend_svg(lx, ly):   # small block-type key (the live page shows the same as an HTML overlay)
+    out = [f'<g><rect x="{lx:g}" y="{ly:g}" width="{LEGEND_W}" height="{LEGEND_H}" rx="6" fill="#14181f" fill-opacity="0.88" stroke="#30363d"/>']
+    for i, (k, T) in enumerate(NODE_TYPES.items()):
+        bx, by = lx + 9, ly + 7 + i * 20
+        b = (bx, by, 31, 15)
+        r = min(T["rx"](b), 7.5)
+        dash = f' stroke-dasharray="{T["dash"]}"' if T.get("dash") else ""
+        out.append(f'<rect x="{bx:g}" y="{by:g}" width="31" height="15" rx="{r:g}" fill="#14181f" stroke="#8b949e" '
+                   f'stroke-width="{min(T["sw"], 2.5):g}"{dash}/>')
+        if k == "info":
+            ex = bx + 31
+            out.append(f'<path d="M {ex - 6:g} {by:g} L {ex - 6:g} {by + 6:g} L {ex:g} {by + 6:g} Z" fill="#8b949e"/>')
+        out.append(f'<text x="{bx + 40:g}" y="{by + 11.5:g}" font-size="11" fill="{DIM}">{html.escape(T["label"])}</text>')
+    out.append("</g>")
+    return "".join(out)
 
 
 def trim_end(poly, which, length):   # shorten the last (or first) segment by length — mirrors flow.js trimEnd
@@ -108,11 +154,34 @@ def mid_of_poly(poly):   # point at half the total polyline length (label/icon p
     return poly[-1]
 
 
+def pipe_spot_box(spec, edges, box, state):   # FR80/81 an edge end ON a pipe — mirrors flow.js onPipeBox
+    pid, _, key = str(spec).partition(":")
+    pe = next((x for x in edges if x["id"] == pid), None)
+    if not pe or pe.get("kind") != "pipe" or pe.get("fromOn") or pe.get("toOn") or not when_ok(pe.get("showWhen"), state):
+        return None
+    a, b = box.get(pe["from"]), box.get(pe["to"])
+    if not a or not b:
+        return None
+    poly = _dedupe(pipe_poly(a, b, pe))
+    m = re.match(r"^s(\d+)@([\d.]+)$", key)
+    if m and int(m.group(1)) < len(poly) - 1:
+        (ax, ay), (bx, by), t = poly[int(m.group(1))], poly[int(m.group(1)) + 1], float(m.group(2))
+        p = (ax + (bx - ax) * t, ay + (by - ay) * t)
+    else:
+        an = [("c%d" % i, poly[i]) for i in range(1, len(poly) - 1)]
+        an += [("m%d" % (i - 1), ((poly[i - 1][0] + poly[i][0]) / 2, (poly[i - 1][1] + poly[i][1]) / 2)) for i in range(1, len(poly))]
+        p = next((q for k, q in an if k == key), None) or next((q for k, q in an if k[0] == "m"), None)
+        if not p:
+            return None
+    r = (pe.get("pw") or 22) / 2 + 3
+    return (p[0] - r, p[1] - r, 2 * r, 2 * r)
+
+
 def pipe_poly(a, b, e):
     p = e.get("path")
     if isinstance(p, list) and len(p) >= 2:
         return [(q["x"], q["y"]) for q in p]
-    return zroute(a, b)
+    return zroute(a, b, e)
 
 
 def mario_pipe_svg(poly, color, body_w=None, casing=False):
@@ -268,6 +337,9 @@ def render(d):
         x0, y0, x1, y1 = min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
     else:
         x0, y0, x1, y1 = 0, 0, 400, 200
+    used_types = [t for t in NODE_TYPES if any(n.get("nodeType") == t for n in nodes)]
+    if used_types:
+        y0 -= LEGEND_H + 8   # room for the block-type key above the content (top-right)
     w, h = int(round(x1 - x0)), int(round(y1 - y0))
 
     o = [
@@ -277,6 +349,7 @@ def render(d):
         f'orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="{DIM}"/></marker>' + icon_defs() + "</defs>",
         f'<rect x="{int(round(x0))}" y="{int(round(y0))}" width="{w}" height="{h}" fill="{(d.get("meta") or {}).get("background") or "#0b0e14"}"/>',
     ]
+    bg = (d.get("meta") or {}).get("background") or "#0b0e14"   # read now: `d` is reused as a path string below
     _gy = (d.get("meta") or {}).get("ground")
     if isinstance(_gy, (int, float)):
         o.append(ground_svg(_gy, int(round(x0)), int(round(x1))))
@@ -284,7 +357,8 @@ def render(d):
     for e in edges:
         if not when_ok(e.get("showWhen"), state):
             continue
-        a, b = box.get(e["from"]), box.get(e["to"])
+        a = pipe_spot_box(e["fromOn"], edges, box, state) if e.get("fromOn") else box.get(e["from"])
+        b = pipe_spot_box(e["toOn"], edges, box, state) if e.get("toOn") else box.get(e["to"])
         if not a or not b:
             continue
         kind = e.get("kind", "plain")
@@ -326,8 +400,14 @@ def render(d):
         bx = box[n["id"]]
         see = n.get("seeThrough") or auto_see_through(n, vis, edges, vis_ids, state)
         op = ' fill-opacity="0.3"' if see else (' fill-opacity="0.55"' if is_container(n, vis, vis_ids, state) else "")
-        o.append(f'<rect x="{bx[0]:.0f}" y="{bx[1]:.0f}" width="{bx[2]:.0f}" height="{bx[3]:.0f}" rx="8" ry="8" '
-                 f'fill="{fill}"{op} stroke="{stroke}" stroke-width="2"/>')
+        T = NODE_TYPES.get(n.get("nodeType"))   # FR82: block shape = what the box IS
+        r = T["rx"](bx) if T else 8
+        sw = T["sw"] if T else 2
+        dash = f' stroke-dasharray="{T["dash"]}"' if T and T.get("dash") else ""
+        o.append(f'<rect x="{bx[0]:.0f}" y="{bx[1]:.0f}" width="{bx[2]:.0f}" height="{bx[3]:.0f}" rx="{r:g}" ry="{r:g}" '
+                 f'fill="{fill}"{op} stroke="{stroke}" stroke-width="{sw}"{dash}/>')
+        if n.get("nodeType") == "info":
+            o.append(dog_ear_svg(bx, stroke, bg))
         cx = bx[0] + bx[2] / 2.0
         if n.get("icon"):
             o.append(f'<use href="#ic-{n["icon"]}" x="{cx - 12:.1f}" y="{bx[1] + 8:.0f}" width="24" height="24" style="color:{stroke}"/>')
@@ -339,7 +419,9 @@ def render(d):
         for i, ln in enumerate(lines):
             o.append(f'<text x="{cx:.1f}" y="{start_y + i * 15:.1f}" text-anchor="middle" font-size="12" fill="{FG}">{html.escape(ln)}</text>')
         if n.get("childDiagram"):
-            o.append(f'<text x="{bx[0] + bx[2] - 8:.0f}" y="{bx[1] + 14:.0f}" text-anchor="end" font-size="11" fill="{DIM}">⊕ open</text>')
+            o.append(f'<text x="{bx[0] + bx[2] - max(8, r * 0.7):.0f}" y="{bx[1] + 14:.0f}" text-anchor="end" font-size="11" fill="{DIM}">⊕ open</text>')
+    if used_types:
+        o.append(legend_svg(x1 - LEGEND_W - 8, y0 + 8))
     o.append("</svg>")
     return "\n".join(o) + "\n"
 

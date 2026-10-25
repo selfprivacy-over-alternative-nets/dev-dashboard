@@ -398,6 +398,7 @@
       "icon": "server",
       "id": "server",
       "label": "Your new\nprivate server",
+      "nodeType": "device",
       "w": 170,
       "x": 60,
       "y": 520
@@ -408,6 +409,7 @@
       "icon": "router",
       "id": "router",
       "label": "Your home router\n(see-through)",
+      "nodeType": "device",
       "seeThrough": true,
       "w": 360,
       "x": 360,
@@ -419,6 +421,7 @@
       "icon": "cloud",
       "id": "inet",
       "label": "The internet",
+      "nodeType": "device",
       "w": 170,
       "x": 1320,
       "y": 60
@@ -429,6 +432,7 @@
       "icon": "phone",
       "id": "friend",
       "label": "A friend's phone",
+      "nodeType": "device",
       "w": 170,
       "x": 1560,
       "y": 340
@@ -439,6 +443,7 @@
       "icon": "relay",
       "id": "relayTS",
       "label": "Tailscale relay\n(a company)",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -455,6 +460,7 @@
       "icon": "tag",
       "id": "tsname",
       "label": "Free name: *.ts.net\n(nothing to buy)",
+      "nodeType": "info",
       "showWhen": {
         "show": [
           "tailscale"
@@ -470,6 +476,7 @@
       "icon": "relay",
       "id": "relayCF",
       "label": "Cloudflare edge\n(a company)",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -487,6 +494,7 @@
       "icon": "cart",
       "id": "cfbuy",
       "label": "Buy a domain (registrar)\nor free *.trycloudflare.com",
+      "nodeType": "action",
       "showWhen": {
         "show": [
           "cloudflare"
@@ -502,6 +510,7 @@
       "icon": "tor",
       "id": "tornet",
       "label": "Tor network\n1000s of volunteer relays · no company",
+      "nodeType": "device",
       "seeThrough": true,
       "showWhen": {
         "show": [
@@ -522,6 +531,7 @@
       "icon": "tornode",
       "id": "tt1",
       "label": "",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -541,6 +551,7 @@
       "icon": "tornode",
       "id": "tt2",
       "label": "",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -560,6 +571,7 @@
       "icon": "tornode",
       "id": "tt3",
       "label": "",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -579,6 +591,7 @@
       "icon": "tornode",
       "id": "tt4",
       "label": "",
+      "nodeType": "device",
       "showWhen": {
         "show": [
           "all",
@@ -595,6 +608,7 @@
       "icon": "onion",
       "id": "onion",
       "label": ".onion",
+      "nodeType": "info",
       "showWhen": {
         "show": [
           "all",
@@ -611,6 +625,7 @@
       "icon": "onion",
       "id": "tornote",
       "label": "No domain to buy — the .onion name is free & automatic",
+      "nodeType": "info",
       "showWhen": {
         "show": [
           "tor"
@@ -626,6 +641,7 @@
       "icon": "gate",
       "id": "pfgate",
       "label": "Open port 443\nby hand (IPv4)",
+      "nodeType": "action",
       "showWhen": {
         "show": [
           "all",
@@ -639,19 +655,20 @@
     },
     {
       "color": "note",
-      "h": 66,
+      "h": 40,
       "icon": "block",
       "id": "v6block",
-      "label": "IPv4-only friend\ncan't open IPv6",
+      "label": "IPv4-only friend, can't open IPv6",
+      "nodeType": "info",
       "showWhen": {
         "show": [
           "all",
           "direct"
         ]
       },
-      "w": 180,
-      "x": 1010,
-      "y": 500
+      "w": 321,
+      "x": 844,
+      "y": 588
     },
     {
       "childDiagram": "registrar",
@@ -660,6 +677,7 @@
       "icon": "cart",
       "id": "dirbuy",
       "label": "Buy a domain\n(registrar, €/yr)",
+      "nodeType": "action",
       "showWhen": {
         "show": [
           "direct"
@@ -675,6 +693,7 @@
       "icon": "tag",
       "id": "duck",
       "label": "DuckDNS: free NAME only\ntraffic goes direct",
+      "nodeType": "info",
       "showWhen": {
         "show": [
           "all",
@@ -683,8 +702,8 @@
         ]
       },
       "w": 240,
-      "x": 1330,
-      "y": 490
+      "x": 1543,
+      "y": 571
     }
   ]
 }

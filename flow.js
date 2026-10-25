@@ -34,6 +34,7 @@
     toggle: {},                       // active toggle state {toggleId: value}
     view: { x: 40, y: 40, k: 1 },
     mode: "idle", pending: null, drag: null, panStart: null, resize: null, draw: null, rubber: null, ctrl: false,
+    panelOff: { x: 0, y: 0 },          // user drag offset of the arrow box from its default anchor (FR78)
   };
 
   /* ---------- deterministic serialisation (mirrors the Python writer in `dash`) ---------- */
@@ -134,7 +135,8 @@
   }
 
   /* ---------- render ---------- */
-  function applyView() { gViewport.setAttribute("transform", `translate(${S.view.x},${S.view.y}) scale(${S.view.k})`); }
+  function applyView() { gViewport.setAttribute("transform", `translate(${S.view.x},${S.view.y}) scale(${S.view.k})`);
+    if (S.selEdge && S.data) updateEdgePanel(); }   // zoom/pan/fit: the arrow box follows its arrow (FR78)
   function el(name, attrs, parent) {
     const e = document.createElementNS(SVGNS, name);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -156,18 +158,32 @@
   }
   function dedupe(pts) { const o = []; for (const p of pts) { const q = o[o.length - 1]; if (!q || Math.abs(q.x - p.x) > 0.5 || Math.abs(q.y - p.y) > 0.5) o.push({ x: p.x, y: p.y }); } return o; }
   const EDGE_SNAP = 28;    // within this perpendicular gap a near-aligned connector snaps to a straight line
-  function zRoute(a, b) {   // orthogonal route anchored at side-MIDPOINTS (H-V-H / V-H-V), 90° only, snap-straight
-    const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 }, cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-    if (Math.abs(cb.x - ca.x) >= Math.abs(cb.y - ca.y)) {
-      const sx = cb.x >= ca.x ? a.x + a.w : a.x, ex = cb.x >= ca.x ? b.x : b.x + b.w;
-      if (Math.abs(ca.y - cb.y) <= EDGE_SNAP) { const y = (ca.y + cb.y) / 2; return [{ x: sx, y }, { x: ex, y }]; }
-      const mx = (sx + ex) / 2;
-      return [{ x: sx, y: ca.y }, { x: mx, y: ca.y }, { x: mx, y: cb.y }, { x: ex, y: cb.y }];
-    }
-    const sy = cb.y >= ca.y ? a.y + a.h : a.y, ey = cb.y >= ca.y ? b.y : b.y + b.h;
-    if (Math.abs(ca.x - cb.x) <= EDGE_SNAP) { const x = (ca.x + cb.x) / 2; return [{ x, y: sy }, { x, y: ey }]; }
-    const my = (sy + ey) / 2;
-    return [{ x: ca.x, y: sy }, { x: ca.x, y: my }, { x: cb.x, y: my }, { x: cb.x, y: ey }];
+  const ofs = (v) => typeof v === "number" ? v : 0;
+  const zRoute = (a, b, e) => zRouteSegs(a, b, e || {}).pts;
+  // Orthogonal route anchored at side-MIDPOINTS (H-V-H / V-H-V), 90° only, snap-straight. FR79: segments are
+  // draggable; the drag is stored as offsets on the edge so the route stays attached when boxes move:
+  // so/eo = start/end attachment shifted along its side, mo = middle elbow shifted, ss/es = where the extra
+  // stub leaves/enters the box once the line is dragged past the side's extent (one more 90° bend).
+  // segs[i] names the offset that segment i drives (for the drag); u = main axis, v = cross axis.
+  function zRouteSegs(a, b, e) {
+    const H = Math.abs(b.x + b.w / 2 - a.x - a.w / 2) >= Math.abs(b.y + b.h / 2 - a.y - a.h / 2);
+    const U = (q) => H ? { u: q.x, v: q.y, wu: q.w, wv: q.h } : { u: q.y, v: q.x, wu: q.h, wv: q.w };
+    const A = U(a), B = U(b), cau = A.u + A.wu / 2, cbu = B.u + B.wu / 2;
+    const su = cbu >= cau ? A.u + A.wu : A.u, eu = cbu >= cau ? B.u : B.u + B.wu;
+    const sv = A.v + A.wv / 2 + ofs(e.so), ev = B.v + B.wv / 2 + ofs(e.eo);
+    let pts, segs;   // snap-straight only when both ends share one offset: a set attachment (FR81) stays exact
+    if (Math.abs(sv - ev) <= EDGE_SNAP && ofs(e.so) === ofs(e.eo)) { const v = (sv + ev) / 2; pts = [[su, v], [eu, v]]; segs = ["so+eo"]; }
+    else { const mu = (su + eu) / 2 + ofs(e.mo); pts = [[su, sv], [mu, sv], [mu, ev], [eu, ev]]; segs = ["so", "mo", "eo"]; }
+    const stub = (q, v, o) => {   // v beyond the box's side → enter via its top/bottom (left/right) side instead
+      if (v >= q.v && v <= q.v + q.wv) return null;
+      const u = q.u + q.wu / 2 + Math.max(-q.wu / 2, Math.min(q.wu / 2, o));
+      return [[u, v < q.v ? q.v : q.v + q.wv], [u, v]];
+    };
+    const s0 = stub(A, pts[0][1], ofs(e.ss));
+    if (s0) { pts[0] = s0[1]; pts.unshift(s0[0]); segs.unshift("ss"); }
+    const s1 = stub(B, pts[pts.length - 1][1], ofs(e.es));
+    if (s1) { pts[pts.length - 1] = s1[1]; pts.push(s1[0]); segs.push("es"); }
+    return { pts: pts.map(([u, v]) => H ? { x: u, y: v } : { x: v, y: u }), segs, H, cv: [A.v + A.wv / 2, B.v + B.wv / 2] };
   }
   function drawArrowHead(parent, poly, whichEnd, size, color, fb) {
     if (!poly || !poly.length) return;
@@ -202,7 +218,7 @@
     }
     return poly[poly.length - 1];
   }
-  const pipePoly = (aBox, bBox, e) => (Array.isArray(e.path) && e.path.length >= 2) ? e.path.map((p) => ({ x: p.x, y: p.y })) : zRoute(aBox, bBox);
+  const pipePoly = (aBox, bBox, e) => (Array.isArray(e.path) && e.path.length >= 2) ? e.path.map((p) => ({ x: p.x, y: p.y })) : zRoute(aBox, bBox, e);
   // bodyW (edge.pw, default 22) = pipe-body width. A wide translucent casing + two thin inner pipes drawn
   // on the same lane = "two tunnels within one tunnel" (FR59, the IPv4/IPv6 nesting). rimOnly skips the
   // body so a casing can be drawn without hiding the inner pipes behind it.
@@ -225,6 +241,33 @@
       ln(p.x - px * 0.9, p.y - py * 0.9, p.x + px * 0.9, p.y + py * 0.9, light, rimL); };
     rim(pts[0], pts[1]); rim(pts[pts.length - 1], pts[pts.length - 2]);
   }
+  // FR82: three block types, told apart by SHAPE (colour keeps its palette meaning). Untyped = plain box.
+  const NODE_TYPES = {
+    action: { label: "action — something you do",  rx: (b) => Math.min(b.h / 2, 26), sw: 2 },
+    info:   { label: "information",                 rx: () => 8, sw: 1.6, dash: "2 4" },
+    device: { label: "(hardware) device",           rx: () => 2, sw: 3.5 },
+  };
+  const DOG = 14;   // folded-corner size of an info block
+  function drawDogEar(parent, b, pal) {   // "document" corner at the top-right of an info block
+    const x = b.x + b.w, y = b.y;
+    el("path", { d: `M ${x - DOG} ${y} L ${x} ${y + DOG} L ${x} ${y} Z`, fill: (S.data.meta && S.data.meta.background) || "#0b0e14" }, parent);
+    el("path", { d: `M ${x - DOG} ${y} L ${x - DOG} ${y + DOG} L ${x} ${y + DOG} Z`, fill: pal.stroke, "fill-opacity": 0.5,
+                 stroke: pal.stroke, "stroke-width": 1.2 }, parent);
+  }
+  function buildLegend() {   // small key, top-right of the canvas; only on diagrams that use block types
+    const host = $("legend"), used = new Set(S.data.nodes.map((n) => n.nodeType).filter((t) => NODE_TYPES[t]));
+    host.hidden = !used.size; host.textContent = "";
+    for (const k of Object.keys(NODE_TYPES)) {
+      const T = NODE_TYPES[k], row = document.createElement("div"); row.className = "lg";
+      const s = document.createElementNS(SVGNS, "svg"); s.setAttribute("width", 34); s.setAttribute("height", 18);
+      const b = { x: 1.5, y: 1.5, w: 31, h: 15 }, r = Math.min(T.rx(b), 7.5);
+      const rc = el("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: r, ry: r, fill: "#14181f", stroke: "#8b949e" }, s);
+      rc.style.strokeWidth = Math.min(T.sw, 2.5); if (T.dash) rc.style.strokeDasharray = T.dash;
+      if (k === "info") el("path", { d: `M ${b.x + b.w - 6} ${b.y} L ${b.x + b.w - 6} ${b.y + 6} L ${b.x + b.w} ${b.y + 6} Z`, fill: "#8b949e" }, s);
+      const t = document.createElement("span"); t.textContent = T.label;
+      row.append(s, t); host.appendChild(row);
+    }
+  }
   function drawGround(parent, gy) {   // SMB brick ground strip (FR53)
     const x0 = -4000, W = 16000, H = 90, mortar = "#5c2f0d";
     el("rect", { x: x0, y: gy, width: W, height: H, fill: "#9a5523" }, parent);
@@ -241,17 +284,18 @@
     const vis = S.data.nodes.filter(visible);
     const boxOf = {}; for (const n of vis) boxOf[n.id] = rbox(n);
 
+    let selPoly = null;
     for (const e of S.data.edges) {
       if (!visible(e)) continue;
-      const a = boxOf[e.from], b = boxOf[e.to];
-      if (!a || !b) continue;
-      const kind = e.kind || "plain";
+      const ends = edgeEnds(e, boxOf); if (!ends) continue;
+      const { a, b } = ends, kind = e.kind || "plain";
       const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, gEdges);
       let mx, my;
       if (kind === "pipe") {
         const poly = dedupe(pipePoly(a, b, e));
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
+        if (S.selEdge === e.id) selPoly = poly;
         const m = poly[Math.max(1, Math.floor(poly.length / 2)) - 1]; mx = m.x; my = m.y;
       } else {
         // arrows connect side-MIDPOINT → side-midpoint, straight or 90° only, snap-to-straight (via zRoute)
@@ -273,6 +317,7 @@
         const fb = { x: center(b).x - center(a).x, y: center(b).y - center(a).y };
         if (dir === "to" || dir === "both") drawArrowHead(g, poly, "end", ah, col, fb);
         if (dir === "from" || dir === "both") drawArrowHead(g, poly, "start", ah, col, fb);
+        if (S.selEdge === e.id) selPoly = poly;
         const m = midOfPoly(poly); mx = m.x; my = m.y;
         if (kind !== "plain" && EDGE_ICON[kind]) {
           const u = el("use", { href: "#ic-" + EDGE_ICON[kind], x: mx - 9, y: my - 20, width: 18, height: 18 }, g);
@@ -288,7 +333,10 @@
       const pal = PALETTE[n.color] || PALETTE.note, bx = boxOf[n.id];
       const g = el("g", { class: "node" + (isContainer(n) ? " container" : "") + (S.sel === n.id ? " sel" : ""),
                           "data-id": n.id }, gNodes);
-      const rect = el("rect", { x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: 8, ry: 8, fill: pal.fill, stroke: pal.stroke }, g);
+      const T = NODE_TYPES[n.nodeType], r = T ? T.rx(bx) : 8;   // FR82: block shape = what the box IS
+      const rect = el("rect", { x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: r, ry: r, fill: pal.fill, stroke: pal.stroke }, g);
+      if (T) { rect.style.strokeWidth = T.sw; if (T.dash) rect.style.strokeDasharray = T.dash; }   // inline: beats .node rect CSS
+      if (n.nodeType === "info") drawDogEar(g, bx, pal);
       // FR54/FR76: pipes visible through the box (inline style — must beat the .container CSS opacity)
       if (n.seeThrough || autoSeeThrough(n)) rect.style.fillOpacity = "0.3";
       const cx = bx.x + bx.w / 2;
@@ -301,22 +349,24 @@
       const lines = String(n.label || "").split("\n");
       const startY = n.icon ? ty : ty - (lines.length - 1) * 8;
       lines.forEach((ln, i) => { const t = el("text", { x: cx, y: startY + i * 15, "text-anchor": "middle" }, g); t.textContent = ln; });
-      if (n.childDiagram) { const d = el("text", { x: bx.x + bx.w - 8, y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
+      if (n.childDiagram) { const d = el("text", { x: bx.x + bx.w - Math.max(8, r * 0.7), y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
     }
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(boxOf[sn.id]); }
+    if (selPoly) drawEndHandles(selPoly);
+    if (S.ghost) drawGhosts(boxOf);   // FR87
     updateEdgePanel();
   }
   function updateEdgePanel() {   // contextual box for the selected arrow: direction + head size + width + colour
     const p = $("edgepanel");
     const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
-    const a = e && node(e.from) && visible(node(e.from)) ? rbox(node(e.from)) : null;
-    const b = e && node(e.to) && visible(node(e.to)) ? rbox(node(e.to)) : null;
+    const ends = e && edgeEnds(e), a = ends && ends.a, b = ends && ends.b;
     if (!e || !a || !b) { p.style.display = "none"; S._panelEdge = null; return; }
+    if (S._panelEdge !== e.id) S.panelOff = { x: 0, y: 0 };   // FR78: a moved box resets for a newly selected arrow
     const mid = midOfPoly(dedupe(pipePoly(a, b, e)));
-    p.style.left = (S.view.x + mid.x * S.view.k) + "px";
-    p.style.top = Math.max(2, S.view.y + mid.y * S.view.k - 104) + "px";
-    p.style.display = "block";
+    p.style.left = (S.view.x + mid.x * S.view.k + S.panelOff.x) + "px";
+    p.style.display = "block";   // shown before measuring: FR79 the box sits fully ABOVE the line so a segment stays grabbable
+    p.style.top = Math.max(2, S.view.y + mid.y * S.view.k - p.offsetHeight - 16 + S.panelOff.y) + "px";
     const isPipe = e.kind === "pipe";   // heads/direction don't apply to pipe tubes; colour still does
     $("ep-dirrow").style.display = isPipe ? "none" : "flex";
     $("ep-sizerow").style.display = isPipe ? "none" : "flex";
@@ -330,6 +380,193 @@
       $("ep-lw").value = lw; $("ep-lwv").textContent = lw;
       $("ep-color").value = /^#[0-9a-f]{6}$/i.test(e.color || "") ? e.color : "#6e7681";
     }
+  }
+  // FR80: an edge end can sit ON a pipe (edge.fromOn / edge.toOn = "<pipeId>:<spot>"): an elbow (c<i> = polyline
+  // point i), a segment's midpoint (m<i>), or — Shift held, FR81 — an exact spot (s<i>@<t> = fraction t along segment i)
+  const SNAP_PX = 24;   // within this many screen px of a snap point = jump to it on release
+  function pipePolyOf(pe) {   // only plain pipes (not themselves attached to a pipe) can be attached to
+    if (!pe || pe.kind !== "pipe" || pe.fromOn || pe.toOn || !visible(pe)) return null;
+    const a = node(pe.from), b = node(pe.to);
+    return a && b && visible(a) && visible(b) ? dedupe(pipePoly(rbox(a), rbox(b), pe)) : null;
+  }
+  function pipeAnchors(poly) {
+    const out = [];
+    for (let i = 1; i < poly.length - 1; i++) out.push({ key: "c" + i, x: poly[i].x, y: poly[i].y });
+    for (let i = 1; i < poly.length; i++) out.push({ key: "m" + (i - 1), x: (poly[i - 1].x + poly[i].x) / 2, y: (poly[i - 1].y + poly[i].y) / 2 });
+    return out;
+  }
+  function pipeSpot(poly, key) {
+    const m = /^s(\d+)@([\d.]+)$/.exec(key);
+    if (m && +m[1] < poly.length - 1) { const A = poly[+m[1]], B = poly[+m[1] + 1], t = +m[2];
+      return { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t }; }
+    const an = pipeAnchors(poly);
+    return an.find((q) => q.key === key) || an.find((q) => q.key[0] === "m") || null;   // pipe re-routed → its first mid
+  }
+  function onPipeBox(spec) {   // the spot as a box the pipe's girth wide → the arrow tip lands on the pipe's outline
+    const i = String(spec).indexOf(":"), pe = S.data.edges.find((x) => x.id === String(spec).slice(0, i));
+    const poly = pipePolyOf(pe), p = poly && pipeSpot(poly, String(spec).slice(i + 1));
+    if (!p) return null;
+    const r = (pe.pw || 22) / 2 + 3;
+    return { x: p.x - r, y: p.y - r, w: 2 * r, h: 2 * r };
+  }
+  function edgeEnds(e, boxOf) {   // the two boxes an edge routes between (a node's box, or a spot on a pipe)
+    const get = (id, on) => on ? onPipeBox(on) : boxOf ? boxOf[id] : (node(id) && visible(node(id)) ? rbox(node(id)) : null);
+    const a = get(e.from, e.fromOn), b = get(e.to, e.toOn);
+    return a && b ? { a, b } : null;
+  }
+  function boxSnaps(b) {   // FR81 grid points of a box: 4 corners + 4 side-midpoints
+    const out = [];
+    for (const [k, fx, fy] of [["nw", 0, 0], ["n", .5, 0], ["ne", 1, 0], ["e", 1, .5], ["se", 1, 1], ["s", .5, 1], ["sw", 0, 1], ["w", 0, .5]])
+      out.push({ key: k, x: b.x + b.w * fx, y: b.y + b.h * fy });
+    return out;
+  }
+  function onBorder(b, p) {   // nearest point on the box outline
+    const x = Math.max(b.x, Math.min(b.x + b.w, p.x)), y = Math.max(b.y, Math.min(b.y + b.h, p.y));
+    const d = [[Math.abs(x - b.x), b.x, y], [Math.abs(b.x + b.w - x), b.x + b.w, y], [Math.abs(y - b.y), x, b.y], [Math.abs(b.y + b.h - y), x, b.y + b.h]]
+      .sort((u, v) => u[0] - v[0])[0];
+    return { x: d[1], y: d[2] };
+  }
+  // FR81: what an edge end would attach to at world point wp. Pipes win when the cursor is on one (or near one of its
+  // anchors); else the innermost box under / next to the cursor. No Shift → jump to the nearest snap point (box: corner or
+  // side-mid within SNAP_PX, else the auto side-mid; pipe: nearest elbow/segment-mid). Shift → exactly the cursor spot.
+  function resolveTarget(wp, shift, skipEdge) {
+    const tol = SNAP_PX / (S.view.k || 1), dist = (q) => Math.hypot(q.x - wp.x, q.y - wp.y);
+    let best = null;
+    for (const pe of S.data.edges) {
+      if (pe.id === skipEdge) continue;
+      const poly = pipePolyOf(pe); if (!poly) continue;
+      const pr = projPoly(poly, wp), body = (pe.pw || 22) / 2 + 3;
+      const an = pipeAnchors(poly).map((q) => ({ ...q, d: dist(q) })).sort((u, v) => u.d - v.d)[0];
+      if (pr.d > body && !(an && an.d <= tol && !shift)) continue;
+      const score = Math.min(pr.d, an ? an.d : Infinity);
+      if (best && best.score <= score) continue;
+      best = shift ? { pipe: pe.id, poly, key: `s${pr.i}@${pr.t.toFixed(3)}`, pt: { x: pr.x, y: pr.y }, exact: true, score }
+                   : { pipe: pe.id, poly, key: an.key, pt: an, snapped: true, score };
+    }
+    if (best) return best;
+    let nb = null;
+    for (const n of S.data.nodes) {
+      if (!visible(n)) continue;
+      const b = rbox(n), inside = wp.x >= b.x && wp.x <= b.x + b.w && wp.y >= b.y && wp.y <= b.y + b.h;
+      const sn = boxSnaps(b).map((q) => ({ ...q, d: dist(q) })).sort((u, v) => u.d - v.d)[0];
+      if (!inside && sn.d > tol) continue;
+      const rank = inside ? b.w * b.h : 1e12 + sn.d;   // innermost box under the cursor, else the nearest snap
+      if (!nb || rank < nb.rank) nb = { id: n.id, box: b, sn, rank };
+    }
+    if (!nb) return null;
+    if (shift) return { id: nb.id, box: nb.box, pt: onBorder(nb.box, wp), exact: true };
+    return nb.sn.d <= tol ? { id: nb.id, box: nb.box, pt: nb.sn, snapped: true } : { id: nb.id, box: nb.box, pt: null };
+  }
+  const ENDK = { start: ["from", "fromOn", "so", "ss"], end: ["to", "toOn", "eo", "es"] };
+  function portOffsets(e, end, pt, free) {   // set so/ss (eo/es) so the route meets box point pt (free: any point, FR79 shift)
+    const [, , oK, sK] = ENDK[end], ends = edgeEnds(e); if (!ends) return;
+    const { H } = zRouteSegs(ends.a, ends.b, e), q = end === "end" ? ends.b : ends.a;
+    const U = (z) => H ? { u: z.x, v: z.y } : { u: z.y, v: z.x }, Q = H ? { u: q.x, v: q.y, wu: q.w, wv: q.h } : { u: q.y, v: q.x, wu: q.h, wv: q.w };
+    const p = U(pt), cu = Q.u + Q.wu / 2, cv = Q.v + Q.wv / 2;
+    let o = p.v - cv, st = p.u - cu;
+    if (!free) {   // a point ON the outline: on a facing side → slide along it; on a top/bottom side → stub into it
+      const other = end === "end" ? ends.a : ends.b, ou = H ? other.x + other.w / 2 : other.y + other.h / 2;
+      const near = ou >= cu ? Q.u + Q.wu : Q.u;   // only the side FACING the other end can be slid along
+      if (Math.abs(p.u - near) < 0.5) st = 0; else o = p.v <= cv ? -(Q.wv / 2 + 20) : Q.wv / 2 + 20;
+    }
+    o = Math.round(o); st = Math.round(st);
+    if (o) e[oK] = o; else delete e[oK];
+    if (st && Math.abs(o) > Q.wv / 2) e[sK] = st; else delete e[sK];
+  }
+  function applyTarget(e, end, t) {   // attach edge end to a resolved target (pipe spot / box point / box auto-mid)
+    const [idK, onK, oK, sK] = ENDK[end];
+    delete e[onK]; delete e[oK]; delete e[sK];
+    if (t.pipe) { e[onK] = t.pipe + ":" + t.key; e[idK] = S.data.edges.find((x) => x.id === t.pipe)[end === "end" ? "to" : "from"]; return; }
+    e[idK] = t.id;
+    if (t.pt) portOffsets(e, end, t.pt, false);
+  }
+  function drawHover(t) {   // FR81: highlight the box/pipe an edge end would attach to + the exact snap point
+    for (const x of gNodes.querySelectorAll(".hl")) x.remove();
+    if (!t) return;
+    const k = S.view.k || 1, mk = (name, attrs) => { const x = el(name, { ...attrs, class: "hl" }, gNodes); x.style.pointerEvents = "none"; return x; };
+    const HL = "#ff4fd8";   // magenta: stands out on every node colour AND on the yellow/blue/grey pipes
+    if (t.box) mk("rect", { x: t.box.x - 3 / k, y: t.box.y - 3 / k, width: t.box.w + 6 / k, height: t.box.h + 6 / k, rx: 10, fill: "none", stroke: HL, "stroke-width": 3 / k });
+    if (t.poly) mk("path", { d: "M " + t.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none", stroke: HL, "stroke-opacity": 0.6, "stroke-width": 5 / k, "stroke-dasharray": `${10 / k} ${6 / k}` });
+    if (!t.exact) for (const q of t.poly ? pipeAnchors(t.poly) : boxSnaps(t.box)) {   // the grid it can jump to
+      const r = 4 / k, sq = t.poly ? q.key[0] === "c" : q.key.length === 2;   // squares = corners/elbows, dots = mids
+      (sq ? mk("rect", { x: q.x - r, y: q.y - r, width: 2 * r, height: 2 * r }) : mk("circle", { cx: q.x, cy: q.y, r }))
+        .setAttribute("fill", "#ffffff");
+    }
+    if (t.pt) { const c = mk("circle", { cx: t.pt.x, cy: t.pt.y, r: (t.exact ? 5 : 8) / k, stroke: "#ffffff", "stroke-width": 2 / k });
+      c.style.fill = t.exact ? "#ff7b72" : HL; }   // red = exact spot (Shift), magenta = the grid point it jumps to
+  }
+  function drawEndHandles(poly) {   // grab an end of the selected edge to re-attach it (FR80/81)
+    const z = 6 / (S.view.k || 1);
+    [["start", poly[0]], ["end", poly[poly.length - 1]]].forEach(([end, p]) => {
+      const h = el("circle", { class: "ehandle", "data-end": end, cx: p.x, cy: p.y, r: z, fill: "#58a6ff", stroke: "#0b0e14", "stroke-width": 1 / (S.view.k || 1) }, gNodes);
+      h.style.cursor = "grab";
+    });
+  }
+  /* ---------- FR87: hold Shift = every toggle state at once (dashed ghosts) + a cross-state overlap check ---------- */
+  function allStates() {   // every reachable toggle combination (dependent option lists respected)
+    const ts = toggles(), out = [], saved = S.toggle;
+    const rec = (i, cur) => {
+      if (i === ts.length) { out.push({ ...cur }); return; }
+      S.toggle = cur; const opts = activeOptions(ts[i]);
+      if (!opts.length) rec(i + 1, { ...cur, [ts[i].id]: null });
+      for (const o of opts) rec(i + 1, { ...cur, [ts[i].id]: o.value });
+    };
+    rec(0, {}); S.toggle = saved; return out;
+  }
+  const geomKey = (o) => JSON.stringify(o, (k, v) => typeof v === "number" ? Math.round(v) : v);
+  function ancestorsOf(n) { const o = new Set(); let c = activeContainerOf(n), g = 0;
+    while (c && g++ < 8) { o.add(c); const p = node(c); c = p && activeContainerOf(p); } return o; }
+  function ghostScan() {   // per state: where every box + line is, and which boxes overlap while both are shown
+    const saved = S.toggle, nodes = {}, edges = {}, clash = new Map(), states = allStates();
+    for (const st of states) {
+      S.toggle = st;
+      const vis = S.data.nodes.filter(visible), box = {};
+      for (const n of vis) { box[n.id] = rbox(n); (nodes[n.id] = nodes[n.id] || new Map()).set(geomKey(box[n.id]), box[n.id]); }
+      for (const e of S.data.edges) {
+        if (!visible(e)) continue;
+        const ends = edgeEnds(e, box); if (!ends) continue;
+        const poly = dedupe(pipePoly(ends.a, ends.b, e));
+        (edges[e.id] = edges[e.id] || new Map()).set(geomKey(poly), poly);
+      }
+      for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
+        const A = vis[i], B = vis[j], a = box[A.id], b = box[B.id];
+        const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (ox <= 2 || oy <= 2 || ancestorsOf(A).has(B.id) || ancestorsOf(B).has(A.id)) continue;   // nesting is not a clash
+        const k = A.id + " × " + B.id;
+        if (!clash.has(k)) clash.set(k, { a, b, st: [] });
+        clash.get(k).st.push(st);
+      }
+    }
+    S.toggle = saved;
+    return { nodes, edges, clash, n: states.length };
+  }
+  function drawGhosts(boxOf) {
+    const g = ghostScan(), k = S.view.k || 1, G = el("g", { class: "ghosts" }, gNodes);
+    G.style.pointerEvents = "none";
+    const curEdge = {};
+    for (const e of S.data.edges) { if (!visible(e)) continue; const ends = edgeEnds(e, boxOf);
+      if (ends) curEdge[e.id] = geomKey(dedupe(pipePoly(ends.a, ends.b, e))); }
+    for (const id in g.edges) for (const [kk, poly] of g.edges[id]) {
+      if (curEdge[id] === kk) continue;   // drawn for real already
+      const e = S.data.edges.find((x) => x.id === id), pipe = e.kind === "pipe";
+      el("path", { d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none", stroke: e.color || "#8b949e",
+                   "stroke-width": (pipe ? 6 : 2) / k, "stroke-opacity": 0.75, "stroke-dasharray": `${8 / k} ${5 / k}` }, G);
+    }
+    for (const id in g.nodes) for (const [kk, b] of g.nodes[id]) {
+      if (boxOf[id] && geomKey(boxOf[id]) === kk) continue;
+      const n = node(id), pal = PALETTE[n.color] || PALETTE.note;
+      const r = el("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 8, fill: pal.fill, stroke: pal.stroke, "stroke-width": 1.5 / k, "stroke-dasharray": `${6 / k} ${4 / k}` }, G);
+      r.style.fillOpacity = "0.25";
+      const t = el("text", { x: b.x + b.w / 2, y: b.y + b.h / 2 + 4, "text-anchor": "middle" }, G);
+      t.textContent = String(n.label || n.id).split("\n")[0]; t.style.fill = "#c9d1d9"; t.style.opacity = "0.75"; t.style.fontSize = "11px";
+    }
+    for (const c of g.clash.values()) for (const b of [c.a, c.b])
+      el("rect", { x: b.x - 2 / k, y: b.y - 2 / k, width: b.w + 4 / k, height: b.h + 4 / k, rx: 9, fill: "none", stroke: "#ff4040", "stroke-width": 3 / k }, G);
+    const sn = (st) => toggles().map((t) => st[t.id]).filter(Boolean).join("·");
+    const list = [...g.clash].map(([k2, c]) => `<b>${k2}</b> (${sn(c.st[0])}${c.st.length > 1 ? ` +${c.st.length - 1}` : ""})`);
+    status(`Shift: all <b>${g.n}</b> toggle states overlaid (dashed = only in other states) — ` +
+      (list.length ? `<span style="color:#ff6b6b">⚠ ${list.length} overlapping pair(s):</span> ${list.slice(0, 5).join(" · ")}${list.length > 5 ? " …" : ""}`
+                   : "✓ no boxes overlap in any state"));
   }
   const HANDLE_CUR = { nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize",
                        se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize" };
@@ -444,7 +681,7 @@
       S.toggle = {}; for (const t of toggles()) S.toggle[t.id] = t.default;
       if (toggleState) for (const k in toggleState) S.toggle[k] = toggleState[k];
       normalizeToggles(); writeHash();
-      buildCrumbs(); buildPicker(); buildToggles(); fit(); render();
+      buildCrumbs(); buildPicker(); buildToggles(); buildLegend(); fit(); render();
       status(`loaded <b>${id}</b> — ${S.data.nodes.length} nodes, ${S.data.edges.length} edges`);
     } catch (e) { status(`could not load ${id}.json — ${e.message}`); }
   }
@@ -480,10 +717,11 @@
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const n of vis) { const b = rbox(n); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
       x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); }
-    const pad = 50, r = svg.getBoundingClientRect();
-    const k = Math.min(3, Math.max(0.2, Math.min((r.width - pad * 2) / (x1 - x0 || 1), (r.height - pad * 2) / (y1 - y0 || 1))));
+    const pad = 50, r = svg.getBoundingClientRect(), lg = $("legend");
+    const top = pad + (lg && !lg.hidden ? lg.offsetHeight + 4 : 0);   // FR82: keep the legend band clear of boxes
+    const k = Math.min(3, Math.max(0.2, Math.min((r.width - pad * 2) / (x1 - x0 || 1), (r.height - pad - top) / (y1 - y0 || 1))));
     S.view.k = k; S.view.x = pad - x0 * k + (r.width - pad * 2 - (x1 - x0) * k) / 2;
-    S.view.y = pad - y0 * k + (r.height - pad * 2 - (y1 - y0) * k) / 2; applyView();
+    S.view.y = top - y0 * k + (r.height - pad - top - (y1 - y0) * k) / 2; applyView();
   }
 
   /* ---------- editing ops ---------- */
@@ -530,6 +768,14 @@
     const n = node(S.sel), ids = S.index.diagrams.map((d) => d.id).join(", ");
     const v = prompt(`Sub-diagram id to open on double-click\n(existing: ${ids})\n(blank = none):`, n.childDiagram || "");
     if (v == null) return; n.childDiagram = v.trim(); markDirty(true); render();
+  }
+  function setType() {   // FR82: action / info / device (blank = untyped plain box)
+    if (!S.sel) { status("select a box first"); return; }
+    const n = node(S.sel), v = prompt(`Block type (blank = none)\noptions: ${Object.keys(NODE_TYPES).join(", ")}`, n.nodeType || "");
+    if (v == null) return; const vv = v.trim();
+    if (vv && !NODE_TYPES[vv]) { status(`unknown type '${vv}'`); return; }
+    if (vv) n.nodeType = vv; else delete n.nodeType;
+    markDirty(true); buildLegend(); render(); status(`<b>${n.id}</b> → ${vv || "untyped"}`);
   }
   function setWhen() {
     const o = S.selEdge ? S.data.edges.find((x) => x.id === S.selEdge) : (S.sel ? node(S.sel) : null);
@@ -622,6 +868,66 @@
     } else { buildCrumbs(); buildPicker(); render(); status(`created <b>${id}</b> (downloaded — commit it)`); }
   }
 
+  /* ---------- FR79: drag an arrow/pipe segment sideways (perpendicular to it) ---------- */
+  function projPoly(poly, p) {   // nearest point on a polyline → { i: segment, t: fraction along it, x, y, d }
+    let best = { i: 0, t: 0, x: poly[0].x, y: poly[0].y, d: Infinity };
+    for (let i = 1; i < poly.length; i++) {
+      const A = poly[i - 1], B = poly[i], dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((p.x - A.x) * dx + (p.y - A.y) * dy) / L2)) : 0;
+      const x = A.x + dx * t, y = A.y + dy * t, d = Math.hypot(p.x - x, p.y - y);
+      if (d < best.d) best = { i: i - 1, t, x, y, d };
+    }
+    return best;
+  }
+  function edgeDragStart(e, wp) {
+    const base = { id: e.id, wx0: wp.x, wy0: wp.y, moved: false };
+    if (Array.isArray(e.path) && e.path.length >= 2) {   // explicit path: shift that segment's two points
+      const i = projPoly(e.path, wp).i, P = e.path[i], Q = e.path[i + 1];
+      return { ...base, i, axis: Math.abs(P.y - Q.y) < 0.5 ? "y" : "x", path0: e.path.map((p) => ({ x: p.x, y: p.y })) };
+    }
+    const { a, b } = edgeEnds(e), r = zRouteSegs(a, b, e), key = r.segs[projPoly(r.pts, wp).i];
+    const crossRun = key === "mo" || key === "ss" || key === "es";   // these segments run along the cross axis
+    return { ...base, key, axis: crossRun === r.H ? "x" : "y",
+             o0: { so: ofs(e.so), eo: ofs(e.eo), mo: ofs(e.mo), ss: ofs(e.ss), es: ofs(e.es) } };
+  }
+  function edgeDragMove(ev) {
+    const d = S.edrag, e = S.data.edges.find((x) => x.id === d.id), wp = toWorld(ev);
+    if (!e) return;
+    if (!d.moved && Math.abs(wp.x - d.wx0) + Math.abs(wp.y - d.wy0) <= 3 / S.view.k) return;   // a click, not a drag
+    d.moved = true;
+    const delta = Math.round(d.axis === "x" ? wp.x - d.wx0 : wp.y - d.wy0);
+    if (d.path0) {
+      e.path = d.path0.map((p) => ({ x: p.x, y: p.y }));
+      e.path[d.i][d.axis] += delta; e.path[d.i + 1][d.axis] += delta;
+    } else {
+      for (const k of d.key.split("+")) { const v = d.o0[k] + delta; if (v) e[k] = v; else delete e[k]; }
+      if (d.key === "so" || d.key === "eo") {   // an end run dragged level with the other one snaps into a straight line
+        const ends = edgeEnds(e), cv = ends && zRouteSegs(ends.a, ends.b, e).cv;
+        if (cv && Math.abs(cv[0] + ofs(e.so) - cv[1] - ofs(e.eo)) <= EDGE_SNAP) {
+          const v = d.key === "so" ? Math.round(cv[1] + ofs(e.eo) - cv[0]) : Math.round(cv[0] + ofs(e.so) - cv[1]);
+          if (v) e[d.key] = v; else delete e[d.key];
+        }
+      }
+    }
+    markDirty(true); render();
+  }
+  function endDragMove(ev) {   // FR80/81: an edge end follows the cursor; pipe/box under it highlights, Shift = exact spot
+    const d = S.edrag, e = S.data.edges.find((x) => x.id === d.id), wp = toWorld(ev);
+    if (!e) return;
+    if (!d.moved && Math.abs(wp.x - d.wx0) + Math.abs(wp.y - d.wy0) <= 3 / S.view.k) return;
+    d.moved = true;
+    const [idK] = ENDK[d.end], other = e[ENDK[d.end === "end" ? "start" : "end"][1]];
+    let t = resolveTarget(wp, ev.shiftKey, e.id);
+    if (t && t.pipe && other && other.split(":")[0] === t.pipe) t = null;   // both ends on one pipe: no
+    if (t && !t.pipe && t.id === e[d.end === "end" ? "from" : "to"] && !e[ENDK[d.end === "end" ? "start" : "end"][1]]) t = null;   // onto its own other box
+    if (t && !t.pipe && !t.pt) t = { ...t, pt: onBorder(t.box, wp), exact: true };   // not near a snap point → slide to the spot
+    if (t) applyTarget(e, d.end, t);
+    else {   // empty space: keep the box, shift the end freely toward the cursor (FR79 shifting)
+      const [, onK] = ENDK[d.end]; delete e[onK]; e[idK] = d.orig[idK]; portOffsets(e, d.end, wp, true);
+    }
+    markDirty(true); render(); drawHover(t);
+  }
+
   /* ---------- pointer interaction ---------- */
   const nodeIdFromEvent = (ev) => { const g = ev.target.closest(".node"); return g ? g.getAttribute("data-id") : null; };
   const edgeIdFromEvent = (ev) => { const g = ev.target.closest(".edge"); return g ? g.getAttribute("data-edge") : null; };
@@ -633,13 +939,25 @@
     const nidDown = nodeIdFromEvent(ev);
     // Ctrl + press on a box (or its edge-dot) = DRAW A NEW ARROW from that box (instead of resize/move)
     const drawSrc = hdir ? S.sel : nidDown;
-    if ((ev.ctrlKey || S.ctrl) && drawSrc) {
+    // FR80/81: grab an end-dot of the selected edge = re-attach that end (box point, pipe spot, or free shift)
+    const hend = ev.target.classList && ev.target.classList.contains("ehandle") ? ev.target.getAttribute("data-end") : null;
+    if (hend && S.selEdge) {
+      const e = S.data.edges.find((x) => x.id === S.selEdge), wp = toWorld(ev);
+      S.edrag = { id: e.id, end: hend, wx0: wp.x, wy0: wp.y, moved: false, orig: { from: e.from, to: e.to } };
+      ev.preventDefault(); S.mode = "enddrag"; svg.setPointerCapture(ev.pointerId); return;
+    }
+    const src = (ev.ctrlKey || S.ctrl) ? resolveTarget(toWorld(ev), ev.shiftKey) : null;
+    if (src && src.exact && !src.pipe && Math.hypot(src.pt.x - toWorld(ev).x, src.pt.y - toWorld(ev).y) > SNAP_PX / S.view.k)
+      { src.pt = null; src.exact = false; }   // Shift-press deep inside the start box: no exact spot there → auto side-mid
+    if (src && (drawSrc || src.pipe)) {   // Ctrl-press on a box / its dot / a pipe → draw a new arrow from that spot
       ev.preventDefault();
-      S.draw = { src: drawSrc }; S.mode = "drawedge";
-      const c = center(rbox(node(drawSrc)));
+      S.sel = null; S.selEdge = null; refreshSwatchSel(); render();   // hide the arrow box so it can't cover a target
+      S.draw = { src }; S.mode = "drawedge";
+      const c = src.pt || center(src.box);
       S.rubber = el("path", { id: "rubber", d: `M ${c.x} ${c.y} L ${c.x} ${c.y}` }, gEdges);
       svg.setPointerCapture(ev.pointerId);
-      status(`drawing arrow from <b>${drawSrc}</b> — release on the target box (Esc cancels)`);
+      status(`drawing arrow from <b>${src.pipe || src.id}</b> — release on a box or pipe · it jumps to the marked point · hold <b>Shift</b> for the exact spot (Esc cancels)`);
+      drawHover(src);
       return;
     }
     // resize handle on the selected node takes priority over move/pan
@@ -662,6 +980,12 @@
       return;
     }
     if (nid) {
+      // FR85: drill-down. The native dblclick never reaches the node (this press re-renders and replaces its element),
+      // so a double-press is detected here; "⊕ open" opens the sub-diagram on a single click.
+      const n0 = node(nid), now = Date.now(), dbl = S.lastPress && S.lastPress.id === nid && now - S.lastPress.t < 400;
+      S.lastPress = { id: nid, t: now };
+      if (n0.childDiagram && (dbl || ev.target.classList.contains("drill"))) { S.lastPress = null; openDiagram(n0.childDiagram); return; }
+      if (dbl && S.backend) { S.lastPress = null; relabel(); return; }
       S.sel = nid; S.selEdge = null; refreshSwatchSel(); render();
       const n = node(nid), w = toWorld(ev);
       const orig = { container: n.container, containerWhen: n.containerWhen, snapSide: n.snapSide, x: n.x, y: n.y };
@@ -674,16 +998,23 @@
     } else {
       const eid = edgeIdFromEvent(ev);
       if (eid) { S.selEdge = eid; S.sel = null; refreshSwatchSel(); render();
-        const e = S.data.edges.find((x) => x.id === eid); status(`edge <b>${eid}</b> (${e.kind || "plain"}) — ～ kind · ✎ label · 🗑 delete`); return; }
+        const e = S.data.edges.find((x) => x.id === eid); status(`edge <b>${eid}</b> (${e.kind || "plain"}) — drag a segment sideways to move it · ～ kind · ✎ label · 🗑 delete`);
+        ev.preventDefault(); S.edrag = edgeDragStart(e, toWorld(ev)); S.mode = "edgedrag"; svg.setPointerCapture(ev.pointerId); return; }
       S.sel = null; S.selEdge = null; refreshSwatchSel(); render();
       S.mode = "pan"; S.panStart = { x: ev.clientX, y: ev.clientY, vx: S.view.x, vy: S.view.y };
       svg.classList.add("panning"); svg.setPointerCapture(ev.pointerId);
     }
   });
   svg.addEventListener("pointermove", (ev) => {
+    if (S.mode === "edgedrag" && S.edrag) { edgeDragMove(ev); return; }
+    if (S.mode === "enddrag" && S.edrag) { endDragMove(ev); return; }
     if (S.mode === "drawedge" && S.draw) {
-      const wp = toWorld(ev), c = center(rbox(node(S.draw.src)));
-      if (S.rubber) S.rubber.setAttribute("d", `M ${c.x} ${c.y} L ${wp.x} ${wp.y}`);
+      const wp = toWorld(ev), sr = S.draw.src, c = sr.pt || center(sr.box);
+      let t = resolveTarget(wp, ev.shiftKey);
+      if (t && (t.pipe ? t.pipe === sr.pipe : t.id === sr.id && !sr.pipe)) t = null;   // not onto where it starts
+      S.draw.tgt = t; drawHover(t);
+      const q = t ? (t.pt || center(t.box)) : wp;
+      if (S.rubber) S.rubber.setAttribute("d", `M ${c.x} ${c.y} L ${q.x} ${q.y}`);
       return;
     }
     if (S.mode === "resize" && S.resize) {
@@ -711,14 +1042,17 @@
   function endPointer(ev) { if (S.mode) { try { svg.releasePointerCapture(ev.pointerId); } catch (_) {} }
     S.mode = "idle"; S.drag = null; S.panStart = null; S.resize = null; svg.classList.remove("panning"); }
   svg.addEventListener("pointerup", (ev) => {
+    if (S.mode === "edgedrag" || S.mode === "enddrag") { S.edrag = null; endPointer(ev); render(); return; }
     if (S.mode === "drawedge" && S.draw) {
-      const tgt = nodeAtWorld(toWorld(ev)), src = S.draw.src;
-      if (tgt && tgt !== src) {
-        const id = uid("e", (x) => S.data.edges.some((e) => e.id === x));
-        S.data.edges.push({ id, from: src, to: tgt, label: "", kind: "plain", dir: "to" });
+      const tgt = S.draw.tgt, src = S.draw.src;
+      if (tgt) {
+        const id = uid("e", (x) => S.data.edges.some((e) => e.id === x)), e = { id, from: "", to: "", label: "", kind: "plain", dir: "to" };
+        S.data.edges.push(e);
+        applyTarget(e, "start", { ...src, pt: null }); applyTarget(e, "end", { ...tgt, pt: null });   // both ends exist first …
+        applyTarget(e, "start", src); applyTarget(e, "end", tgt);                                    // … then the exact points
         S.selEdge = id; S.sel = null; markDirty(true);
-        status(`arrow <b>${src} → ${tgt}</b> added — set its direction in the box, or ✎ label`);
-      } else { status("arrow cancelled (release on a target box)"); }
+        status(`arrow <b>${src.pipe || src.id} → ${tgt.pipe || tgt.id}</b> added — set its direction in the box, or ✎ label`);
+      } else { status("arrow cancelled (release on a target box or pipe)"); }
       clearRubber(); endPointer(ev); render(); return;
     }
     if (S.mode === "drag" && S.drag) {
@@ -732,10 +1066,6 @@
     endPointer(ev);
   });
   svg.addEventListener("pointercancel", (ev) => { clearRubber(); endPointer(ev); });
-  svg.addEventListener("dblclick", (ev) => {
-    const nid = nodeIdFromEvent(ev); if (!nid) return; const n = node(nid);
-    if (n.childDiagram) openDiagram(n.childDiagram); else if (S.backend) relabel();
-  });
 
   /* ---------- buttons + keys ---------- */
   $("addnode").onclick = addNode;
@@ -746,6 +1076,7 @@
   $("setkind").onclick = setKind;
   $("setchild").onclick = setChild;
   $("setwhen").onclick = setWhen;
+  $("settype").onclick = setType;
   $("setcontainer").onclick = setContainer;
   $("edittoggles").onclick = editToggles;
   $("fit").onclick = fit;
@@ -764,6 +1095,21 @@
   $("ep-lw").addEventListener("input", (ev) => { const e = selEdgeObj(); if (!e) return; e.lw = +ev.target.value; $("ep-lwv").textContent = e.lw; markDirty(true); render(); });
   $("ep-color").addEventListener("input", (ev) => { const e = selEdgeObj(); if (!e) return; e.color = ev.target.value; markDirty(true); render(); });
   $("ep-colorclear").onclick = () => { const e = selEdgeObj(); if (!e) return; delete e.color; markDirty(true); render(); };
+  $("ep-routereset").onclick = () => { const e = selEdgeObj(); if (!e) return;   // FR79: drop the dragged offsets
+    for (const k of ["so", "eo", "mo", "ss", "es"]) delete e[k]; markDirty(true); render(); };
+  // FR78: press-and-hold anywhere on the arrow box (not on its controls) and drag to move it; dblclick = back home
+  const panel = $("edgepanel"), isCtl = (t) => t.closest("button, input, select, textarea");
+  panel.addEventListener("pointerdown", (ev) => {
+    if (isCtl(ev.target) || ev.button !== 0) return;
+    ev.preventDefault();
+    const st = { x: ev.clientX, y: ev.clientY, ox: S.panelOff.x, oy: S.panelOff.y };
+    panel.classList.add("moving"); panel.setPointerCapture(ev.pointerId);
+    const move = (m) => { S.panelOff = { x: st.ox + m.clientX - st.x, y: st.oy + m.clientY - st.y }; updateEdgePanel(); };
+    const up = () => { panel.classList.remove("moving"); panel.removeEventListener("pointermove", move);
+      panel.removeEventListener("pointerup", up); panel.removeEventListener("pointercancel", up); };
+    panel.addEventListener("pointermove", move); panel.addEventListener("pointerup", up); panel.addEventListener("pointercancel", up);
+  });
+  panel.addEventListener("dblclick", (ev) => { if (isCtl(ev.target)) return; S.panelOff = { x: 0, y: 0 }; updateEdgePanel(); });
   // hover help on toolbar controls (clearer than native title)
   const tip = $("tooltip");
   function showTip(t) { const h = t.getAttribute("data-help"); if (!h) return; tip.innerHTML = h;
@@ -777,11 +1123,14 @@
   function setCtrl(on) {   // Ctrl held = "draw a new arrow" mode (cursor + handle hint)
     if (S.ctrl === on) return;
     S.ctrl = on; svg.classList.toggle("drawmode", on);
+    if (on && S.ghost) { S.ghost = false; render(); }   // Ctrl+Shift = exact-attach drawing (FR81), not the overlay
     if (S.sel) render();   // refresh handle cursors
   }
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Control" || ev.key === "Meta") setCtrl(true);
     if (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") return;
+    // FR87: hold Shift (alone) = overlay every toggle state; not while Shift means "exact spot" (drawing / end drag)
+    if (ev.key === "Shift" && !S.ghost && !ev.ctrlKey && !ev.metaKey && S.mode !== "drawedge" && S.mode !== "enddrag") { S.ghost = true; render(); }
     if (ev.key === "Delete" || ev.key === "Backspace") { if (S.sel || S.selEdge) { ev.preventDefault(); delSel(); } }
     else if (ev.key === "Escape") {
       if (S.mode === "drawedge") { clearRubber(); S.mode = "idle"; status("arrow cancelled"); render(); }
@@ -789,8 +1138,9 @@
     }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); save(); }
   });
-  window.addEventListener("keyup", (ev) => { if (ev.key === "Control" || ev.key === "Meta") setCtrl(false); });
-  window.addEventListener("blur", () => setCtrl(false));
+  window.addEventListener("keyup", (ev) => { if (ev.key === "Control" || ev.key === "Meta") setCtrl(false);
+    if (ev.key === "Shift" && S.ghost) { S.ghost = false; render(); status("overlay off"); } });
+  window.addEventListener("blur", () => { setCtrl(false); if (S.ghost) { S.ghost = false; render(); } });
   window.addEventListener("beforeunload", (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
 
   /* ---------- boot ---------- */

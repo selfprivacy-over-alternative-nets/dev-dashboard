@@ -476,3 +476,120 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   A thick line keeps reading as an arrow: the drawn head is `max(ah, 2.5 × lw)` (the *head* slider is the
   minimum) and the line is trimmed back to the head's base so its butt never pokes past the tip; the tip
   stays exactly on the box edge. Mirrored in `docs/gen_flow_svg.py` (`trim_end`, head size).
+- **FR78. The arrow box (A→B box) can be moved by click-hold-drag.** Pressing and holding anywhere on the
+  arrow box (FR72) that is not one of its controls (buttons, sliders, colour picker) and dragging moves the
+  box (⠿ grip + `move` cursor show it's draggable; dragging a slider still only changes the slider). The box
+  keeps its moved offset relative to the arrow's midpoint, so it follows the arrow on zoom/pan/fit/re-render
+  (zoom previously left the box behind). Double-click its background = back to the default spot; selecting a
+  different arrow also starts at the default spot. Pure view state — never saved to the diagram JSON.
+- **FR79. Drag an edge's line sideways (perpendicular to its segment); past a box's side it gains a bend.**
+  Grabbing any segment of an arrow or pipe and dragging it moves that segment **orthogonally to its own
+  direction** (a horizontal run moves up/down, a vertical one left/right) — the 90°-only routing (FR53/FR69)
+  is kept. Dragging an **end** run shifts where it **attaches** along the box side (the attachment slides with
+  it). When the line is dragged **further to the side than the box's edge runs**, it gets **one extra 90°
+  bend** to stay connected: it enters/leaves through that box's top/bottom (or left/right) side instead
+  (a "stub"); that stub can itself be dragged to shift where it enters the box. The middle elbow of a Z-route
+  can be dragged too. An end run dragged level (within `EDGE_SNAP`) with the other end snaps into one straight
+  line. *Stored as offsets on the edge* (so the route stays attached when boxes move/resize, and round-trips
+  through the deterministic save): `so`/`eo` = start/end attachment shift along its side, `mo` = middle-elbow
+  shift, `ss`/`es` = start/end stub shift along the top/bottom side. An explicit `edge.path` (FR53) instead has
+  the grabbed segment's two points moved. The arrow box gets a **reset route** button (drops the offsets) and
+  now sits fully **above** the line so it never covers the segment being dragged. Snap-to-straight only applies
+  when both ends share one offset, so a set attachment (FR81) stays exact. Mirrored in `docs/gen_flow_svg.py`
+  (`zroute(a, b, e)` ↔ `zRouteSegs`; parity-tested on random boxes/offsets).
+- **FR80. Attach an edge to a pipe, snapping to the pipe's corner or segment-midpoint.** An arrow end can sit
+  **on a pipe** instead of a box. Selecting an edge shows a grab-dot at each of its two ends; dragging an end
+  and **releasing in proximity** (≤ 24 screen px, or on the pipe's body) of a pipe **jumps/grid-fixes** it to
+  the nearest **corner (elbow)** or **middle of a segment's length** of that pipe. Released elsewhere on/near a
+  box → it slides to that spot on the box (the FR79 edge-line shifting); released in empty space → the end
+  shifts freely toward the cursor. Ctrl-drawing a new arrow (FR71) can also start or end on a pipe. *Stored
+  as* `edge.fromOn` / `edge.toOn` = `"<pipeId>:<spot>"` with spot `c<i>` (pipe polyline point i), `m<i>`
+  (middle of segment i) or `s<i>@<t>` (exact fraction t along segment i, FR81); `from`/`to` keep a node id.
+  The tip lands on the pipe's outline (an attach box the pipe's girth wide). Only plain pipes (not themselves
+  attached to a pipe) are targets; if the pipe re-routes so the spot no longer exists, it falls back to the
+  pipe's first segment-mid. Mirrored in `docs/gen_flow_svg.py` (`pipe_spot_box`).
+- **FR81. Highlight the attach target while drawing/dragging an edge; Shift = exact position.** While
+  Ctrl-drawing a new edge (FR71) or dragging an edge end (FR80), the **box or pipe the edge would connect to is
+  highlighted** (magenta outline; magenta dashes along a pipe — visible on every node and pipe colour), its
+  **grid points** are shown (box: 4 corners as squares + 4 side-midpoints as dots; pipe: elbows as squares +
+  segment-mids as dots), and the **specific corner / side-mid / segment-mid it will snap to on release** is
+  marked with a large magenta dot. Away from a grid point on a box (without Shift) a new arrow uses the auto
+  side-midpoint. Holding **Shift** (together with Ctrl while drawing; on its own while dragging an end) **overrides the grid snapping**: the end
+  attaches to **exactly** the spot under the cursor (nearest point on the box outline, or on the pipe),
+  marked with a small red dot. A Shift-press deep inside the *start* box (not near its border) still starts at
+  the auto side-midpoint. Starting a draw hides the arrow box so it can't cover a target. *Known limit:* an
+  exact spot on the box side facing **away** from the other end is reached from the top/bottom side at that
+  side's corner (the route model has at most one extra bend per end). Exact box points are stored with the
+  FR79 offsets (`so`/`eo`, `ss`/`es`).
+- **FR82. Block types: action vs information vs (hardware) device, with a small legend top-right.** Every
+  box can say WHAT it is via `node.nodeType` ∈ `action` | `info` | `device`, shown by **shape** (colour keeps
+  its palette meaning, FR25): **action** (something you do) = pill, fully rounded ends (`rx = min(h/2, 26)`);
+  **info** (a piece of information) = dotted border (`2 4`) + a folded "document" corner top-right (cut in the
+  diagram background colour, `meta.background`); **device** (hardware) = square corners (`rx 2`), thick solid
+  border (3.5). Untyped = the plain rounded box. Dotted, not dashed, so it never looks like a *selected* box
+  (selection is dashed `5 3`); shape styles are inline so the `.node rect` CSS can't override them (FR77
+  lesson). A **small legend** of the three shapes sits in the **top-right** of the canvas (HTML overlay live,
+  same key drawn into the snapshot above the content); it's shown only on diagrams that use types, and
+  *fit* keeps a band free for it so it never covers a box. `◇ type` toolbar button sets/clears the type
+  (with hover help, FR73). The drill marker "⊕ open" is inset by the corner radius so a pill doesn't clip
+  it. All six diagrams are typed (devices: computers, server, routers, phone, the internet, Tailscale/
+  Cloudflare relays, Tor network + relays; actions: buy a domain, open port 443, install/reach steps, the
+  registrar "add these records", the reach-route options, "Compare all routes"; info: free names, DuckDNS,
+  warnings, DNS records, .onion). Mirrored in `docs/gen_flow_svg.py` (`NODE_TYPES`, `dog_ear_svg`,
+  `legend_svg`).
+- **FR83. The snapshot renderer draws exactly what the live editor draws.** `docs/gen_flow_svg.py` must stay
+  behaviourally in sync with `flow.js` — same geometry and styling for every feature (routing `zRoute`/`zroute`,
+  `pipePoly`, Mario pipes, arrowheads + line trimming, `midOfPoly`, containment/`snapSide`, auto see-through,
+  block types, legend) — whenever one changes, the other changes in the same edit. The `.svg` files are
+  generated: **never edit an `.svg` by hand**; edit the `.json` / `.js` / `.py` and let the pre-commit hook
+  re-render (FR18/FR21). After every `flow.js` edit run `node --check flow.js`. Note the hook re-renders
+  but leaves the new `.svg` **unstaged** — stage them into the same commit.
+- **FR84. (PROPOSED by Claude, not yet requested or built) Don't let a stale tab overwrite newer JSON.**
+  Seen in practice: Claude added fields to `setup-map.json` while an editor tab that had loaded the OLDER
+  file was still open; its 💾 save silently wrote the old content back and dropped Claude's change (FR10's
+  shared-file round-trip). Proposal: the page remembers the file's content hash (or mtime) at load; `dash`'s
+  write endpoint rejects a save whose base hash ≠ the file on disk, and the page then offers *reload* or
+  *overwrite anyway* (or FR11 live-reload makes the tab pick up disk changes before the user edits).
+  Until built: **reload the editor tab after Claude edits a diagram, before saving.**
+- **FR85. Drill-down must actually open, and the "compare routes" link lives on The internet.** A box with a
+  `childDiagram` opens it by **single-clicking its "⊕ open" link** (pointer cursor + underline on hover) or by
+  **double-clicking the box** — in edit mode too. (Regression: neither did anything, because every press
+  re-renders and replaces the node's element, so the browser's `dblclick` never reached the node, and node text
+  had `pointer-events: none`. The double-press is now detected in `pointerdown`, 400 ms window; a double-press on
+  a box with no sub-diagram still relabels it.) The free-floating "▸ Compare all 6 routes (pipes)" box
+  (`seeroutes`) in `setup-map` was removed — it looked like a step in the setup flow and the install cable ran
+  through it. Its link moved onto **The internet** (`inet.childDiagram = "tunnels"`), which is the question that
+  drill-down answers (how the internet reaches the box), so `tunnels` stays reachable from the root.
+- **FR86. Canonical positions: one object has ONE position in every view (toggle state) it appears in.**
+  Moving a box in one toggle state moves it in all other states that show it — e.g. *Your computer*, *Your
+  home router*, *Your new private server*, *The internet*. The data model already guarantees this (a node has
+  one `x`/`y`; `showWhen` only hides it), so **one concept must be ONE node**, never per-state copies. Allowed
+  exception: a deliberate per-state *nesting* (`containerWhen`, e.g. the server sits inside *Your computer*
+  only for the VM install). *Done:* *Buy a domain* existed three times in `setup-map` (`cfbuy` / `v6buy` /
+  `pfbuy`, one per reach option, at different spots) → merged into ONE red node `buy` (shown for reach
+  cloudflare / ipv6 / portfwd; red = costs money; the cloudflare and port-forward arrows now start from it). The `tunnels`
+  drill-down keeps its own copies of server/router/internet/friend on purpose (separate Mario-style layout).
+- **FR87. Hold Shift = see every view at once, with an overlap check.** While **Shift** is held (on its own,
+  in normal editing or while dragging a box; while Ctrl-drawing an arrow or dragging an arrow's end it stays
+  FR81's "exact spot" instead), the editor overlays **all reachable toggle states** of the diagram
+  (dependent option lists respected, e.g. 50 for `setup-map`): every box position and every line/pipe that
+  exists in some *other* state is drawn **dashed/translucent** on top of the current view, and every pair of
+  boxes that **overlaps in a state where both are shown** is outlined **red** (containers and their nested /
+  edge-snapped children don't count). The status bar lists the overlapping pairs with a state where each
+  happens (`you × relayTS (cable·0a·tailscale +9)`) or says *✓ no boxes overlap in any state*. It updates live
+  while dragging a box with Shift held, so a move in one configuration can be checked against all others.
+  Releasing Shift (or the window losing focus) hides it again. View-only; never saved.
+- **FR88. (REQUESTED — design in progress in the CLI-replay chat, NOT built) A real CLI recording that travels
+  along the diagram and can be scrubbed by dragging.** For the install wizard (`setup-flow.md`) the user wants
+  to **see how each question is answered**: a **small rectangular box showing the CLI** (a "gif" of the
+  terminal) that **moves along the pipes / diagram blocks and lines**; when it sits at a specific question's
+  node it shows what happens for that question. **Dragging the box up/down the path rewinds / fast-forwards**
+  the recording according to its position along the trajectory. The recordings must be **real, not
+  synthetic**, tied directly to the diagram and **regenerated when the code changes**; a **CLI check /
+  pre-commit hook verifies that the diagram's nodes and paths still line up with the real CLI** (the questions
+  it asks, in order). A node may show **more concise, guiding or illustrative text** than the literal CLI
+  question, so the node↔question mapping must allow that (the mapping is what's verified, not identical text).
+  The wizard steps correlate strongly with the `setup-map` pipes for the chosen toggles (e.g.
+  `setup-map;method=usb;net=ua;reach=onion`), so the wizard view should either **reuse the chosen
+  configuration and go one level deeper** to show its setup questions, or **lay the question information on
+  top of the existing diagram** — the user asked for a plan comparing these before building.

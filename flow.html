@@ -45,8 +45,9 @@
     .node.sel rect { stroke-dasharray: 5 3; }
     .node.container rect { fill-opacity: .55; }
     .node text { fill: var(--fg); font: 12px/1.3 ui-sans-serif, system-ui, sans-serif; pointer-events: none; }
-    .node .drill { fill: var(--dim); font-size: 11px; }
-    .edge .hit { stroke: transparent; stroke-width: 14; fill: none; }
+    .node .drill { fill: var(--dim); font-size: 11px; cursor: pointer; pointer-events: auto; }   /* FR85: clickable link */
+    .node .drill:hover { fill: var(--fg); text-decoration: underline; }
+    .edge .hit { stroke: transparent; stroke-width: 14; fill: none; cursor: move; }
     .edge.sel .hit { stroke: rgba(88,166,255,.35); }
     /* .wire is a <path> (orthogonal arrows) or <line>; style by class, not element, so both render */
     .edge .wire { stroke: var(--dim); stroke-width: 1.6; fill: none; }
@@ -60,10 +61,18 @@
                border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px;
                line-height: 1.45; box-shadow: 0 6px 20px rgba(0,0,0,.55); pointer-events: none; display: none; }
     #tooltip b { color: var(--blue); }
+    /* block-type key (FR82), top-right of the canvas */
+    #legend { position: absolute; top: 10px; right: 12px; z-index: 30; background: rgba(20,24,31,.88);
+              border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; pointer-events: none;
+              font: 11px ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+    #legend .lg { display: flex; align-items: center; gap: 7px; line-height: 20px; }
+    #legend svg { display: block; flex: none; }
     /* contextual box for a selected arrow */
     #edgepanel { position: absolute; z-index: 40; background: var(--panel2); border: 1px solid var(--border);
                  border-radius: 8px; padding: 6px 8px; color: var(--fg); display: none;
-                 box-shadow: 0 6px 20px rgba(0,0,0,.55); }
+                 box-shadow: 0 6px 20px rgba(0,0,0,.55); cursor: move; user-select: none; touch-action: none; }
+    #edgepanel.moving { cursor: grabbing; opacity: .9; }
+    #edgepanel .grip { color: var(--dim2); font-size: 13px; margin-right: 2px; }
     #edgepanel .row { display: flex; align-items: center; gap: 6px; }
     #edgepanel label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
     #edgepanel button { background: var(--panel); color: var(--dim); border: 1px solid var(--border);
@@ -101,7 +110,8 @@
     </span>
     <span class="grp">
       <button class="btn" id="relabel" data-help="<b>Rename</b> the selected box or arrow. Type <b>\\n</b> for a line break inside a box.">✎ label</button>
-      <button class="btn" id="seticon" data-help="<b>Icon</b> — put a device picture on the selected box (laptop, server, router, phone, cloud, relay, tor, …).">★ icon</button>
+      <button class="btn" id="settype" data-help="<b>Block type</b> of the selected box, shown by its <b>shape</b> (see the legend top-right): <b>action</b> = pill (something you do), <b>info</b> = dotted with a folded corner (a piece of information), <b>device</b> = square, thick border (hardware). Blank = plain box.">◇ type</button>
+      <button class="btn" id="seticon"data-help="<b>Icon</b> — put a device picture on the selected box (laptop, server, router, phone, cloud, relay, tor, …).">★ icon</button>
       <button class="btn" id="setkind" data-help="<b>Arrow style</b> for the selected arrow: plain, cable (thick), wifi (dashed), usb, tunnel, pipe, tor. Changes how it's drawn.">～ edge kind</button>
       <button class="btn" id="setchild" data-help="<b>Sub-diagram</b> — link the selected box to another diagram. Double-clicking that box then drills down into it.">↳ sub-diagram</button>
     </span>
@@ -138,9 +148,10 @@
         <g id="nodes"></g>
       </g>
     </svg>
+    <div id="legend" hidden></div>
     <div id="edgepanel">
       <div class="row" id="ep-dirrow">
-        <label>arrow</label>
+        <span class="grip" title="Drag to move this box · double-click to put it back">⠿</span><label>arrow</label>
         <button data-dir="to" title="Arrow points from A to B">A →&nbsp;B</button>
         <button data-dir="from" title="Arrow points from B to A">A ←&nbsp;B</button>
         <button data-dir="both" title="Bidirectional (both ends)">A ↔&nbsp;B</button>
@@ -152,7 +163,10 @@
       <div class="row" id="ep-colorrow">
         <label>colour</label><input id="ep-color" type="color"><button id="ep-colorclear" title="Use the theme default colour">reset</button>
       </div>
-      <div class="hint">A = source box · B = target box</div>
+      <div class="row" id="ep-routerow">
+        <label>route</label><button id="ep-routereset" title="Drag a segment of the line sideways to move it (or its attachment point); this puts the auto-route back">reset route</button>
+      </div>
+      <div class="hint">A = source box · B = target box · drag to move · double-click = back</div>
     </div>
   </div>
   <div id="status"></div>
