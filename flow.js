@@ -519,12 +519,15 @@
     const host = $("legend"), used = new Set(S.data.nodes.map((n) => n.nodeType).filter((t) => NODE_TYPES[t]));
     const usedR = S.data.edges.some((e) => roleOf(e));
     host.hidden = !used.size && !usedR && !S.data.edges.some((e) => COST[e.cost]); host.textContent = "";
+    const body = document.createElement("div"); body.className = "lgbody"; host.appendChild(body);
+    let sec = null;   // FR110: each caption + its rows is one section, so a reshaped legend wraps whole sections into columns
     const row = (draw, label) => {
       const r = document.createElement("div"); r.className = "lg";
       const s = document.createElementNS(SVGNS, "svg"); s.setAttribute("width", 34); s.setAttribute("height", 18);
-      draw(s); const t = document.createElement("span"); t.textContent = label; r.append(s, t); host.appendChild(r);
+      draw(s); const t = document.createElement("span"); t.textContent = label; r.append(s, t); sec.appendChild(r);
     };
-    const cap = (txt) => { const c = document.createElement("div"); c.className = "lgcap"; c.textContent = txt; host.appendChild(c); };
+    const cap = (txt) => { sec = document.createElement("div"); sec.className = "lgsec"; body.appendChild(sec);
+      const c = document.createElement("div"); c.className = "lgcap"; c.textContent = txt; sec.appendChild(c); };
     if (used.size) {
       cap("boxes");
       for (const k of Object.keys(NODE_TYPES)) row((s) => {
@@ -545,7 +548,70 @@
         el("line", { x1: 2, y1: 9, x2: 32, y2: 9, stroke: COST[k].color, "stroke-width": 3, "stroke-dasharray": "7 4" }, s);
       }, COST[k].label);
     }
+    const grip = document.createElement("div"); grip.className = "lggrip"; grip.title = "Drag to reshape the legend (labels wrap; it stops where something would not fit) · double-click the legend = back to default";
+    host.appendChild(grip);
+    applyLegendGeom(recallLegend());
   }
+  // FR110: the legend can be moved (drag it) and reshaped (drag its corner grip; labels wrap, sections flow into columns).
+  // Its spot + size are remembered per browser and per diagram (localStorage, like the FR94 view — never in the JSON).
+  // A reshape that would make anything not fit is blocked (the size stays at the last one that fit). Double-click = default.
+  const LEG_KEY = (id) => "flow.legend." + id;
+  function recallLegend() {
+    try { const g = JSON.parse(localStorage.getItem(LEG_KEY(S.id)) || "null");
+      if (g && [g.x, g.y].every((n) => typeof n === "number" && isFinite(n))) return g; } catch (_) {}
+    return null;
+  }
+  function storeLegend(g) { try { if (g) localStorage.setItem(LEG_KEY(S.id), JSON.stringify(g)); else localStorage.removeItem(LEG_KEY(S.id)); } catch (_) {} }
+  function legendFits() {
+    const b = $("legend").querySelector(".lgbody");
+    return !b || (b.scrollWidth <= b.clientWidth + 1 && b.scrollHeight <= b.clientHeight + 1);
+  }
+  function clampLegend() {   // keep it inside the canvas (window resized, or a spot remembered on a bigger screen)
+    const host = $("legend"), W = $("canvaswrap").clientWidth, Hc = $("canvaswrap").clientHeight;
+    if (!host.style.left) return;
+    const x = Math.max(0, Math.min(W - host.offsetWidth, parseFloat(host.style.left))), y = Math.max(0, Math.min(Hc - host.offsetHeight, parseFloat(host.style.top)));
+    host.style.left = x + "px"; host.style.top = y + "px";
+  }
+  function applyLegendGeom(g) {
+    const host = $("legend");
+    host.classList.toggle("sized", !!(g && g.w));
+    if (!g) { for (const k of ["left", "top", "right", "width", "height"]) host.style[k] = ""; return; }
+    host.style.right = "auto"; host.style.left = g.x + "px"; host.style.top = g.y + "px";
+    host.style.width = g.w ? g.w + "px" : ""; host.style.height = g.h ? g.h + "px" : "";
+    if (g.w && !legendFits()) { host.classList.remove("sized"); host.style.width = host.style.height = ""; }   // remembered shape no longer fits (more rows now)
+    clampLegend();
+  }
+  (function legendDrag() {
+    const host = $("legend"); let d = null;
+    host.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      const r = host.getBoundingClientRect(), c = $("canvaswrap").getBoundingClientRect();
+      d = { resize: ev.target.classList.contains("lggrip"), sx: ev.clientX, sy: ev.clientY, x0: r.left - c.left, y0: r.top - c.top, w0: r.width, h0: r.height };
+      host.style.right = "auto"; host.style.left = d.x0 + "px"; host.style.top = d.y0 + "px";
+      if (d.resize) { host.classList.add("sized"); host.style.width = d.w0 + "px"; host.style.height = d.h0 + "px"; }
+      host.classList.add("moving"); host.setPointerCapture(ev.pointerId); ev.preventDefault(); ev.stopPropagation();
+    });
+    host.addEventListener("pointermove", (ev) => {
+      if (!d) return;
+      const dx = ev.clientX - d.sx, dy = ev.clientY - d.sy;
+      if (!d.resize) { host.style.left = d.x0 + dx + "px"; host.style.top = d.y0 + dy + "px"; clampLegend(); return; }
+      const pw = host.style.width, ph = host.style.height, nw = Math.max(60, d.w0 + dx) + "px", nh = Math.max(30, d.h0 + dy) + "px";
+      // blocked: try width and height separately (slide along the limit), else keep the last shape that fit
+      const fit = [[nw, nh], [nw, ph], [pw, nh]].find(([w, h]) => { host.style.width = w; host.style.height = h; return legendFits(); });
+      host.classList.toggle("blocked", !fit || fit[0] !== nw || fit[1] !== nh);
+      if (!fit) { host.style.width = pw; host.style.height = ph; }
+    });
+    const end = () => {
+      if (!d) return;
+      host.classList.remove("moving", "blocked");
+      const g = { x: Math.round(parseFloat(host.style.left)), y: Math.round(parseFloat(host.style.top)) };
+      if (host.classList.contains("sized")) { g.w = Math.round(host.offsetWidth); g.h = Math.round(host.offsetHeight); }
+      storeLegend(g); d = null;
+    };
+    host.addEventListener("pointerup", end); host.addEventListener("pointercancel", end);
+    host.addEventListener("dblclick", () => { storeLegend(null); applyLegendGeom(null); status("legend back in its default spot and shape"); });
+    window.addEventListener("resize", clampLegend);
+  })();
   function drawLineSample(s, role) {   // the legend's 34×18 picture of each FR90 line type
     const C = "#8b949e";
     if (role === "tunnel") { drawMarioPipe(s, [{ x: 4, y: 9 }, { x: 30, y: 9 }], C, 7); return; }

@@ -862,3 +862,32 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `e7`), **`e_try_friend`** box → friend's phone (info, like `e4`); their route offsets were copied from the
   `buy` lines (the box sits where *Buy a domain* does), so both views look alike. They follow the box's
   visibility (Cloudflare + `name=trycf` only). Verified live side by side with the `name=buy` view.
+- **FR109. Tailscale's free name is wired the same way, in orange.** (User, on
+  `setup-map;method=usb;net=ua;reach=tailscale`: *add the same lines from your computer, private server and friend
+  phone for tailscale — also orange.*) The `tsname` box (*Free name: \*.ts.net (nothing to buy)*) is now
+  **orange** (FR108) and sits where *Buy a domain* / *Free \*.trycloudflare.com* sit (it was tucked under the
+  Tailscale relay; it only shows in Tailscale views, so no other view moves). Three new **`cost: "central"`** lines
+  copy the trycloudflare ones (FR108): **`e_ts_you`** your computer → name box (action), **`e_ts_srv`** name box →
+  server (info), **`e_ts_friend`** name box → friend's phone (info). `e3` (Tailscale relay → name box) stays.
+  Verified live: the Tailscale view now reads like the Cloudflare and Buy-a-domain views.
+- **FR110. The legend can be moved and reshaped, and remembers where you put it.** (User: *allow people to move the
+  legend, store its position; allow people to reshape the legend (use line-wrap); block if it doesn't fit.*)
+  **Drag** the legend anywhere on the canvas (kept inside it, also after a window resize). **Drag its corner grip**
+  to reshape: labels **wrap** to the width, and each section (caption + its rows) flows into a **new column** when
+  the legend is made wide and short. **Blocked if it doesn't fit**: a size at which anything would overflow is
+  refused — width and height are tried separately so the corner slides along the limit, otherwise the last shape
+  that fit stays (red outline while blocked); e.g. it can't get narrower than its longest word.
+  **Double-click** = back to the default top-right spot and natural size. Spot + shape are remembered **per
+  browser and per diagram** in `localStorage` (`flow.legend.<diagram-id>`, like the FR94 view) — never in the
+  diagram JSON, so it is a viewer preference that can't collide with saves; a remembered shape that no longer fits
+  (more legend rows later) falls back to the natural size. The static SVG legend (`docs/gen_flow_svg.py`) is
+  unchanged. Verified live: move, wide+short (3 columns), narrow (labels wrap, stops at 174 px), blocked shrink,
+  survives reload, other diagrams keep their own default, double-click resets.
+- **FR111. Tailscale gets a limitations warning too.** (User, on `setup-map;method=cable;net=0a;reach=tailscale`:
+  *add the warning box if it should have one.*) New red ⚠ info box **`tswarn`** (all Tailscale views, at the
+  `trywarn` spot — they never show together), from Tailscale's Funnel docs (kb/1223) + this project's findings:
+  needs a **Tailscale account** (Google/GitHub/… login) — at a company; the name is
+  **`<machine>.<tailnet>.ts.net`**, no own domain; **one name only → the app's API, not the cloud. / git. /
+  matrix. / meet. services** (handover 11: single-hostname tunnels serve the API only); **bandwidth limits (not
+  published)**, still **beta**; a new name can take **~10 min** to work (DNS); **reinstall → new name, old links
+  stop working** until the box keeps its Tailscale state (handover 13 node-sprawl). Verified live, no overlaps.

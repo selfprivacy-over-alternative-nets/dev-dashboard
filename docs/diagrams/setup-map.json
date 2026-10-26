@@ -1,7 +1,7 @@
 {
   "edges": [
     {
-      "eo": -72,
+      "eo": -21,
       "es": 37,
       "from": "you",
       "id": "e_cable",
@@ -69,10 +69,12 @@
           "uc"
         ]
       },
-      "so": -105,
+      "so": -127,
+      "ss": 17,
       "to": "router"
     },
     {
+      "eo": -134,
       "from": "server",
       "id": "e_swifi",
       "kind": "wifi",
@@ -85,13 +87,17 @@
           "ub"
         ]
       },
+      "so": -134,
+      "ss": 19,
       "to": "router"
     },
     {
+      "eo": 5,
       "from": "server",
       "id": "e_sY",
       "kind": "wifi",
       "label": "",
+      "mo": -250,
       "role": "link",
       "showWhen": {
         "net": [
@@ -131,6 +137,11 @@
       "id": "e_ts_up",
       "kind": "pipe",
       "label": "outbound tunnel",
+      "legs": {
+        "router>relayTS": {
+          "so": 64
+        }
+      },
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -144,7 +155,7 @@
     },
     {
       "color": "#8b949e",
-      "eo": 170,
+      "eo": 245,
       "from": "relayTS",
       "id": "e_ts_run",
       "kind": "pipe",
@@ -201,11 +212,16 @@
     },
     {
       "color": "#3b82f6",
-      "eo": 180,
+      "eo": 317,
       "from": "server",
       "id": "e_v6",
       "kind": "pipe",
       "label": "Direct · IPv6 only",
+      "legs": {
+        "router>inet": {
+          "so": 137
+        }
+      },
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -219,7 +235,7 @@
     },
     {
       "color": "#eab308",
-      "eo": 335,
+      "eo": 334,
       "from": "server",
       "gate": "router",
       "gx": -8,
@@ -262,7 +278,7 @@
           "onion"
         ]
       },
-      "so": 19,
+      "so": 12,
       "to": "tn1",
       "via": [
         "router"
@@ -402,6 +418,7 @@
     {
       "cost": "central",
       "dir": "to",
+      "eo": 31,
       "from": "relayTS",
       "id": "e3",
       "kind": "plain",
@@ -583,6 +600,62 @@
       "eo": -56,
       "from": "cffree",
       "id": "e_try_friend",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "mo": 278,
+      "role": "info",
+      "so": 92,
+      "ss": 644,
+      "to": "friend"
+    },
+    {
+      "bp": {
+        "dx": 1048,
+        "dy": 462
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -78,
+      "es": 19,
+      "from": "you",
+      "id": "e_ts_you",
+      "kind": "plain",
+      "label": "",
+      "role": "action",
+      "so": -203,
+      "ss": -40,
+      "to": "tsname"
+    },
+    {
+      "bp": {
+        "dx": -4,
+        "dy": 62
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -99,
+      "es": -26,
+      "from": "tsname",
+      "id": "e_ts_srv",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "info",
+      "so": 8,
+      "to": "server"
+    },
+    {
+      "ah": 28,
+      "bp": {
+        "dx": -1289,
+        "dy": 463
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -56,
+      "from": "tsname",
+      "id": "e_ts_friend",
       "kind": "plain",
       "label": "",
       "lw": 5,
@@ -777,7 +850,7 @@
       "label": "Your new\nprivate server",
       "nodeType": "device",
       "w": 147,
-      "x": 444,
+      "x": 432,
       "y": -61
     },
     {
@@ -795,7 +868,7 @@
         ]
       },
       "w": 343,
-      "x": 365,
+      "x": 346,
       "y": 254
     },
     {
@@ -851,12 +924,12 @@
         ]
       },
       "w": 190,
-      "x": 700,
-      "y": 400
+      "x": 826,
+      "y": 474
     },
     {
-      "color": "note",
-      "h": 66,
+      "color": "orange",
+      "h": 60,
       "icon": "tag",
       "id": "tsname",
       "label": "Free name: *.ts.net\n(nothing to buy)",
@@ -866,9 +939,9 @@
           "tailscale"
         ]
       },
-      "w": 131,
-      "x": 730,
-      "y": 540
+      "w": 230,
+      "x": 776,
+      "y": -135
     },
     {
       "color": "created",
@@ -918,8 +991,8 @@
         ]
       },
       "w": 240,
-      "x": 724,
-      "y": 397
+      "x": 860,
+      "y": 515
     },
     {
       "color": "red",
@@ -1110,6 +1183,22 @@
       "w": 284,
       "x": 747,
       "y": -29
+    },
+    {
+      "color": "red",
+      "h": 215,
+      "icon": "warn",
+      "id": "tswarn",
+      "label": "Free Tailscale Funnel = at a company\n• needs a Tailscale account (Google/GitHub/… login)\n• name is <machine>.<tailnet>.ts.net — no own domain\n• ONE name only → the app's API, not the\n  cloud. / git. / matrix. / meet. services\n• bandwidth limits (not published) · still beta\n• a new name can take ~10 min to work\n• reinstall → new name, old links stop working\n  (until the box keeps its Tailscale state)",
+      "nodeType": "info",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 310,
+      "x": 938,
+      "y": -32
     }
   ]
 }

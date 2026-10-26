@@ -70,8 +70,17 @@
     #tooltip b { color: var(--blue); }
     /* block-type key (FR82), top-right of the canvas */
     #legend { position: absolute; top: 10px; right: 12px; z-index: 30; background: rgba(20,24,31,.88);
-              border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; pointer-events: none;
-              font: 11px ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+              border: 1px solid var(--border); border-radius: 6px; padding: 5px 14px 9px 8px; box-sizing: border-box;
+              font: 11px ui-sans-serif, system-ui, sans-serif; color: var(--dim);
+              cursor: move; user-select: none; touch-action: none; }   /* FR110: drag to move, corner = reshape */
+    #legend.moving { opacity: .9; }
+    #legend.blocked { border-color: #e5484d; }
+    #legend .lgbody { display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; column-gap: 16px; }
+    #legend.sized .lgbody { height: 100%; }   /* a set height → sections flow into columns; labels wrap to the width */
+    #legend .lgsec { min-width: 0; }
+    #legend .lg span { white-space: normal; overflow-wrap: normal; }
+    #legend .lggrip { position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; cursor: nwse-resize;
+                      background: linear-gradient(135deg, transparent 50%, var(--dim2) 50%); border-bottom-right-radius: 5px; }
     #legend .lg { display: flex; align-items: center; gap: 7px; line-height: 20px; }
     #legend svg { display: block; flex: none; }
     #legend .lgcap { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim2); margin-top: 2px; }
