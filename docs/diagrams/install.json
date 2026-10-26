@@ -1,15 +1,19 @@
 {
   "edges": [
     {
+      "cost": "free",
       "from": "pick",
       "id": "e1",
       "label": "",
+      "role": "action",
       "to": "anywhere"
     },
     {
+      "cost": "free",
       "from": "anywhere",
       "id": "e2",
       "label": "",
+      "role": "action",
       "to": "finish"
     }
   ],

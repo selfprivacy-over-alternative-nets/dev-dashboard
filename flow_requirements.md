@@ -482,6 +482,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   keeps its moved offset relative to the arrow's midpoint, so it follows the arrow on zoom/pan/fit/re-render
   (zoom previously left the box behind). Double-click its background = back to the default spot; selecting a
   different arrow also starts at the default spot. Pure view state — never saved to the diagram JSON.
+  *Superseded by FR98: the moved spot is now stored per line and saved with the diagram.*
 - **FR79. Drag an edge's line sideways (perpendicular to its segment); past a box's side it gains a bend.**
   Grabbing any segment of an arrow or pipe and dragging it moves that segment **orthogonally to its own
   direction** (a horizontal run moves up/down, a vertical one left/right) — the 90°-only routing (FR53/FR69)
@@ -565,7 +566,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   home router*, *Your new private server*, *The internet*. The data model already guarantees this (a node has
   one `x`/`y`; `showWhen` only hides it), so **one concept must be ONE node**, never per-state copies. Allowed
   exception: a deliberate per-state *nesting* (`containerWhen`, e.g. the server sits inside *Your computer*
-  only for the VM install). *Done:* *Buy a domain* existed three times in `setup-map` (`cfbuy` / `v6buy` /
+  only for the VM install — see FR91). *Done:* *Buy a domain* existed three times in `setup-map` (`cfbuy` / `v6buy` /
   `pfbuy`, one per reach option, at different spots) → merged into ONE red node `buy` (shown for reach
   cloudflare / ipv6 / portfwd; red = costs money; the cloudflare and port-forward arrows now start from it). The `tunnels`
   drill-down keeps its own copies of server/router/internet/friend on purpose (separate Mario-style layout).
@@ -593,3 +594,271 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `setup-map;method=usb;net=ua;reach=onion`), so the wizard view should either **reuse the chosen
   configuration and go one level deeper** to show its setup questions, or **lay the question information on
   top of the existing diagram** — the user asked for a plan comparing these before building.
+  *Added (user, when switching this work to the Fable model):* the connection between the **code and the CLI
+  recordings must be hard-enforced**, with **perfect timing** while the box slides / is dragged across the network /
+  diagram / pipes (position ↔ recording time stays exactly in step); **no synthetic data** ever; and when the code is
+  updated, running the **update scripts / CI pipeline regenerates the recordings ("gifs") automatically**. Design
+  spec: `docs/superpowers/specs/2026-10-25-cli-replay-design.md` (awaits the user's decisions; not built).
+- **FR89. Devices are drawn as their icon; arrow icons are large.** A box with `nodeType: device` and an
+  `icon` (laptop, phone, router, server, cloud/internet, relay, Tor relay, …) is drawn **as that icon** — a
+  pictogram scaled to fill its box, the name underneath (with a dark halo so it stays readable over lines) —
+  **no rectangle**, so a viewer sees *what kind of device* it is at a glance. The (invisible) box still sets
+  the size, anchors edges and is the drag/resize/snap target; selecting it shows a thin outline. **Exception:**
+  a device that currently **contains** other boxes (Tor network + relays, the router holding the port-443
+  gate, *Your computer* holding the VM) keeps its box, because a pictogram can't visibly hold children; its
+  icon grows 24→34 px. The legend's device row shows a pictogram. **Arrow icons:** the kind icon on a plain
+  arrow (cable/ethernet, wifi, USB, tunnel, Tor) is a **30 px icon on a dark round badge** ringed in the arrow's
+  colour, centred ON the line (was an 18 px grey icon beside it); the arrow's label moves above the badge
+  with a halo. Mirrored in `docs/gen_flow_svg.py` (`picto_geom`, `EBADGE`, `HALO`).
+- **FR90. Four line types, told apart by pattern, with a line legend top-right.** Every line says what it
+  MEANS via `edge.role` ∈ `link` | `tunnel` | `action` | `info` (pattern, not colour — colour stays the route's
+  own, FR59; it also survives greyscale / colour-blindness):
+  - **link** — the two devices are *physically connected* (cable / wifi / USB): thin solid line (wifi dashed),
+    **no arrowhead** (traffic goes both ways), the medium's badge on the line (FR89).
+  - **tunnel** — a *route that carries traffic* between devices: always drawn as the Mario pipe (FR52).
+  - **action** — *someone does this, to that*: thick dashes with an **open chevron** head, pointing from who
+    acts to what changes (e.g. *Your computer → manual work → Open port 443*).
+  - **info** — *information that must go in or come out* (a name, key, token, DNS record): round **dots** with
+    a filled head and a **document badge** on the line (e.g. *Buy a domain → server*, *friend → DuckDNS name*).
+  Missing `role` is derived (`pipe` → tunnel, cable/wifi/usb/lan → link; otherwise the old plain arrow), but
+  every edge in all diagrams now carries an explicit role. The **arrow box** gets a **type** row (link /
+  tunnel / action / info) that switches a line's type (tunnel ⇄ pipe kind); a link hides the direction row.
+  The **legend** (top-right) now has two sections — *BOXES* (FR82/89) and *LINES* — each shown only when the
+  diagram uses it; `fit` keeps its band free. A *needs / depends on* type was considered and folded into
+  *info* (what's needed is almost always a piece of information). Mirrored in `docs/gen_flow_svg.py`
+  (`LINE_ROLES`, `role_of`, `line_dash`, `chevron`, two-section `legend_svg`); new `doc` sprite in
+  `docs/icons.svg`.
+- **FR91. A box may have a different position in specific views: *Your new private server* is OUTSIDE *Your
+  computer* everywhere, but INSIDE it for the VM install.** Done with conditional nesting: `server.container =
+  "you"` + `containerWhen = {method: ["vm"]}` → in the VM view it sits inside the computer at `cdx`/`cdy`; in
+  every other view it is free at its own `x`/`y` (now centred below the computer, clear of other boxes). The two
+  positions are independent: dragging it in the VM view only moves it **within** *Your computer* (changes
+  `cdx`/`cdy`, never `x`/`y`); dropping it outside the computer there **snaps it back** with a status hint
+  (instead of silently dropping the VM-only condition, which is how it got lost — a drag out and back in the VM
+  view made the nesting unconditional, so the server sat inside the computer in every view). Dragging it in any
+  other view only moves its free `x`/`y`. Un-nesting is deliberate: ⊏ contain. The Shift overlay (FR87) shows the
+  other position as a dashed ghost.
+- **FR92. A line can attach to ANY side of a box — including the far side — wrapping round it; lines touch a
+  pictogram's drawn icon.** (Regression report: on `setup-map;method=usb;net=ua;reach=portfwd` the *Buy a
+  domain → A friend's phone* line could not end on the phone's right-edge midpoint — it snapped to the top/
+  bottom-right corner — and its last vertical segment could not be dragged further right than the box's right
+  edge, so it could never get the extra bend to wrap round.) The route model only knew the side *facing* the
+  other end plus a top/bottom "stub" clamped to the box's width. Now: (a) attaching an end to a point on the
+  **far side** routes over/under the box (the side nearer the other end), past its far edge, and back in
+  horizontally/vertically at **exactly** that point; (b) dragging the stub segment **past** the box's edge
+  (|`ss`|/|`es`| > half the box) no longer clamps — it gains one more 90° bend into that side; the new offsets
+  `sf`/`ef` set where it enters along that side (0 = midpoint; draggable; *reset route* clears them). (c) For
+  **pictograms** (FR89) every line, its attach/snap points and the attach highlight use the **drawn glyph's
+  outline**, not the invisible box — each sprite in `docs/icons.svg` carries its measured outline as
+  `data-bbox` (24-grid, incl. half the stroke), read by both `flow.js` (`anchorBox`) and `docs/gen_flow_svg.py`
+  (`anchor_box`), so an arrow tip lands ON the phone, not ~50 px beside it. The box still does drag / resize /
+  nesting / snapping. Mirrored in `docs/gen_flow_svg.py` (`zroute` stub/wrap, `anchor_box`).
+- **FR93. Tunnels run THROUGH the home router; port-forward opens a port IN it.** (User: on
+  `setup-map;method=cable;net=0b;reach=tailscale` the tunnel must go *from your new private server THROUGH the
+  router to Tailscale, then from Tailscale to the internet* — the same for Cloudflare, direct IPv6 and .onion;
+  only port-forward shows a small interruption in the middle of the router icon with an icon of a port being
+  opened.) New edge fields: **`via`** = boxes a tunnel passes *through* — the route is one continuous pipe
+  a → into each via box → across its centre → out towards the next box (hidden via boxes are skipped, e.g. no
+  router for the VM install); if it would leave a via box on the side it entered (a dead end, not "through"),
+  that leg turns 90° and leaves on the other axis. **`gate`** (a via box) = the pipe is **broken open** at that
+  box's centre and an **open-port badge** (new `port` sprite: a network socket) sits in the gap, drawn above the
+  device icon. A through-route's label sits on its longest straight stretch; its shape follows the boxes (drag
+  the boxes, or drag an end onto another box; segment-dragging came later — FR95). Data: `e_ts_up` / `e_cf_up` /
+  `e_tor_up` / `e_v6` now start at the server with `via: ["router"]`; the two-piece port-forward route
+  (router → gate box → internet) became ONE pipe `e_pf_b` server → internet, `via` + `gate` router. The
+  *Open port 443 by hand* action box left the router (it's beside it, with an **action** line into the router),
+  so the router is a clean pictogram in every view. The Tailscale / Cloudflare relays and the Tor network (and
+  the *.ts.net note) were moved into the gap between router and internet — they overlapped the router, so
+  "through the router, then to the relay" couldn't read; `e_tor_run`'s stale route offsets were cleared. Also
+  fixed: an edge attached to a spot ON a pipe used the pipe's box-route, not its drawn (pictogram, FR92) route.
+  Mirrored in `docs/gen_flow_svg.py` (`through_box`, `route_axis`/`_H`, `gate_split`, `longest_mid`).
+- **FR94. Pan position and zoom are remembered across saves and page loads.** Each diagram's view
+  (`x`/`y` pan + zoom `k`) is stored **per browser** in `localStorage` (`flow.view.<diagram-id>`), written
+  ~250 ms after any pan / zoom / fit — never in the diagram JSON (it is a viewer preference, not diagram data, so it
+  never shows up in diffs). Opening a diagram — page load, reload, the picker, a breadcrumb, a drill-down — restores
+  its remembered view; **⤢ fit** is only used when nothing is remembered yet, and pressing ⤢ fit makes the fitted
+  view the remembered one. Saving never changes the view. Each diagram keeps its own view. Storage failures
+  (private window, blocked site data) silently fall back to fit. `tools/shot_flow.py` is unaffected (fresh
+  browser profile + it clicks ⤢ fit).
+- **FR97. Undo / redo.** **Ctrl+Z** (⌘Z) undoes the last change to the diagram; **Ctrl+Shift+Z** or **Ctrl+Y**
+  redoes it; toolbar buttons **↶ / ↷** do the same (with hover help, FR73). One *gesture* is one step: a whole box
+  drag / resize / drop-snap, an edge drag or re-attach, a Ctrl-drawn arrow, a button / prompt action (label, icon,
+  type, line type, contain, show-when, toggles, delete …), and a continuous slider or colour-picker drag in the arrow
+  box all undo in ONE press. History is per diagram (cleared when another diagram is opened), up to 200 steps; a
+  new edit after undoing clears the redo list. Undoing back to the last saved state clears the unsaved-changes
+  marker. Shortcuts work while an arrow-box slider/picker has focus; in a text field the browser keeps its own
+  undo. Only diagram data is undone — not the toggle state, pan/zoom (FR94) or selection. Implemented as JSON
+  snapshots recorded in `markDirty` (the single funnel every edit already goes through) and committed when the
+  gesture ends.
+- **FR95. Every segment of a through-route (FR93) can be dragged, and you pick where it enters / leaves each via box.**
+  (User: on `setup-map;method=wifi;net=w1;reach=onion` the Tor pipe server → router → Tor could not be moved —
+  neither its horizontal run out of the router nor its vertical run from the server down into it — and *let me pick
+  the entry and exit points of the tunnel through the router, whilst still keeping them going through the router*.)
+  A through-route is one leg per pair of consecutive boxes (a → via… → b); each leg drags exactly like a plain route
+  (FR79: a run sideways = shift its attachment along the side, past the side's extent = one more bend; elbow = `mo`;
+  a run dragged level with the other end snaps straight). Dragging the run next to a via box therefore moves where
+  the pipe **enters / leaves that box** — it always still crosses the box's centre (the part *inside* the box is
+  not draggable; the status bar says to grab it just outside). Storage: the route's own start / end offsets stay
+  top-level (`so`/`ss`/`sf`, `eo`/`es`/`ef`, as before — also what the end handles set); everything else lives in
+  **`legs["<from>><to>"]`** (e.g. `legs["router>tn1"].so` = where it leaves the router), keyed by box ids so a view
+  that hides a via box (VM: no router) simply ignores that leg's offsets. Empty entries are dropped (an untouched
+  route saves byte-identically); *reset route* clears `legs` too. The arrow box now opens beside the line wherever it
+  would otherwise cover any segment (it covered the vertical run, so a second drag was impossible). Mirrored in
+  `docs/gen_flow_svg.py` (`leg_offsets`; `pipe_poly` gets via `(id, box)` pairs) — editor ↔ renderer verified
+  point-for-point on the dragged Tor route.
+- **FR96. The arrow box names the line, and puts it in front of or behind the boxes.** (User: *give an identifier
+  for the line so I can refer to it easily with you, in the box that sets head and width; also add an option to that
+  box to move the line (including its arrowhead) to the front or back, w.r.t. the object it crosses and/or attaches
+  to.*) The arrow box's first row is **line `<id>`** (the edge's `id`, e.g. `e_tor_up`) — click it to copy the id
+  (dragging the box from there does not start a move). A **layer: back | front** row: **back** (default, no field
+  saved) draws the line under every box, as before; **front** saves **`z: "front"`** and draws the whole line —
+  pipe, wire, arrowhead / chevron, badge, label — above every box (so it also becomes grabbable where it crosses
+  one) and above the open-gate badges (FR93/FR100 — changed by FR102), still under the selection handles. Mirrored in `docs/gen_flow_svg.py` (a
+  `front` buffer emitted after the boxes and the gate badges) — verified live: DOM order flips router ↔
+  `e_tor_up` and back, and `z` is removed again on *back*.
+- **FR98. The arrow box keeps the spot you dragged it to — per line, saved with the diagram.** (User: *if I click a
+  line and move its line label box (width and head), ensure the position of that box is saved so that if I click
+  away and reclick the line, it puts the box in the same position I left it; also include this info in the save.*)
+  Dragging a line's arrow box (FR78) stores its top-left as **`edge.bp = {dx, dy}`** — an offset from the line's
+  midpoint in **diagram units** — so re-selecting that line (after clicking away, reloading, or on another
+  machine after a save) puts the box back exactly there, and it stays at that spot on the line when you pan, zoom
+  or move the boxes. Each line remembers its own spot; a line without `bp` uses the automatic spot that keeps
+  clear of the line (FR95). The position is part of the diagram JSON (saved, deterministic, rounded to whole
+  units), marks the diagram changed, and one box drag is one undo step (FR97); **double-click** the box's
+  background = back to the automatic spot (also saved + undoable). A plain click on the box is not a move.
+  Editor-only — the static snapshot draws no arrow box.
+- **FR99. A device drawn as an icon is selected by, and resized at, its icon — not its larger layout box.**
+  (User: *make the hitbox of the router smaller so that its selection edges are on the edges of the router icon.*)
+  For every pictogram device (FR89) the **click area, the selection outline and the 8 resize handles** use the
+  icon's **drawn outline** (its measured `data-bbox`, the same outline lines attach to — FR92), so clicking empty
+  space beside the icon no longer selects it and the dashed outline hugs the icon. Dragging a handle **scales the
+  icon evenly** from the opposite edge (a side handle by that side, a corner by the larger of the two), and the
+  layout box is set to hug exactly the icon square plus its label, so outline, icon and box stay in step (works
+  for a nested pictogram too, via `cdx`/`cdy`). One resize = one undo step (FR97). Moving, snapping and nesting
+  still use the layout box. Editor-only (the snapshot draws no selection).
+- **FR100. The open port is a barrier gate you can move inside the router; arrows attach to the gate itself.** (User:
+  on `setup-map;method=wifi;net=w1;reach=portfwd` *look at how the action line attaches to the port-open icon — allow
+  me to move the gate-open icon within the router, use the gate-open icon in `images/` to visualise it, and ensure
+  the arrow still attaches to the moved gate icon and not to the router*.) The FR93 open-port badge now shows a
+  **boom barrier with its arm raised** (new sprite `ic-barrier` in `docs/icons.svg`, redrawn after
+  `images/open-gate-clipart-4.png` — that PNG is a watermarked stock icon, so it is not embedded). **Drag the badge**
+  to move the gate anywhere inside its box (the gate box's drawn outline, FR92; the badge always stays fully
+  inside): stored as **`gx` / `gy`** on the pipe = offset from the box's centre (absent = centre); a click without
+  moving still selects the pipe. The pipe crosses the box **through the gate** (not the centre) and is broken open
+  there. An arrow end can attach to the gate: **`toOn` / `fromOn` = `"<pipe>:gate"`** — the end lands on the
+  badge's outline and follows the gate when it moves; dropping an arrow end on (or next to) a badge snaps to it.
+  Data: `e6` (*Open port 443 by hand* → port) now uses `toOn: "e_pf_b:gate"` — before, it was pinned to a pipe
+  elbow (`c3`) that only happened to be beside the badge. Mirrored in `docs/gen_flow_svg.py` (`gate_point`,
+  `through_box(…, c)`, `pipe_spot_box` key `gate`) — editor ↔ renderer verified point-for-point for `e_pf_b`
+  and `e6` after moving the gate.
+- **FR101. *Buy a domain* and *DuckDNS* are either/or — a Name toggle picks one.** (User, on
+  `setup-map;method=wifi;net=w1;reach=portfwd`: *port-forward with a registrar domain doesn't give a DuckDNS name,
+  right?* — correct: DuckDNS is the free alternative to buying a domain, usable for **both** direct routes
+  (port-forward = A record → your public IPv4; direct IPv6 = AAAA → the server), never for a Cloudflare tunnel (no
+  NS delegation; `tools/add-cloudflare.sh` says the same). The diagram showed both boxes at once, each with a line to
+  the friend's phone, so it read as "you need both".) New `setup-map` toggle **`name`** = *Buy a domain* (`buy`,
+  default) | *DuckDNS (free)* (`duckdns`), offered via `optionsWhen` per Reach: IPv6 + Port-forward → both;
+  Cloudflare → *Buy a domain* only (shown, so the view says a real domain is needed); Tailscale / .onion → *n/a*
+  (those give you a name). `buy` shows only with `name=buy`; `duck` + `e_duck` only with `name=duckdns`; new info
+  line **`e_duck_srv`** DuckDNS → server *name + token (keeps it pointing at you)* (the DuckDNS counterpart of the
+  registrar's line to the server). The port-forward warning now says *(router + domain name)* instead of *(router +
+  registrar)*, true for both choices. A URL with a name that the Reach doesn't offer falls back to the default
+  (`reach=cloudflare;name=duckdns` → `name=buy`).
+  *Same slot (user: make the Buy-a-domain and DuckDNS-free boxes the same position and size):* because the Name toggle
+  shows exactly one of them, both boxes share ONE position and size — 244×85 at (747, −134), centred where *Buy a
+  domain* was and sized for DuckDNS's three text lines — so switching the toggle swaps the box in place.
+- **FR102. A front arrow's head is never hidden by the gate or the box it ends at; the gate is resizable.** (User:
+  *line e6's arrowhead, when I click to front, seems to be behind the router icon and behind the gate icon; I want
+  to be able to resize the gate icon.*) Three parts:
+  1. **Layer order:** *front* lines (FR96) are now drawn above the open-gate badges too (boxes → gate badges →
+     front lines → handles), in `flow.js` and `docs/gen_flow_svg.py`.
+  2. **Routing — an elbow dragged past the target never doubles back into it.** The cause was `e6`'s elbow (`mo`),
+     tuned for its old target: it landed *inside* the gate's extent, so the route turned back into the gate and the
+     head sat under the badge. Rule (both renderers, `zRouteSegs` / `zroute`): when the elbow lands within a box's
+     extent along the main axis, the line ends on the **side of that box it runs into** (same for the start box).
+     Checked over every toggle state of every diagram: only `e6` (now enters the gate from the left, head
+     visible), `e_wifi` (looks identical — the part that used to double back was hidden behind the router icon) and
+     a ~3 px line in the VM view (`e5`) change.
+  3. **Gate size:** the arrow box of a gated pipe has a **gate** slider (10–60) = the badge's radius, stored as
+     **`gr`** on the pipe (absent = 20). It sizes the badge and its barrier icon, the gap in the pipe, how close
+     to the box edge the gate can be dragged (FR100), and where an arrow on the gate lands — the arrow follows the
+     resized gate. Verified live (head drawn above the badge, gate 20 → 40, arrow tip moves out with it) and
+     editor ↔ renderer point-for-point.
+- **FR103. An action / information line's COLOUR says what it costs you; the legend explains it.** (User: *red lines
+  should be for things you need to do that cost money; orange lines for things you need to do at an intermediary /
+  some non-decentralised entity you depend on, like DuckDNS, Cloudflare, Tailscale etc.; yellow lines for actions
+  that do not cost money and aren't at a centralised entity, like configuring your router. It is the same for
+  getting information (lines). Add this to the legend and implement it in the drawings.*) New edge field
+  **`cost`** ∈ `paid` (**red** `#e5484d` — costs money, e.g. buying a domain) | `central` (**orange** `#f97316` — at /
+  from a company you depend on: Cloudflare, Tailscale, DuckDNS …) | `free` (**yellow** `#eab308` — free and in your
+  own hands, e.g. opening a port in your own router). Applies to **action and information lines** (FR90); links and
+  tunnels keep their own meaning/route colours (FR59). When several apply, **money wins**. An explicit `color`
+  still overrides; choosing a cost in the arrow box removes a hand-picked colour so the meaning shows. The
+  **legend** gets a third section *LINE COLOUR — ACTIONS + INFO* (shown only when a diagram uses it); the
+  **arrow box** gets a **cost** row (€ money / company / free / –, hidden for links and tunnels). Data: the
+  domain-buying lines are red (*Your computer → Buy a domain*, *Buy a domain → Cloudflare / server / friend*, *→
+  manual work (router + domain name)*); DuckDNS / Tailscale / trycloudflare name lines orange (they were drawn red
+  before — DuckDNS is a company you depend on); *open port 443 → the router's gate* yellow; the install /
+  overview steps on your own machines yellow; the overview's *public URL* orange (the recommended route,
+  Tailscale, hands it out). Mirrored in `docs/gen_flow_svg.py` (`COST`, `line_color`, legend section).
+- **FR104. ⌖ Anchor: one box stays on the same screen spot in every view and diagram.** (User: *a button that allows
+  one to center the views based on a specific item — default w.r.t. your new private server;* then corrected: *I mean
+  center it to the position the item is. So you select an item, and then press center and all of the diagrams that
+  contain that item are centered with the center of gravity of that item on the same position in the screen (their zoom
+  levels may still be whatever they were). Don't put it in the legend, put it in the Install / Network / Reach / Name bar,
+  and don't include the dropdown.*) A **⌖ button at the end of the toggle bar** (no dropdown, nothing in the legend):
+  **select a box, press ⌖** → that box's **current spot on screen** becomes the anchor. From then on **every view**
+  (each toggle combination) and **every diagram** that contains a box with that id (e.g. the *tunnels* drill-down's own
+  *server*) is panned so the box's centre — a pictogram's drawn icon (FR92) — lands on exactly that spot, each view
+  **keeping its own zoom** (FR94). It is applied when you switch a toggle and when a diagram opens, so e.g. the server,
+  which moves into *Your computer* for the VM install (FR91), no longer jumps on screen. While active the ⌖ button is
+  highlighted and its hover help + the status bar name the anchored box (icon-only, so the bar stays one line — FR105). **Nothing selected = the default, *Your new private server***; while anchored,
+  **⌖ with nothing selected (or with the anchored box selected) releases it**.
+  Panning by hand still works; the next toggle switch puts the box back on its spot. The anchor (box id + screen spot)
+  is per browser (localStorage), never in the diagram JSON, and survives reloads. Hover help explains it (FR73).
+- **FR105. The toggle bar (Install / Network / Reach / Name) is one line whenever it fits.** (User: on
+  `setup-map;method=wifi;net=w1;reach=onion` the bar was 3 lines high, on `…;reach=portfwd;name=buy` only 1 — with
+  *more* in it.) Cause: an unavailable toggle shows *— n/a* in a `.empty` span, and the page's generic `.empty`
+  placeholder style (24 px vertical padding, block) made that one item 64 px tall. `#togglebar .empty` now has no
+  padding and is inline; each toggle group is `flex: none; white-space: nowrap`, so a group never breaks inside
+  itself and the bar wraps whole groups onto 2…N lines only when the window is too narrow. Verified: 35 px (one
+  line) at 1600 px wide for onion, port-forward and VM; at 700 px it wraps to two lines.
+- **FR106. 🔨 Fix a box's position everywhere.** (User: *add another button (hammer & nail icon) that fixes all positions
+  of that icon across the visualisations — except for the VM private-server-in-computer thing; then just do it for the
+  majority configuration group, so in that case for the non-VM install.*) A **hammer-and-nail button** (new `hammer`
+  sprite) next to ⌖ in the toggle bar (FR104): **select a box, press 🔨** → its position **and size** are copied onto the
+  box with the **same id in every other diagram** (e.g. *server / router / internet / friend* in the *tunnels* drill-down),
+  written straight to those files through the dash write-API. (Within one diagram a box already has one position in every
+  view — FR86.) The copied position is the one the **majority of views** use: the box's free `x`/`y`; a **conditional
+  nesting** (`containerWhen` — the server inside *Your computer* for the VM install, FR91) is the exception and is **left
+  alone** in both diagrams. An always-nested box copies its offset inside its parent, only where the other diagram nests
+  it in the same parent; a box nested differently there is skipped and named. The status bar lists the diagrams changed /
+  already equal / skipped. Not undoable with Ctrl+Z (it writes other diagrams); needs `./dash serve`. Icon-only (its
+  hover help explains it, FR73), so with ⌖ the toggle bar still fits on one line (FR105; checked at 1600 and 1366 px).
+- **FR107. Free names are a choice with their limitations shown: *Free \*.trycloudflare.com* and *DuckDNS*.**
+  (User, on `setup-map;method=usb;net=ua;reach=cloudflare;name=buy`: *give the choice button for "free
+  \*.trycloudflare.com" and indicate a warning with any limitations if it is chosen — duration, MB throughput or
+  anything; add that warning for free DuckDNS as well.*) The `name` toggle (FR101) gets a third option
+  **`trycf`** = *Free \*.trycloudflare.com*, offered only for Reach = Cloudflare (Cloudflare → *Buy a domain* |
+  *Free \*.trycloudflare.com*). The existing `cffree` box now shows only with `name=trycf` (no longer beside *Buy a
+  domain*), relabelled *(random name, no account)*. Two red **warning** info boxes (⚠, like the port-forward one):
+  - **`trywarn`** (Cloudflare + trycf), from Cloudflare's own Quick-Tunnel docs: for **testing only**; **random
+    name that changes on every restart** (shared links stop working); **no uptime guarantee**; **max 200
+    requests at once** (more → error 429); **no SSE** (live push updates); **no bandwidth or time cap is
+    published** — so no MB/duration limit is claimed.
+  - **`duckwarn`** (IPv6 / Port-forward + duckdns), from duckdns.org's FAQ/spec: **volunteer/donation-run, no
+    uptime guarantee**; only *yourname.duckdns.org* (no own domain); **one TXT value at a time** (certificates
+    issued one name per step); **~5 names per account** (reported by third parties, not on duckdns.org — marked
+    "reported"); IPv6 is **not auto-detected** (the server must send it).
+  Verified live: each Reach shows only its own options/boxes, an unavailable name in the URL falls back
+  (`reach=portfwd;name=trycf` → `name=buy`), the toggle bar stays one line (FR105), no overlaps.
+- **FR108. The *Free \*.trycloudflare.com* box is orange and wired like *Buy a domain*.** (User, on
+  `setup-map;method=usb;net=ua;reach=cloudflare;name=trycf`: *make it orange and add the lines from your computer,
+  to the private server and to the phone like in buy a domain* (`…;name=buy`).) New box colour **`orange`**
+  (fill `#2a1a0c`, stroke `#f97316` = the FR103 *central* line colour: *at a company you depend on*) in both
+  `flow.js` `PALETTE` and `docs/gen_flow_svg.py` `PALETTE` (also offered as a swatch); `cffree` uses it. Three
+  new lines mirror `buy`'s, but coloured **`cost: "central"`** (orange — it's free but at Cloudflare) instead of
+  `paid` (red): **`e_try_you`** your computer → box (action, like `e8`), **`e_try_srv`** box → server (info, like
+  `e7`), **`e_try_friend`** box → friend's phone (info, like `e4`); their route offsets were copied from the
+  `buy` lines (the box sits where *Buy a domain* does), so both views look alike. They follow the box's
+  visibility (Cloudflare + `name=trycf` only). Verified live side by side with the `name=buy` view.

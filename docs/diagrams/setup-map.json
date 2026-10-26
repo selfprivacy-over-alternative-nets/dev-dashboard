@@ -1,18 +1,20 @@
 {
   "edges": [
     {
-      "eo": 35,
+      "eo": -72,
+      "es": 37,
       "from": "you",
       "id": "e_cable",
       "kind": "cable",
       "label": "netboot",
-      "mo": -1,
+      "mo": -66,
+      "role": "link",
       "showWhen": {
         "method": [
           "cable"
         ]
       },
-      "so": -65,
+      "so": -38,
       "to": "server"
     },
     {
@@ -20,6 +22,8 @@
       "id": "e_wifi",
       "kind": "wifi",
       "label": "install over wifi",
+      "mo": 344,
+      "role": "link",
       "showWhen": {
         "method": [
           "wifi"
@@ -28,10 +32,16 @@
       "to": "router"
     },
     {
+      "ah": 38,
+      "eo": -21,
+      "es": 37,
       "from": "you",
       "id": "e_usb",
       "kind": "usb",
       "label": "USB stick",
+      "lw": 6,
+      "mo": -66,
+      "role": "link",
       "showWhen": {
         "method": [
           "usb"
@@ -42,12 +52,13 @@
     },
     {
       "dir": "both",
-      "eo": -58,
+      "eo": -5,
       "from": "server",
       "id": "e_scable",
       "kind": "cable",
       "label": "",
-      "mo": 1,
+      "mo": 250,
+      "role": "link",
       "showWhen": {
         "net": [
           "0a",
@@ -58,7 +69,7 @@
           "uc"
         ]
       },
-      "so": 76,
+      "so": -105,
       "to": "router"
     },
     {
@@ -66,6 +77,7 @@
       "id": "e_swifi",
       "kind": "wifi",
       "label": "",
+      "role": "link",
       "showWhen": {
         "net": [
           "0d",
@@ -80,6 +92,7 @@
       "id": "e_sY",
       "kind": "wifi",
       "label": "",
+      "role": "link",
       "showWhen": {
         "net": [
           "0c",
@@ -94,7 +107,8 @@
       "id": "e_vminet",
       "kind": "pipe",
       "label": "",
-      "mo": -185,
+      "mo": -45,
+      "role": "tunnel",
       "showWhen": {
         "method": [
           "vm"
@@ -108,6 +122,7 @@
       "id": "e_friend",
       "kind": "pipe",
       "label": "opens the link",
+      "role": "tunnel",
       "to": "inet"
     },
     {
@@ -116,21 +131,25 @@
       "id": "e_ts_up",
       "kind": "pipe",
       "label": "outbound tunnel",
-      "mo": -7,
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "tailscale"
         ]
       },
-      "to": "relayTS"
+      "to": "relayTS",
+      "via": [
+        "router"
+      ]
     },
     {
       "color": "#8b949e",
-      "eo": 102,
+      "eo": 170,
       "from": "relayTS",
       "id": "e_ts_run",
       "kind": "pipe",
       "label": "",
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "tailscale"
@@ -140,24 +159,39 @@
     },
     {
       "color": "#f38020",
+      "eo": -2,
       "from": "server",
       "id": "e_cf_up",
       "kind": "pipe",
       "label": "outbound tunnel",
+      "legs": {
+        "router>relayCF": {
+          "so": 68
+        },
+        "server>router": {
+          "eo": 9
+        }
+      },
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "cloudflare"
         ]
       },
-      "to": "relayCF"
+      "so": 9,
+      "to": "relayCF",
+      "via": [
+        "router"
+      ]
     },
     {
       "color": "#f38020",
-      "eo": 231,
+      "eo": 250,
       "from": "relayCF",
       "id": "e_cf_run",
       "kind": "pipe",
       "label": "",
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "cloudflare"
@@ -167,43 +201,48 @@
     },
     {
       "color": "#3b82f6",
-      "from": "router",
+      "eo": 180,
+      "from": "server",
       "id": "e_v6",
       "kind": "pipe",
       "label": "Direct · IPv6 only",
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "ipv6"
         ]
       },
-      "to": "inet"
+      "to": "inet",
+      "via": [
+        "router"
+      ]
     },
     {
       "color": "#eab308",
-      "from": "router",
-      "id": "e_pf_a",
-      "kind": "pipe",
-      "label": "",
-      "showWhen": {
-        "reach": [
-          "portfwd"
-        ]
-      },
-      "to": "pfgate"
-    },
-    {
-      "color": "#eab308",
-      "eo": 209,
-      "from": "pfgate",
+      "eo": 335,
+      "from": "server",
+      "gate": "router",
+      "gx": -8,
+      "gy": 68,
       "id": "e_pf_b",
       "kind": "pipe",
       "label": "Direct · IPv4 · needs public IP",
+      "legs": {
+        "router>inet": {
+          "so": 154,
+          "ss": -9
+        }
+      },
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "portfwd"
         ]
       },
-      "to": "inet"
+      "to": "inet",
+      "via": [
+        "router"
+      ]
     },
     {
       "color": "#9b59b6",
@@ -211,14 +250,23 @@
       "id": "e_tor_up",
       "kind": "pipe",
       "label": "hidden service",
-      "mo": 192,
+      "legs": {
+        "router>tn1": {
+          "so": 122
+        }
+      },
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "onion"
         ]
       },
-      "to": "tn1"
+      "so": 19,
+      "to": "tn1",
+      "via": [
+        "router"
+      ]
     },
     {
       "color": "#9b59b6",
@@ -227,6 +275,7 @@
       "kind": "pipe",
       "label": "",
       "pw": 14,
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "onion"
@@ -241,6 +290,7 @@
       "kind": "pipe",
       "label": "",
       "pw": 14,
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "onion"
@@ -250,13 +300,13 @@
     },
     {
       "color": "#9b59b6",
-      "eo": 222,
       "from": "tn3",
       "id": "e_tor_run",
       "kind": "pipe",
       "label": "",
-      "mo": 22,
+      "mo": 109,
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "reach": [
           "onion"
@@ -270,6 +320,7 @@
       "id": "e_m1",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "reach": [
           "onion"
@@ -283,6 +334,7 @@
       "id": "e_m2",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "reach": [
           "onion"
@@ -296,6 +348,7 @@
       "id": "e_m3",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "reach": [
           "onion"
@@ -304,12 +357,17 @@
       "to": "tn4"
     },
     {
-      "color": "#e5484d",
+      "cost": "central",
       "from": "friend",
       "id": "e_duck",
       "kind": "plain",
       "label": "looks up the name",
+      "mo": 280,
+      "role": "info",
       "showWhen": {
+        "name": [
+          "duckdns"
+        ],
         "reach": [
           "ipv6",
           "portfwd"
@@ -318,72 +376,221 @@
       "to": "duck"
     },
     {
+      "cost": "paid",
       "dir": "to",
+      "eo": 11,
       "from": "buy",
       "id": "e1",
       "kind": "plain",
       "label": "",
+      "role": "info",
+      "so": 11,
       "to": "relayCF"
     },
     {
+      "cost": "central",
       "dir": "from",
+      "eo": -2,
       "from": "cffree",
       "id": "e2",
       "kind": "plain",
       "label": "",
+      "role": "info",
+      "so": -2,
       "to": "relayCF"
     },
     {
-      "color": "#f66151",
+      "cost": "central",
       "dir": "to",
       "from": "relayTS",
       "id": "e3",
       "kind": "plain",
       "label": "",
       "lw": 9,
+      "role": "info",
       "to": "tsname"
     },
     {
       "ah": 28,
-      "color": "#ed333b",
+      "bp": {
+        "dx": -1289,
+        "dy": 463
+      },
+      "cost": "paid",
       "dir": "to",
-      "eo": 92,
+      "eo": -56,
       "from": "buy",
       "id": "e4",
       "kind": "plain",
       "label": "",
-      "lw": 11,
-      "mo": 57,
+      "lw": 5,
+      "mo": 278,
+      "role": "info",
       "so": 92,
-      "to": "inet",
-      "toOn": "e_pf_b:m1"
+      "ss": 658,
+      "to": "friend"
     },
     {
+      "cost": "free",
       "dir": "to",
       "from": "you",
       "id": "e5",
       "kind": "plain",
       "label": "",
-      "so": 95,
+      "lw": 5,
+      "role": "action",
+      "so": -6,
       "to": "pfwarn"
     },
     {
+      "bp": {
+        "dx": -4,
+        "dy": 62
+      },
+      "cost": "paid",
       "dir": "to",
-      "eo": 47,
-      "from": "pfwarn",
-      "id": "e6",
-      "kind": "plain",
-      "label": "",
-      "so": 13,
-      "to": "pfgate"
-    },
-    {
-      "dir": "to",
+      "eo": -86,
+      "es": -26,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
       "label": "",
+      "lw": 5,
+      "role": "info",
+      "so": 8,
       "to": "server"
+    },
+    {
+      "ah": 34,
+      "bp": {
+        "dx": 665,
+        "dy": -212
+      },
+      "cost": "free",
+      "dir": "to",
+      "from": "pfwarn",
+      "id": "e6",
+      "kind": "plain",
+      "label": "",
+      "lw": 13,
+      "mo": -36,
+      "role": "action",
+      "so": 17,
+      "to": "inet",
+      "toOn": "e_pf_b:gate",
+      "z": "front"
+    },
+    {
+      "bp": {
+        "dx": 1048,
+        "dy": 462
+      },
+      "cost": "paid",
+      "dir": "to",
+      "eo": -92,
+      "es": 19,
+      "from": "you",
+      "id": "e8",
+      "kind": "plain",
+      "label": "",
+      "role": "action",
+      "so": -203,
+      "ss": -40,
+      "to": "buy"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "eo": -94,
+      "from": "duck",
+      "id": "e_duck_srv",
+      "kind": "plain",
+      "label": "name + token (keeps it pointing at you)",
+      "role": "info",
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "ipv6",
+          "portfwd"
+        ]
+      },
+      "to": "server"
+    },
+    {
+      "bp": {
+        "dx": 1051,
+        "dy": 437
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -93,
+      "from": "you",
+      "id": "e9",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "action",
+      "so": -204,
+      "ss": -30,
+      "to": "duck"
+    },
+    {
+      "bp": {
+        "dx": 1048,
+        "dy": 462
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -78,
+      "es": 19,
+      "from": "you",
+      "id": "e_try_you",
+      "kind": "plain",
+      "label": "",
+      "role": "action",
+      "so": -203,
+      "ss": -40,
+      "to": "cffree"
+    },
+    {
+      "bp": {
+        "dx": -4,
+        "dy": 62
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -99,
+      "es": -26,
+      "from": "cffree",
+      "id": "e_try_srv",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "info",
+      "so": 8,
+      "to": "server"
+    },
+    {
+      "ah": 28,
+      "bp": {
+        "dx": -1289,
+        "dy": 463
+      },
+      "cost": "central",
+      "dir": "to",
+      "eo": -56,
+      "from": "cffree",
+      "id": "e_try_friend",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "mo": 278,
+      "role": "info",
+      "so": 92,
+      "ss": 644,
+      "to": "friend"
     }
   ],
   "meta": {
@@ -502,6 +709,43 @@
             "value": "onion"
           }
         ]
+      },
+      {
+        "default": "buy",
+        "id": "name",
+        "label": "Name",
+        "options": [
+          {
+            "label": "Buy a domain",
+            "value": "buy"
+          },
+          {
+            "label": "DuckDNS (free)",
+            "value": "duckdns"
+          },
+          {
+            "label": "Free *.trycloudflare.com",
+            "value": "trycf"
+          }
+        ],
+        "optionsWhen": {
+          "reach": {
+            "cloudflare": [
+              "buy",
+              "trycf"
+            ],
+            "ipv6": [
+              "buy",
+              "duckdns"
+            ],
+            "onion": [],
+            "portfwd": [
+              "buy",
+              "duckdns"
+            ],
+            "tailscale": []
+          }
+        }
       }
     ]
   },
@@ -514,26 +758,31 @@
       "label": "Your computer",
       "nodeType": "device",
       "w": 137,
-      "x": 259,
-      "y": -46
+      "x": 53,
+      "y": -53
     },
     {
       "cdx": 14,
       "cdy": 64,
       "color": "target",
       "container": "you",
-      "h": 70,
+      "containerWhen": {
+        "method": [
+          "vm"
+        ]
+      },
+      "h": 163,
       "icon": "server",
       "id": "server",
       "label": "Your new\nprivate server",
       "nodeType": "device",
-      "w": 93,
-      "x": 273,
-      "y": 18
+      "w": 147,
+      "x": 444,
+      "y": -61
     },
     {
       "color": "note",
-      "h": 168,
+      "h": 364,
       "icon": "router",
       "id": "router",
       "label": "Your home router",
@@ -545,9 +794,9 @@
           "usb"
         ]
       },
-      "w": 141,
-      "x": 450,
-      "y": 395
+      "w": 343,
+      "x": 365,
+      "y": 254
     },
     {
       "color": "note",
@@ -575,8 +824,8 @@
       "label": "The internet",
       "nodeType": "device",
       "w": 170,
-      "x": 1000,
-      "y": 210
+      "x": 1104,
+      "y": 211
     },
     {
       "color": "input",
@@ -586,8 +835,8 @@
       "label": "A friend's phone",
       "nodeType": "device",
       "w": 160,
-      "x": 1244,
-      "y": 217
+      "x": 1448,
+      "y": 216
     },
     {
       "color": "created",
@@ -602,8 +851,8 @@
         ]
       },
       "w": 190,
-      "x": 534,
-      "y": 318
+      "x": 700,
+      "y": 400
     },
     {
       "color": "note",
@@ -618,8 +867,8 @@
         ]
       },
       "w": 131,
-      "x": 574,
-      "y": 500
+      "x": 730,
+      "y": 540
     },
     {
       "color": "created",
@@ -634,24 +883,27 @@
         ]
       },
       "w": 190,
-      "x": 463,
-      "y": 454
+      "x": 793,
+      "y": 485
     },
     {
-      "color": "note",
-      "h": 50,
+      "color": "orange",
+      "h": 60,
       "icon": "",
       "id": "cffree",
-      "label": "or free *.trycloudflare.com",
+      "label": "Free *.trycloudflare.com\n(random name, no account)",
       "nodeType": "info",
       "showWhen": {
+        "name": [
+          "trycf"
+        ],
         "reach": [
           "cloudflare"
         ]
       },
-      "w": 210,
-      "x": 759,
-      "y": -60
+      "w": 230,
+      "x": 776,
+      "y": -135
     },
     {
       "color": "note",
@@ -666,82 +918,70 @@
         ]
       },
       "w": 240,
-      "x": 656,
-      "y": 211
+      "x": 724,
+      "y": 397
     },
     {
       "color": "red",
-      "h": 79,
+      "h": 138,
       "icon": "warn",
       "id": "pfwarn",
-      "label": "This route = manual work\n(router + registrar)",
+      "label": "This route = manual work\n(router + domain name)\n\nOpen port 443\nby hand in your\nrouter settings",
       "nodeType": "info",
       "showWhen": {
         "reach": [
           "portfwd"
         ]
       },
-      "w": 141,
-      "x": 554,
-      "y": 261
-    },
-    {
-      "color": "input",
-      "container": "router",
-      "h": 80,
-      "icon": "gate",
-      "id": "pfgate",
-      "label": "Open port 443\nby hand in your\nrouter settings",
-      "nodeType": "action",
-      "showWhen": {
-        "reach": [
-          "portfwd"
-        ]
-      },
-      "snapSide": "e",
-      "w": 155,
-      "x": 556,
-      "y": 461
+      "w": 173,
+      "x": 29,
+      "y": 422
     },
     {
       "childDiagram": "registrar",
       "color": "red",
-      "h": 71,
+      "h": 85,
       "icon": "cart",
       "id": "buy",
       "label": "Buy a domain\n(registrar, €/yr)",
       "nodeType": "action",
       "showWhen": {
+        "name": [
+          "buy"
+        ],
         "reach": [
           "cloudflare",
           "ipv6",
           "portfwd"
         ]
       },
-      "w": 190,
-      "x": 236,
-      "y": 451
+      "w": 244,
+      "x": 747,
+      "y": -134
     },
     {
       "color": "input",
-      "h": 90,
+      "h": 85,
       "icon": "tag",
       "id": "duck",
       "label": "DuckDNS: free NAME only\n(no domain to buy)\ntraffic goes direct",
       "nodeType": "info",
       "showWhen": {
+        "name": [
+          "duckdns"
+        ],
         "reach": [
           "ipv6",
           "portfwd"
         ]
       },
-      "w": 250,
-      "x": 1243,
-      "y": 389
+      "w": 244,
+      "x": 747,
+      "y": -134
     },
     {
       "color": "created",
-      "h": 190,
+      "h": 93,
       "icon": "tor",
       "id": "tor",
       "label": "Tor network\n1000s of volunteer relays\nno company · no owner",
@@ -752,9 +992,9 @@
           "onion"
         ]
       },
-      "w": 380,
-      "x": 491,
-      "y": 335
+      "w": 128,
+      "x": 785,
+      "y": 422
     },
     {
       "cdx": 40,
@@ -833,20 +1073,43 @@
       "y": 0
     },
     {
-      "color": "note",
-      "h": 60,
-      "icon": "onion",
-      "id": "onionfree",
-      "label": "No domain needed —\nthe .onion name is free & automatic",
+      "color": "red",
+      "h": 190,
+      "icon": "warn",
+      "id": "trywarn",
+      "label": "Free quick tunnel = for TESTING only\n• random name — changes on every restart\n  (your friends' links stop working)\n• no uptime guarantee\n• max 200 requests at once (more → error)\n• no live push updates (SSE)\n• no bandwidth / time cap published",
       "nodeType": "info",
       "showWhen": {
+        "name": [
+          "trycf"
+        ],
         "reach": [
-          "onion"
+          "cloudflare"
         ]
       },
-      "w": 380,
-      "x": 588,
-      "y": -40
+      "w": 300,
+      "x": 938,
+      "y": -32
+    },
+    {
+      "color": "red",
+      "h": 190,
+      "icon": "warn",
+      "id": "duckwarn",
+      "label": "Free DuckDNS = volunteer-run\n• no uptime guarantee (runs on donations)\n• only yourname.duckdns.org — no own domain\n• 1 TXT record at a time (certificates are\n  issued one name per step)\n• ~5 names per account (reported)\n• IPv6: your server must send it (no auto-detect)",
+      "nodeType": "info",
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "ipv6",
+          "portfwd"
+        ]
+      },
+      "w": 284,
+      "x": 747,
+      "y": -29
     }
   ]
 }

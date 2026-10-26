@@ -1,21 +1,27 @@
 {
   "edges": [
     {
+      "cost": "free",
       "from": "host",
       "id": "e1",
       "label": "netboot / usb",
+      "role": "action",
       "to": "install"
     },
     {
+      "cost": "free",
       "from": "install",
       "id": "e2",
       "label": "",
+      "role": "action",
       "to": "reach"
     },
     {
+      "cost": "central",
       "from": "reach",
       "id": "e3",
       "label": "public URL",
+      "role": "info",
       "to": "app"
     }
   ],

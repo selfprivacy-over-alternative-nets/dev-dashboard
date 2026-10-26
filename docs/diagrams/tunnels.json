@@ -16,6 +16,7 @@
           "y": 595
         }
       ],
+      "role": "tunnel",
       "to": "router"
     },
     {
@@ -34,6 +35,7 @@
           "y": 110
         }
       ],
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -58,6 +60,7 @@
           "y": 100
         }
       ],
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -82,6 +85,7 @@
           "y": 230
         }
       ],
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -106,6 +110,7 @@
           "y": 220
         }
       ],
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -132,6 +137,7 @@
         }
       ],
       "pw": 62,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -158,6 +164,7 @@
         }
       ],
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -184,6 +191,7 @@
         }
       ],
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -194,11 +202,12 @@
       "to": "inet"
     },
     {
-      "color": "#e5484d",
+      "cost": "central",
       "from": "friend",
       "id": "p_duck",
       "kind": "plain",
       "label": "looks up the name",
+      "role": "info",
       "showWhen": {
         "show": [
           "all",
@@ -228,6 +237,7 @@
         }
       ],
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -243,6 +253,7 @@
       "kind": "pipe",
       "label": "",
       "pw": 13,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -258,6 +269,7 @@
       "kind": "pipe",
       "label": "",
       "pw": 13,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -283,6 +295,7 @@
         }
       ],
       "pw": 16,
+      "role": "tunnel",
       "showWhen": {
         "show": [
           "all",
@@ -297,6 +310,7 @@
       "id": "m1",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "show": [
           "all",
@@ -311,6 +325,7 @@
       "id": "m2",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "show": [
           "all",
@@ -325,6 +340,7 @@
       "id": "m3",
       "kind": "plain",
       "label": "",
+      "role": "link",
       "showWhen": {
         "show": [
           "all",
@@ -349,6 +365,7 @@
           "y": 400
         }
       ],
+      "role": "tunnel",
       "to": "friend"
     }
   ],
