@@ -425,10 +425,10 @@ def pipe_legs(a, b, e, vb=None):   # (pts, [(from, to, first, last) per leg]) �
     return pts, legs
 
 
-USB_T, USB_KT = 6, "0;0.1;0.45;0.55;0.9;1"   # NT10 — mirrors flow.js usbTrip
+USB_T, USB_KT, USB_S = 6, "0;0.1;0.45;0.55;0.9;1", 1.8   # NT10 / NT12 — mirrors flow.js usbTrip
 
 
-def usb_trip_svg(poly, a, b):   # NT10: the stick carries a light from the source box into the target box, then returns
+def usb_trip_svg(poly, a, b, R):   # R = moving stick radius (usbS × line width)   # NT10: the stick carries a light from the source box into the target box, then returns
     if not poly or len(poly) < 2:
         return ""
     f = lambda v: format(round(v, 4), "g") if abs(v) < 1e15 else str(v)
@@ -441,11 +441,54 @@ def usb_trip_svg(poly, a, b):   # NT10: the stick carries a light from the sourc
     mo = lambda path, kp: (f'<animateMotion dur="{USB_T}s" repeatCount="indefinite" path="{path}" keyPoints="{kp}" '
                            f'keyTimes="{USB_KT}" calcMode="linear"/>')
     return ('<g class="usb-trip" pointer-events="none"><style>@media (prefers-reduced-motion: reduce){.usb-trip{display:none}}</style>'
-            '<g><circle r="11" fill="#0b0e14" stroke="#c9d1d9" stroke-width="1.5"/>'
-            '<use href="#ic-usb" x="-9" y="-9" width="18" height="18" style="color:#c9d1d9"/>' + mo(d(poly), "0;0;1;1;0;0") + "</g>"
-            '<g><circle r="9" fill="#fff3a0" opacity="0.35"/><circle r="4" fill="#fffbe0"/>'
+            f'<g><circle r="{f(R)}" fill="#0b0e14" stroke="#c9d1d9" stroke-width="1.5"/>'
+            f'<use href="#ic-usb" x="{f(-0.82 * R)}" y="{f(-0.82 * R)}" width="{f(1.64 * R)}" height="{f(1.64 * R)}" style="color:#c9d1d9"/>' + mo(d(poly), "0;0;1;1;0;0") + "</g>"
+            f'<g><circle r="{f(0.82 * R)}" fill="#fff3a0" opacity="0.35"/><circle r="{f(0.36 * R)}" fill="#fffbe0"/>'
             + mo(d([ca] + list(poly) + [cb]), f"0;{f(L0 / Lt)};{f((L0 + Lp) / Lt)};1;1;1")
             + f'<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.55;1" dur="{USB_T}s" repeatCount="indefinite"/></g></g>')
+
+
+def cable_svg(poly, color, R):   # NT11: a LAN-cable sleeve (jacket + boot + RJ45 plug at each end) — mirrors flow.js drawCable
+    BOOT, BODY, OL, W = 0.6 * R, 1.6 * R, "#0a140a", 2 * R
+    j0 = trim_poly(poly, "start", BOOT + BODY)
+    jacket = j0 and trim_poly(j0, "end", BOOT + BODY)
+    pts = _dedupe(jacket or poly)
+    d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
+    o = [f'<path d="{d}" fill="none" stroke="{OL}" stroke-width="{W + 4:g}" stroke-linejoin="round"/>',
+         f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{W:g}" stroke-linejoin="round"/>']
+    ln = lambda x1, y1, x2, y2, s, w: f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{s}" stroke-width="{w:g}" stroke-linecap="round"/>'
+    for i in range(1, len(pts)):
+        (ax, ay), (bx, by) = pts[i - 1], pts[i]
+        h, off = abs(ay - by) < 0.5, 0.42 * R
+        for sgn, col in ((-1, shade(color, 1.55)), (1, shade(color, 0.55))):
+            dx, dy = (0, sgn * off) if h else (sgn * off, 0)
+            o.append(ln(ax + dx, ay + dy, bx + dx, by + dy, col, 0.32 * R))
+    if not jacket:
+        return "".join(o)
+
+    def rect(P, u, frm, to, w, attrs):
+        A = (P[0] - u[0] * frm, P[1] - u[1] * frm)
+        B = (P[0] - u[0] * to, P[1] - u[1] * to)
+        if abs(u[0]) > abs(u[1]):
+            x, y, ww, hh = min(A[0], B[0]), P[1] - w / 2, abs(A[0] - B[0]), w
+        else:
+            x, y, ww, hh = P[0] - w / 2, min(A[1], B[1]), w, abs(A[1] - B[1])
+        return f'<rect x="{x:.1f}" y="{y:.1f}" width="{ww:.1f}" height="{hh:.1f}" {attrs}/>'
+
+    def end(P, Q):
+        L = ((P[0] - Q[0]) ** 2 + (P[1] - Q[1]) ** 2) ** 0.5 or 1
+        return P, ((P[0] - Q[0]) / L, (P[1] - Q[1]) / L)
+    sw = max(1, 0.1 * R)
+    for P, u in (end(poly[0], poly[1]), end(poly[-1], poly[-2])):
+        nx, ny = -u[1], u[0]
+        o.append(rect(P, u, BOOT + BODY, BODY, 2.2 * R, f'fill="{shade(color, 0.7)}" stroke="{OL}" stroke-width="{sw:g}" rx="{0.25 * R:g}"'))
+        o.append(rect(P, u, BODY, 0, 2.4 * R, f'fill="#dfe6ee" fill-opacity="0.85" stroke="{OL}" stroke-width="{sw:g}" rx="{0.15 * R:g}"'))
+        o.append(rect((P[0] + nx * 1.3 * R, P[1] + ny * 1.3 * R), u, 1.3 * R, 0.3 * R, 0.3 * R, f'fill="#c3ccd6" stroke="{OL}" stroke-width="{sw * 0.8:g}"'))
+        for k in range(6):
+            off = (-0.75 + k * 0.3) * R
+            x, y = P[0] + nx * off, P[1] + ny * off
+            o.append(ln(x - u[0] * 0.08 * R, y - u[1] * 0.08 * R, x - u[0] * 0.7 * R, y - u[1] * 0.7 * R, "#d4a72c", 0.12 * R).replace(' stroke-linecap="round"', ""))
+    return "".join(o)
 
 
 NEST = {"nestA": 1, "nestB": 2, "nestW": 1.9, "nestOp": 0.4}   # NT1–NT5 — mirrors flow.js NEST
@@ -699,7 +742,9 @@ def render(d):
                 o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))
             mx, my = longest_mid(poly) if e.get("via") else poly[max(1, len(poly) // 2) - 1]
         elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
-            o.append(f'<g opacity="{nest_p(e, "nestOp"):g}">' + mario_pipe_svg(nh_poly, line_color(e) or "#8b949e", 2 * nh_r) + "</g>")
+            col_ = line_color(e) or "#8b949e"
+            body_ = cable_svg(nh_poly, col_, nh_r) if kind in ("cable", "lan") else mario_pipe_svg(nh_poly, col_, 2 * nh_r)   # NT11
+            o.append(f'<g opacity="{nest_p(e, "nestOp"):g}">' + body_ + "</g>")
             mx, my = mid_of_poly(nh_poly)
             badge = EDGE_ICON.get(kind)
             if badge:
@@ -737,7 +782,7 @@ def render(d):
                 o.append(f'<circle cx="{mx:.1f}" cy="{my:.1f}" r="{EBADGE / 2 + 5:g}" fill="#0b0e14" stroke="{line_color(e) or "#6e7681"}" stroke-width="2"/>'
                          f'<use href="#ic-{badge}" x="{mx - EBADGE / 2:.1f}" y="{my - EBADGE / 2:.1f}" width="{EBADGE}" height="{EBADGE}" style="color:#c9d1d9"/>')
             if kind == "usb":
-                o.append(usb_trip_svg(poly, a, b))   # NT10
+                o.append(usb_trip_svg(poly, a, b, (e["usbS"] if isinstance(e.get("usbS"), (int, float)) else USB_S) * lw))   # NT10 / NT12
         if e.get("label"):
             dy = 18 if tube else (EBADGE / 2 + 12 if badge else 4)
             halo = HALO if badge else ""

@@ -952,6 +952,20 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   same markup in the live page and the static SVG (`usb_trip_svg`); not clickable; hidden when the viewer prefers
   reduced motion (CSS media query, also inside the static SVG). Verified with the SVG timeline paused at 0.3 /
   0.9 / 1.7 / 2.6 / 3.1 / 4.2 / 5.6 s.
+- **NT11. A LAN link's sleeve is drawn as a LAN cable.** (User: *change the encapsulating LAN tunnel to an
+  encapsulating LAN cable*; agreed reasoning: a cable with RJ45 plugs is recognised without a legend, while a pipe
+  around a pipe reads as "a tunnel inside a tunnel".) For `kind` `cable` / `lan` the NT1 sleeve is no longer a
+  Mario pipe but a **cable**: a round jacket (dark outline, body in the line colour — default grey `#8b949e`, a
+  light and a dark stripe for roundness) ending at each end in a **boot** (darker, 0.6 R long, 2.2 R wide) and a
+  **clear RJ45 plug** (1.6 R long, 2.4 R wide, 6 gold contacts at the tip, a latch on one side), R = sleeve radius.
+  The plug tips sit exactly where the sleeve ends, so end A / end B (incl. negative, NT8), width and opacity work
+  unchanged; a stretch too short for two plugs shows just the jacket. The wifi sleeve stays a see-through pipe.
+  Mirrored in `docs/gen_flow_svg.py` `cable_svg`; verified: plug / boot geometry identical in editor and renderer.
+- **NT12. The moving USB stick's size is a parameter.** (User: *a numeric factor w.r.t. the line width to increase
+  the size of the moving USB icon.*) Field **`usbS`** on a USB link = the stick's radius ÷ the line width
+  (default **1.8**, i.e. today's size on `e_usb`'s width-6 line); the stick's icon and the travelling light scale
+  with it. Set with a **usb stick** slider (0.5–6×) in the arrow box of a USB link; the default is not stored.
+  Mirrored in `usb_trip_svg`. Verified live: 1.8× → 3.5× grows the stick radius 10.8 → 21, saved as `usbS: 3.5`.
 - **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
   Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
   wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.

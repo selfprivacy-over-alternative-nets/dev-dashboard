@@ -398,8 +398,9 @@
   // NT10: a USB link shows the stick carrying data — a small light comes out of the source box (from under its icon),
   // rides the stick along the line and goes into the target box; the stick then travels back empty. 6 s loop, SVG
   // <animateMotion> (same markup in docs/gen_flow_svg.py); hidden when the viewer prefers reduced motion (CSS).
-  const USB_T = 6, USB_KT = "0;0.1;0.45;0.55;0.9;1";
-  function usbTrip(parent, poly, a, b) {
+  const USB_T = 6, USB_KT = "0;0.1;0.45;0.55;0.9;1", USB_S = 1.8;
+  const usbS = (e) => typeof e.usbS === "number" ? e.usbS : USB_S;   // NT12: moving stick's radius ÷ the line width
+  function usbTrip(parent, poly, a, b, R) {
     if (!poly || poly.length < 2) return;
     const ca = center(a), cb = center(b), last = poly[poly.length - 1], f = (v) => (+v.toFixed(4)).toString();
     const len = (p) => p.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - p[i].x, q.y - p[i].y), 0);
@@ -408,13 +409,50 @@
     const G = el("g", { class: "usb-trip" }, parent), mo = (g, path, kp) =>
       el("animateMotion", { dur: USB_T + "s", repeatCount: "indefinite", path, keyPoints: kp, keyTimes: USB_KT, calcMode: "linear" }, g);
     const sg = el("g", {}, G);   // the stick: waits while the light comes out, carries it over, waits, comes back empty
-    el("circle", { r: 11, fill: "#0b0e14", stroke: "#c9d1d9", "stroke-width": 1.5 }, sg);
-    el("use", { href: "#ic-usb", x: -9, y: -9, width: 18, height: 18 }, sg).style.color = "#c9d1d9";
+    el("circle", { r: R, fill: "#0b0e14", stroke: "#c9d1d9", "stroke-width": 1.5 }, sg);
+    el("use", { href: "#ic-usb", x: -0.82 * R, y: -0.82 * R, width: 1.64 * R, height: 1.64 * R }, sg).style.color = "#c9d1d9";
     mo(sg, d(poly), "0;0;1;1;0;0");
     const lg = el("g", {}, G);   // the light (payload): computer centre → line start → line end → server centre
-    el("circle", { r: 9, fill: "#fff3a0", opacity: 0.35 }, lg); el("circle", { r: 4, fill: "#fffbe0" }, lg);
+    el("circle", { r: 0.82 * R, fill: "#fff3a0", opacity: 0.35 }, lg); el("circle", { r: 0.36 * R, fill: "#fffbe0" }, lg);
     mo(lg, d([ca, ...poly, cb]), `0;${f(L0 / Lt)};${f((L0 + Lp) / Lt)};1;1;1`);
     el("animate", { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.5;0.55;1", dur: USB_T + "s", repeatCount: "indefinite" }, lg);
+  }
+  // NT11: a LAN link's sleeve is drawn as a LAN CABLE — a round jacket (outline, body, highlight, shadow) ending in a
+  // boot + clear RJ45 plug (gold contacts, latch) at each end; the plug tips sit exactly where the sleeve ends (NT2 /
+  // NT8), so end A / end B / width / opacity still apply. Geometry in units of the sleeve radius R; mirrored in
+  // docs/gen_flow_svg.py cable_svg.
+  function cablePlugs(poly, R) {   // [{ P (tip), u (unit, pointing out of the cable) }] for both ends
+    const end = (P, Q) => { const L = Math.hypot(P.x - Q.x, P.y - Q.y) || 1; return { P, u: { x: (P.x - Q.x) / L, y: (P.y - Q.y) / L } }; };
+    return [end(poly[0], poly[1]), end(poly[poly.length - 1], poly[poly.length - 2])];
+  }
+  function drawCable(parent, poly, color, R) {
+    const BOOT = 0.6 * R, BODY = 1.6 * R, OL = "#0a140a", W = 2 * R;
+    const j0 = trimPoly(poly, "start", BOOT + BODY), jacket = j0 && trimPoly(j0, "end", BOOT + BODY);
+    const pts = dedupe(jacket || poly), d = "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
+    el("path", { d, fill: "none", stroke: OL, "stroke-width": W + 4, "stroke-linejoin": "round" }, parent);
+    el("path", { d, fill: "none", stroke: color, "stroke-width": W, "stroke-linejoin": "round" }, parent);
+    for (let i = 1; i < pts.length; i++) {   // round-jacket shading: a light stripe on one side, a dark one on the other
+      const A = pts[i - 1], B = pts[i], h = Math.abs(A.y - B.y) < 0.5, o = 0.42 * R;
+      const ln = (dx, dy, s, w) => el("line", { x1: A.x + dx, y1: A.y + dy, x2: B.x + dx, y2: B.y + dy, stroke: s, "stroke-width": w, "stroke-linecap": "round" }, parent);
+      ln(h ? 0 : -o, h ? -o : 0, shade(color, 1.55), 0.32 * R); ln(h ? 0 : o, h ? o : 0, shade(color, 0.55), 0.32 * R);
+    }
+    if (!jacket) return;   // too short for plugs: just the jacket
+    const rect = (P, u, from, to, w, attrs) => {   // axis-aligned box along u, from..to back from the tip P, w wide
+      const A = { x: P.x - u.x * from, y: P.y - u.y * from }, B = { x: P.x - u.x * to, y: P.y - u.y * to }, hz = Math.abs(u.x) > Math.abs(u.y);
+      return el("rect", hz ? { x: Math.min(A.x, B.x), y: P.y - w / 2, width: Math.abs(A.x - B.x), height: w, ...attrs }
+                           : { x: P.x - w / 2, y: Math.min(A.y, B.y), width: w, height: Math.abs(A.y - B.y), ...attrs }, parent);
+    };
+    for (const { P, u } of cablePlugs(poly, R)) {
+      const nx = -u.y, ny = u.x, sw = Math.max(1, 0.1 * R);
+      rect(P, u, BOOT + BODY, BODY, 2.2 * R, { fill: shade(color, 0.7), stroke: OL, "stroke-width": sw, rx: 0.25 * R });   // boot
+      rect(P, u, BODY, 0, 2.4 * R, { fill: "#dfe6ee", "fill-opacity": 0.85, stroke: OL, "stroke-width": sw, rx: 0.15 * R });   // clear plug
+      const Lx = { x: P.x + nx * 1.3 * R, y: P.y + ny * 1.3 * R };   // latch on one side
+      rect(Lx, u, 1.3 * R, 0.3 * R, 0.3 * R, { fill: "#c3ccd6", stroke: OL, "stroke-width": sw * 0.8 });
+      for (let k = 0; k < 6; k++) {   // 6 gold contacts at the tip
+        const off = (-0.75 + k * 0.3) * R, x = P.x + nx * off, y = P.y + ny * off;
+        el("line", { x1: x - u.x * 0.08 * R, y1: y - u.y * 0.08 * R, x2: x - u.x * 0.7 * R, y2: y - u.y * 0.7 * R, stroke: "#d4a72c", "stroke-width": 0.12 * R }, parent);
+      }
+    }
   }
   function panelLine(e, ends) {   // the line the arrow box is placed against + dragged relative to (NT9: for a sleeve, the
     const nh = nestHost(e);        // tunnel stretch it wraps — fixed while end A / B / width change, so the box never jumps)
@@ -723,7 +761,9 @@
       const role = roleOf(e);
       if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
         el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
-        drawMarioPipe(el("g", { opacity: nestP(e, "nestOp") }, g), sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
+        const sg = el("g", { opacity: nestP(e, "nestOp") }, g);
+        if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#8b949e", sl.R);   // NT11
+        else drawMarioPipe(sg, sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
         if (S.selEdge === e.id) selPoly = sl.poly;
         const m = midOfPoly(sl.poly); mx = m.x; my = m.y;
         const badge = kind !== "plain" && EDGE_ICON[kind];
@@ -775,7 +815,7 @@
           u.style.color = "#c9d1d9";
           iconOnLine = true;
         }
-        if (kind === "usb") usbTrip(g, poly, a, b);   // NT10
+        if (kind === "usb") usbTrip(g, poly, a, b, usbS(e) * lw);   // NT10 / NT12: stick radius = usbS × line width
       }
       if (e.label) { const t = el("text", { x: mx, y: my - (isTube(e) ? 18 : iconOnLine ? EBADGE / 2 + 12 : 4), "text-anchor": "middle" }, g);
         if (iconOnLine) t.setAttribute("class", "halo");
@@ -857,6 +897,8 @@
     for (const btn of p.querySelectorAll("#ep-costrow button")) btn.classList.toggle("on", (btn.getAttribute("data-cost") || "") === (e.cost || ""));
     $("ep-sizerow").style.display = isPipe ? "none" : "flex";
     $("ep-gaterow").style.display = isPipe && e.gate ? "flex" : "none";   // FR102: gate badge size
+    $("ep-usbrow").style.display = e.kind === "usb" && role === "link" ? "flex" : "none";   // NT12
+    if (e.kind === "usb") { $("ep-usbS").value = usbS(e); $("ep-usbSv").textContent = usbS(e).toFixed(1) + "×"; }
     const sleeve = !!nestHost(e);   // NT7: the sleeve's numbers, only when this line is drawn as a sleeve
     for (const r of p.querySelectorAll(".ep-nest")) r.style.display = sleeve ? "flex" : "none";
     if (sleeve) { $("ep-sizerow").style.display = "none"; for (const k in NEST) { $("ep-" + k).value = nestP(e, k); $("ep-" + k + "v").textContent = nestFmt(k, nestP(e, k)); } }
@@ -1695,6 +1737,12 @@
   $("ep-id").onclick = () => { const e = selEdgeObj(); if (!e) return;   // FR96: copy the line's id to refer to it
     navigator.clipboard.writeText(e.id).then(() => status(`copied line id <b>${e.id}</b>`), () => status(`line id: <b>${e.id}</b>`)); };
   const nestFmt = (k, v) => k === "nestOp" ? Math.round(v * 100) + "%" : (+v).toFixed(1) + (k === "nestW" ? "×" : "");
+  $("ep-usbS").oninput = () => {   // NT12: moving USB stick size (× line width)
+    const e = selEdgeObj(); if (!e) return;
+    const v = Math.round(+$("ep-usbS").value * 10) / 10;
+    if (v === USB_S) delete e.usbS; else e.usbS = v;
+    $("ep-usbSv").textContent = v.toFixed(1) + "×"; markDirty(true); render();
+  };
   for (const k in NEST) $("ep-" + k).oninput = () => {   // NT7: sleeve gaps / width / opacity, live
     const e = selEdgeObj(); if (!e) return;
     const v = Math.round(+$("ep-" + k).value * 100) / 100;
