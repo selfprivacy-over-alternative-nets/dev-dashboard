@@ -58,6 +58,7 @@
       "kind": "cable",
       "label": "",
       "mo": 250,
+      "nestB": -4,
       "role": "link",
       "showWhen": {
         "net": [
@@ -183,9 +184,6 @@
       "legs": {
         "router>relayCF": {
           "so": 68
-        },
-        "server>router": {
-          "eo": 9
         }
       },
       "role": "tunnel",
@@ -194,7 +192,7 @@
           "cloudflare"
         ]
       },
-      "so": 433,
+      "so": 12,
       "to": "relayCF",
       "via": [
         "router"

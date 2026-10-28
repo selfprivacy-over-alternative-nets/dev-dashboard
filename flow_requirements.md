@@ -942,6 +942,16 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   **drags that segment of the tunnel inside** (FR95 leg offsets, stored on the tunnel) and the sleeve follows.
   Verified live: box fixed while sliding end A 1 → −4; a grab moves the box exactly with the mouse; the rightmost
   vertical segment drags (x 938 → 822) and the sleeve follows.
+- **NT10. A USB link animates the stick carrying the data.** (User: *show a USB-stick icon travelling across (and
+  back) the line for USB transfer, with a small light as payload that comes out of "your computer" and goes into
+  "your new private server".*) Every `kind: usb` link (today `e_usb`, USB install views) gets a looping **6 s**
+  animation: a small **light** appears at the source box's centre (it shows through the laptop's screen) and moves
+  to the line start (0–10 %), rides the **USB stick** (an `ic-usb` badge) along the line (10–45 %), goes into the
+  target box's centre and fades out under its icon (45–55 %); the stick waits, then travels **back empty**
+  (55–90 %) and waits at the start. Plain SVG `<animateMotion>` along the drawn route (follows any re-routing), the
+  same markup in the live page and the static SVG (`usb_trip_svg`); not clickable; hidden when the viewer prefers
+  reduced motion (CSS media query, also inside the static SVG). Verified with the SVG timeline paused at 0.3 /
+  0.9 / 1.7 / 2.6 / 3.1 / 4.2 / 5.6 s.
 - **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
   Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
   wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.

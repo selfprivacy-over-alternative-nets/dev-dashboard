@@ -99,6 +99,8 @@
     #edgepanel input[type=range] { width: 82px; vertical-align: middle; }
     #edgepanel input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--border);
                                    background: var(--panel); border-radius: 4px; cursor: pointer; }
+    .usb-trip { pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) { .usb-trip { display: none; } }   /* NT10 */
     #edgepanel .ep-nest .val { width: 30px; }
     #edgepanel .val { color: var(--dim); font-size: 11px; width: 22px; display: inline-block; text-align: right; }
     #edgepanel #ep-id { color: var(--fg); font-size: 12px; background: var(--panel); border: 1px solid var(--border);

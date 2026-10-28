@@ -395,6 +395,27 @@
     const R = nestP(e, "nestW") * (nh.t.pw || 22) / 2, s = trimPoly(nh.pts, "start", nestP(e, "nestA") * R);
     return { R, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
   }
+  // NT10: a USB link shows the stick carrying data — a small light comes out of the source box (from under its icon),
+  // rides the stick along the line and goes into the target box; the stick then travels back empty. 6 s loop, SVG
+  // <animateMotion> (same markup in docs/gen_flow_svg.py); hidden when the viewer prefers reduced motion (CSS).
+  const USB_T = 6, USB_KT = "0;0.1;0.45;0.55;0.9;1";
+  function usbTrip(parent, poly, a, b) {
+    if (!poly || poly.length < 2) return;
+    const ca = center(a), cb = center(b), last = poly[poly.length - 1], f = (v) => (+v.toFixed(4)).toString();
+    const len = (p) => p.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - p[i].x, q.y - p[i].y), 0);
+    const d = (p) => "M " + p.map((q) => `${f(q.x)} ${f(q.y)}`).join(" L ");
+    const L0 = Math.hypot(poly[0].x - ca.x, poly[0].y - ca.y), Lp = len(poly), Lt = L0 + Lp + Math.hypot(cb.x - last.x, cb.y - last.y) || 1;
+    const G = el("g", { class: "usb-trip" }, parent), mo = (g, path, kp) =>
+      el("animateMotion", { dur: USB_T + "s", repeatCount: "indefinite", path, keyPoints: kp, keyTimes: USB_KT, calcMode: "linear" }, g);
+    const sg = el("g", {}, G);   // the stick: waits while the light comes out, carries it over, waits, comes back empty
+    el("circle", { r: 11, fill: "#0b0e14", stroke: "#c9d1d9", "stroke-width": 1.5 }, sg);
+    el("use", { href: "#ic-usb", x: -9, y: -9, width: 18, height: 18 }, sg).style.color = "#c9d1d9";
+    mo(sg, d(poly), "0;0;1;1;0;0");
+    const lg = el("g", {}, G);   // the light (payload): computer centre → line start → line end → server centre
+    el("circle", { r: 9, fill: "#fff3a0", opacity: 0.35 }, lg); el("circle", { r: 4, fill: "#fffbe0" }, lg);
+    mo(lg, d([ca, ...poly, cb]), `0;${f(L0 / Lt)};${f((L0 + Lp) / Lt)};1;1;1`);
+    el("animate", { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.5;0.55;1", dur: USB_T + "s", repeatCount: "indefinite" }, lg);
+  }
   function panelLine(e, ends) {   // the line the arrow box is placed against + dragged relative to (NT9: for a sleeve, the
     const nh = nestHost(e);        // tunnel stretch it wraps — fixed while end A / B / width change, so the box never jumps)
     return nh ? nh.pts : dedupe(pipePoly(ends.a, ends.b, e));
@@ -754,6 +775,7 @@
           u.style.color = "#c9d1d9";
           iconOnLine = true;
         }
+        if (kind === "usb") usbTrip(g, poly, a, b);   // NT10
       }
       if (e.label) { const t = el("text", { x: mx, y: my - (isTube(e) ? 18 : iconOnLine ? EBADGE / 2 + 12 : 4), "text-anchor": "middle" }, g);
         if (iconOnLine) t.setAttribute("class", "halo");

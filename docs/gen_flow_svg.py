@@ -425,6 +425,29 @@ def pipe_legs(a, b, e, vb=None):   # (pts, [(from, to, first, last) per leg]) �
     return pts, legs
 
 
+USB_T, USB_KT = 6, "0;0.1;0.45;0.55;0.9;1"   # NT10 — mirrors flow.js usbTrip
+
+
+def usb_trip_svg(poly, a, b):   # NT10: the stick carries a light from the source box into the target box, then returns
+    if not poly or len(poly) < 2:
+        return ""
+    f = lambda v: format(round(v, 4), "g") if abs(v) < 1e15 else str(v)
+    ca, cb = center(a), center(b)
+    seg = lambda p: sum(((p[i][0] - p[i - 1][0]) ** 2 + (p[i][1] - p[i - 1][1]) ** 2) ** 0.5 for i in range(1, len(p)))
+    d = lambda p: "M " + " L ".join(f"{f(x)} {f(y)}" for x, y in p)
+    L0 = ((poly[0][0] - ca[0]) ** 2 + (poly[0][1] - ca[1]) ** 2) ** 0.5
+    Lp = seg(poly)
+    Lt = (L0 + Lp + ((cb[0] - poly[-1][0]) ** 2 + (cb[1] - poly[-1][1]) ** 2) ** 0.5) or 1
+    mo = lambda path, kp: (f'<animateMotion dur="{USB_T}s" repeatCount="indefinite" path="{path}" keyPoints="{kp}" '
+                           f'keyTimes="{USB_KT}" calcMode="linear"/>')
+    return ('<g class="usb-trip" pointer-events="none"><style>@media (prefers-reduced-motion: reduce){.usb-trip{display:none}}</style>'
+            '<g><circle r="11" fill="#0b0e14" stroke="#c9d1d9" stroke-width="1.5"/>'
+            '<use href="#ic-usb" x="-9" y="-9" width="18" height="18" style="color:#c9d1d9"/>' + mo(d(poly), "0;0;1;1;0;0") + "</g>"
+            '<g><circle r="9" fill="#fff3a0" opacity="0.35"/><circle r="4" fill="#fffbe0"/>'
+            + mo(d([ca] + list(poly) + [cb]), f"0;{f(L0 / Lt)};{f((L0 + Lp) / Lt)};1;1;1")
+            + f'<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.55;1" dur="{USB_T}s" repeatCount="indefinite"/></g></g>')
+
+
 NEST = {"nestA": 1, "nestB": 2, "nestW": 1.9, "nestOp": 0.4}   # NT1–NT5 — mirrors flow.js NEST
 
 
@@ -713,6 +736,8 @@ def render(d):
             if badge:   # FR89: a large badge ON the line says what the arrow is (mirrors flow.js)
                 o.append(f'<circle cx="{mx:.1f}" cy="{my:.1f}" r="{EBADGE / 2 + 5:g}" fill="#0b0e14" stroke="{line_color(e) or "#6e7681"}" stroke-width="2"/>'
                          f'<use href="#ic-{badge}" x="{mx - EBADGE / 2:.1f}" y="{my - EBADGE / 2:.1f}" width="{EBADGE}" height="{EBADGE}" style="color:#c9d1d9"/>')
+            if kind == "usb":
+                o.append(usb_trip_svg(poly, a, b))   # NT10
         if e.get("label"):
             dy = 18 if tube else (EBADGE / 2 + 12 if badge else 4)
             halo = HALO if badge else ""
