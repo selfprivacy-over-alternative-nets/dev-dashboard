@@ -333,23 +333,63 @@
   }
   function viaRouteSegs(aBox, bBox, e) {   // segs[j] = { leg, key, H } (null = the run across a via box's centre)
     const vb = viaBoxes(e), ids = [e.from, ...viaIds(e), e.to], boxes = [aBox, ...vb, bBox], last = boxes.length - 2;
-    let pts = [], segs = [];
+    let pts = [], segs = [], ranges = [];   // ranges[i] = [first, last] index of leg i in pts (NT2)
     for (let i = 0; i <= last; i++) {
       const o = legO(e, ids, i);
       let leg = zRouteSegs(boxes[i], boxes[i + 1], o);
       // leaving a via box on the side it was entered = a dead end, not "through" → leave on the other axis instead
       if (i > 0 && sideOf(pts[pts.length - 1], boxes[i]) === sideOf(leg.pts[0], boxes[i])) leg = zRouteSegs(boxes[i], boxes[i + 1], { ...o, _H: !leg.H });
       const ls = leg.segs.map((key) => ({ leg: i, key, H: leg.H, cv: leg.cv }));
-      if (i === 0) { pts = leg.pts; segs = ls; }
+      if (i === 0) { pts = leg.pts; segs = ls; ranges.push([0, pts.length - 1]); }
       else { const c = ids[i] === e.gate ? gatePoint(e, boxes[i]) : center(boxes[i]);   // FR100: the pipe crosses at the gate
-        pts = pts.slice(0, -1).concat(throughBox(pts[pts.length - 1], leg.pts[0], boxes[i], c), leg.pts.slice(1)); segs = segs.concat([null, null, null, null], ls); }
+        const s0 = pts.length + 3;   // = where leg.pts[0] lands after the 5 through-box points replace the last point
+        pts = pts.slice(0, -1).concat(throughBox(pts[pts.length - 1], leg.pts[0], boxes[i], c), leg.pts.slice(1)); segs = segs.concat([null, null, null, null], ls);
+        ranges.push([s0, pts.length - 1]); }
     }
-    return { pts, segs, ids };
+    return { pts, segs, ids, ranges };
   }
   const pipePoly = (aBox, bBox, e) => {
     if (Array.isArray(e.path) && e.path.length >= 2) return e.path.map((p) => ({ x: p.x, y: p.y }));
     return viaBoxes(e).length ? viaRouteSegs(aBox, bBox, e).pts : zRoute(aBox, bBox, e);
   };
+  // NT1–NT5 (nested-tunnel scope): a physical link (cable / wifi / usb) between two boxes that a visible tunnel runs
+  // between is drawn as a wider, see-through SLEEVE around that stretch of the tunnel — the tunnel travels THROUGH the
+  // cable. The sleeve stops nestA × its radius short of end A (the link's `from`) and nestB × its radius short of end B,
+  // so the tunnel sticks out of it at both ends; nestW = sleeve width ÷ tunnel width, nestOp = its opacity.
+  // `nest: false` keeps the plain line. Positions never change: the sleeve simply follows the tunnel's route.
+  const NEST = { nestA: 1, nestB: 2, nestW: 1.9, nestOp: 0.4 };
+  const nestP = (e, k) => typeof e[k] === "number" ? e[k] : NEST[k];
+  function tunnelLegs(t) {   // [{ from, to, pts }] — each stretch of a drawn tunnel between two consecutive boxes
+    if (!isTube(t) || !edgeDrawn(t) || t.fromOn || t.toOn) return [];
+    const ends = edgeEnds(t); if (!ends) return [];
+    if (!Array.isArray(t.path) && viaBoxes(t).length) {
+      const r = viaRouteSegs(ends.a, ends.b, t);
+      return r.ranges.map(([i, j], k) => ({ from: r.ids[k], to: r.ids[k + 1], pts: r.pts.slice(i, j + 1) }));
+    }
+    return [{ from: t.from, to: t.to, pts: pipePoly(ends.a, ends.b, t) }];
+  }
+  function nestHost(e) {   // the tunnel stretch this link carries (oriented from e.from to e.to), or null
+    if (e.nest === false || roleOf(e) !== "link" || e.fromOn || e.toOn) return null;
+    for (const t of S.data.edges) for (const L of tunnelLegs(t)) {
+      if (L.from === e.from && L.to === e.to) return { t, pts: dedupe(L.pts) };
+      if (L.from === e.to && L.to === e.from) return { t, pts: dedupe(L.pts).reverse() };
+    }
+    return null;
+  }
+  function trimPoly(poly, whichEnd, len) {   // cut len off one end, across as many segments as needed (null = nothing left)
+    let p = whichEnd === "end" ? poly.slice().reverse() : poly.slice(), left = len;
+    while (p.length >= 2) {
+      const L = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y);
+      if (L > left) { const t = left / L; p[0] = { x: p[0].x + (p[1].x - p[0].x) * t, y: p[0].y + (p[1].y - p[0].y) * t }; break; }
+      left -= L; p = p.slice(1);
+    }
+    if (p.length < 2) return null;
+    return whichEnd === "end" ? p.reverse() : p;
+  }
+  function sleevePoly(e, nh) {
+    const R = nestP(e, "nestW") * (nh.t.pw || 22) / 2, s = trimPoly(nh.pts, "start", nestP(e, "nestA") * R);
+    return { R, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
+  }
   function gateSplit(poly, e) {   // FR93: the pipe is interrupted at the gate box's centre (an opened port)
     const gn = e.gate && node(e.gate);
     if (!gn || !visible(gn) || !(e.via || []).includes(e.gate)) return null;
@@ -642,14 +682,27 @@
 
     let selPoly = null;
     const gFront = el("g", { class: "front-edges" });   // FR96: z "front" lines, put above the boxes once they're drawn
+    const gSleeve = el("g", { class: "sleeves" });   // NT3: sleeves go above every tunnel (so the tunnel shows INSIDE them)
     for (const e of S.data.edges) {
       if (!visible(e)) continue;
       const ends = edgeEnds(e, boxOf); if (!ends) continue;
       const { a, b } = ends, kind = e.kind || "plain";
-      const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : gEdges);
+      const nh = nestHost(e), sl = nh && sleevePoly(e, nh);
+      const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : sl && sl.poly ? gSleeve : gEdges);
       let mx, my, iconOnLine = false;
       const role = roleOf(e);
-      if (isTube(e)) {
+      if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
+        el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
+        drawMarioPipe(el("g", { opacity: nestP(e, "nestOp") }, g), sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
+        if (S.selEdge === e.id) selPoly = sl.poly;
+        const m = midOfPoly(sl.poly); mx = m.x; my = m.y;
+        const badge = kind !== "plain" && EDGE_ICON[kind];
+        if (badge) {
+          el("circle", { cx: mx, cy: my, r: EBADGE / 2 + 5, fill: "#0b0e14", stroke: lineColor(e) || "#6e7681", "stroke-width": 2 }, g);
+          const u = el("use", { href: "#ic-" + badge, x: mx - EBADGE / 2, y: my - EBADGE / 2, width: EBADGE, height: EBADGE }, g);
+          u.style.color = "#c9d1d9"; iconOnLine = true;
+        }
+      } else if (isTube(e)) {
         const poly = dedupe(pipePoly(a, b, e));
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         const gs = gateSplit(poly, e);   // FR93: port-forward = the pipe is broken open at the router
@@ -738,6 +791,7 @@
       el("circle", { cx: gt.c.x, cy: gt.c.y, r: gt.r - 1, fill: "#0b0e14", stroke: gt.color, "stroke-width": 3 }, gg);
       const u = el("use", { href: "#ic-barrier", x: gt.c.x - s / 2, y: gt.c.y - s / 2, width: s, height: s }, gg); u.style.color = gt.color;
     }
+    gEdges.appendChild(gSleeve);   // NT3: after all tunnels, still under the boxes
     gNodes.appendChild(gFront);   // FR102: "front" lines go above the gate badges too (an arrowhead on a gate stays visible)
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(anchorBox(sn, boxOf[sn.id])); }   // FR99: on the icon
@@ -750,7 +804,8 @@
     const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
     const ends = e && edgeEnds(e), a = ends && ends.a, b = ends && ends.b;
     if (!e || !a || !b) { p.style.display = "none"; S._panelEdge = null; return; }
-    const poly = dedupe(pipePoly(a, b, e)), mid = midOfPoly(poly), k = S.view.k;
+    const nh = nestHost(e), sl = nh && sleevePoly(e, nh);   // NT: a sleeve's box sits by the sleeve, not its unused own route
+    const poly = sl && sl.poly ? sl.poly : dedupe(pipePoly(a, b, e)), mid = midOfPoly(poly), k = S.view.k;
     p.style.display = "block";   // shown before measuring: FR79 the box sits clear of the line so every segment stays grabbable
     const W = p.offsetWidth, Hh = p.offsetHeight, mx = S.view.x + mid.x * k, my = S.view.y + mid.y * k, pad = ((e.pw || 22) / 2) * k + 8;
     const hits = (x, y) => poly.some((q, i) => {   // would the box at (x, y) cover any segment of the line?
@@ -1322,6 +1377,11 @@
   }
   function edgeDragStart(e, wp) {
     const base = { id: e.id, wx0: wp.x, wy0: wp.y, moved: false };
+    const nh = nestHost(e);
+    if (nh) {   // NT5: a sleeve has no route of its own — it follows the tunnel inside it
+      status(`<b>${e.id}</b> is drawn around <b>${nh.t.id}</b> — drag that tunnel to reshape both (or set <code>nest: false</code> for a plain line)`);
+      return { ...base, fixed: true };
+    }
     if (!e.path && viaBoxes(e).length) {   // FR95: drag one leg of a through-route; the run across a via box stays put
       const { a, b } = edgeEnds(e), r = viaRouteSegs(a, b, e), sg = r.segs[projPoly(r.pts, wp).i];
       if (!sg) { status(`that part runs through <b>${e.via.join(", ")}</b> — drag the line just outside it to move where it enters / leaves`); return { ...base, fixed: true }; }

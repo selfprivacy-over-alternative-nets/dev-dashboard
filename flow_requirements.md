@@ -891,3 +891,33 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   matrix. / meet. services** (handover 11: single-hostname tunnels serve the API only); **bandwidth limits (not
   published)**, still **beta**; a new name can take **~10 min** to work (DNS); **reinstall → new name, old links
   stop working** until the box keeps its Tailscale state (handover 13 node-sprawl). Verified live, no overlaps.
+
+## Nested-tunnel scope (branch `nested-tunnels`, experiment)
+
+The physical links and the tunnels used to be drawn as separate lines: e.g. on
+`setup-map;method=cable;net=0a;reach=portfwd;name=buy` the LAN cable `e_scable` ran server → router on its own, and
+the yellow tunnel showed how the server reaches the internet — but in reality that yellow tunnel runs *through* the
+LAN cable. This scope draws the tunnel inside the connection that carries it. **No positions change** — no device,
+text balloon or line offset in the diagram JSON is touched; only how links are drawn.
+
+- **NT1. A link that carries a tunnel is drawn as a sleeve around it.** A physical link (`role: link` — cable /
+  wifi / usb / lan) whose two ends are two **consecutive stops of a visible tunnel's route** (`from` → `via`… →
+  `to`, either direction) is drawn as a **larger tunnel around that stretch of the tunnel**, following the
+  tunnel's route exactly (not the link's own route). Found automatically for every view (e.g. `e_scable` around the
+  yellow / purple / orange / grey / blue tunnel, `e_swifi` on wifi-only), so each Reach shows its own tunnel inside
+  the same cable. A link that carries no tunnel (or `nest: false`) stays a plain line.
+- **NT2. The sleeve stops short of both ends, by different factors.** It ends **`nestA` × its radius** from the box
+  at end A (the link's `from`, default **1**) and **`nestB` × its radius** from end B (`to`, default **2**, wider),
+  so the inner tunnel **comes out further from the device** at both ends. The cut is measured along the route (over
+  bends if needed); a stretch too short for both cuts falls back to the plain line.
+- **NT3. Wider and see-through.** Sleeve width = **`nestW`** × the inner tunnel's width (`pw`, default 22; default
+  **1.9**), opacity **`nestOp`** (default **0.4**). It is drawn **above every tunnel** (so the tunnel visibly runs
+  *inside* it) and still **below the boxes**; `z: "front"` (FR96) still puts it above the boxes.
+- **NT4. The link's icon stays visible on the sleeve.** For now the LAN-cable / wifi / USB badge (FR89) and the
+  label are drawn on the sleeve (at its midpoint) instead of changing the ends.
+- **NT5. Editing.** Clicking the sleeve selects the link (the arrow box sits by the sleeve); dragging a segment
+  says it follows the tunnel inside — drag that tunnel (FR95) to reshape both; the end handles still re-attach the
+  link. All four parameters are optional fields on the link edge (absent = the defaults above).
+- **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
+  Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
+  wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.

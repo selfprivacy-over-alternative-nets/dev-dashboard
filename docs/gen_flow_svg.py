@@ -398,23 +398,54 @@ def leg_offsets(e, ids, i):   # FR95 — mirrors flow.js legO: the route's own s
 
 
 def pipe_poly(a, b, e, vb=None):   # vb = (id, box) of each of e["via"] that is shown (FR93 through-route)
+    return pipe_legs(a, b, e, vb)[0]
+
+
+def pipe_legs(a, b, e, vb=None):   # (pts, [(from, to, first, last) per leg]) — NT2: legs let a link sleeve one stretch
     p = e.get("path")
     if isinstance(p, list) and len(p) >= 2:
-        return [(q["x"], q["y"]) for q in p]
+        pts = [(q["x"], q["y"]) for q in p]
+        return pts, [(e["from"], e["to"], 0, len(pts) - 1)]
     if not vb:
-        return zroute(a, b, e)
+        pts = zroute(a, b, e)
+        return pts, [(e["from"], e["to"], 0, len(pts) - 1)]
     boxes = [a] + [x[1] for x in vb] + [b]
     ids = [e["from"]] + [x[0] for x in vb] + [e["to"]]
     last = len(boxes) - 2
-    pts = []
+    pts, legs = [], []
     for i in range(last + 1):
         o = leg_offsets(e, ids, i)
         leg = zroute(boxes[i], boxes[i + 1], o)
         if i > 0 and side_of(pts[-1], boxes[i]) == side_of(leg[0], boxes[i]):   # dead end → leave on the other axis
             leg = zroute(boxes[i], boxes[i + 1], dict(o, _H=not route_axis(boxes[i], boxes[i + 1], o)))
         c = gate_point(e, boxes[i]) if i > 0 and ids[i] == e.get("gate") else None   # FR100: the pipe crosses at the gate
+        s0 = 0 if i == 0 else len(pts) + 3
         pts = leg if i == 0 else pts[:-1] + through_box(pts[-1], leg[0], boxes[i], c) + leg[1:]
-    return pts
+        legs.append((ids[i], ids[i + 1], s0, len(pts) - 1))
+    return pts, legs
+
+
+NEST = {"nestA": 1, "nestB": 2, "nestW": 1.9, "nestOp": 0.4}   # NT1–NT5 — mirrors flow.js NEST
+
+
+def nest_p(e, k):
+    return e[k] if isinstance(e.get(k), (int, float)) else NEST[k]
+
+
+def trim_poly(poly, which, length):   # cut length off one end across segments (None = nothing left) — mirrors flow.js trimPoly
+    p = list(reversed(poly)) if which == "end" else list(poly)
+    left = length
+    while len(p) >= 2:
+        L = ((p[1][0] - p[0][0]) ** 2 + (p[1][1] - p[0][1]) ** 2) ** 0.5
+        if L > left:
+            t = left / L
+            p[0] = (p[0][0] + (p[1][0] - p[0][0]) * t, p[0][1] + (p[1][1] - p[0][1]) * t)
+            break
+        left -= L
+        p = p[1:]
+    if len(p) < 2:
+        return None
+    return list(reversed(p)) if which == "end" else p
 
 
 def mario_pipe_svg(poly, color, body_w=None, casing=False):
@@ -591,12 +622,30 @@ def render(d):
 
     gates = []   # FR93: open-port badges, drawn after the device icons
     front = []   # FR96: z "front" lines, drawn above the boxes (below the badges) — mirrors flow.js gFront
+    anc = lambda nid: anchor_box(by_id.get(nid), box.get(nid), vis, vis_ids, state)   # FR92: a pictogram's drawn icon
+    vbs = lambda ed: [(i, anchor_box(by_id[i], box[i], vis, vis_ids, state)) for i in (ed.get("via") or []) if i in box]   # FR93: (id, box)
+
+    def nest_host(e):   # NT1–NT5: the tunnel stretch this link carries, oriented e.from → e.to — mirrors flow.js nestHost
+        if e.get("nest") is False or role_of(e) != "link" or e.get("fromOn") or e.get("toOn"):
+            return None
+        for t in edges:
+            if role_of(t) != "tunnel" or t.get("fromOn") or t.get("toOn") or not when_ok(t.get("showWhen"), state):
+                continue
+            ta, tb = anc(t["from"]), anc(t["to"])
+            if not ta or not tb:
+                continue
+            pts, legs = pipe_legs(ta, tb, t, vbs(t))
+            for f, to, i, j in legs:
+                if (f, to) in ((e["from"], e["to"]), (e["to"], e["from"])):
+                    seg = _dedupe(pts[i:j + 1])
+                    return t, (seg if f == e["from"] else list(reversed(seg)))
+        return None
+
+    sleeves = []   # NT3: drawn after every tunnel, still under the boxes
     for e in edges:
         if not when_ok(e.get("showWhen"), state):
             continue
         mark = len(o)
-        anc = lambda nid: anchor_box(by_id.get(nid), box.get(nid), vis, vis_ids, state)   # FR92: a pictogram's drawn icon
-        vbs = lambda ed: [(i, anchor_box(by_id[i], box[i], vis, vis_ids, state)) for i in (ed.get("via") or []) if i in box]   # FR93: (id, box)
         a = pipe_spot_box(e["fromOn"], edges, box, state, anc, vbs) if e.get("fromOn") else anc(e["from"])
         b = pipe_spot_box(e["toOn"], edges, box, state, anc, vbs) if e.get("toOn") else anc(e["to"])
         if not a or not b:
@@ -605,6 +654,11 @@ def render(d):
         role = role_of(e)
         tube = role == "tunnel"
         badge = None
+        nh, nh_poly, nh_r = nest_host(e), None, 0
+        if nh:
+            nh_r = nest_p(e, "nestW") * (nh[0].get("pw") or 22) / 2
+            s_ = trim_poly(nh[1], "start", nest_p(e, "nestA") * nh_r)
+            nh_poly = s_ and trim_poly(s_, "end", nest_p(e, "nestB") * nh_r)
         if tube:
             poly = _dedupe(pipe_poly(a, b, e, vbs(e)))
             col = e.get("color") or "#8b949e"
@@ -617,6 +671,13 @@ def render(d):
             else:
                 o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))
             mx, my = longest_mid(poly) if e.get("via") else poly[max(1, len(poly) // 2) - 1]
+        elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
+            o.append(f'<g opacity="{nest_p(e, "nestOp"):g}">' + mario_pipe_svg(nh_poly, line_color(e) or "#8b949e", 2 * nh_r) + "</g>")
+            mx, my = mid_of_poly(nh_poly)
+            badge = EDGE_ICON.get(kind)
+            if badge:
+                o.append(f'<circle cx="{mx:.1f}" cy="{my:.1f}" r="{EBADGE / 2 + 5:g}" fill="#0b0e14" stroke="{line_color(e) or "#6e7681"}" stroke-width="2"/>'
+                         f'<use href="#ic-{badge}" x="{mx - EBADGE / 2:.1f}" y="{my - EBADGE / 2:.1f}" width="{EBADGE}" height="{EBADGE}" style="color:#c9d1d9"/>')
         else:
             # arrows connect side-MIDPOINT → side-midpoint, straight or 90° only (mirrors flow.js)
             poly = _dedupe(pipe_poly(a, b, e))
@@ -655,6 +716,10 @@ def render(d):
         if e.get("z") == "front":
             front.extend(o[mark:])
             del o[mark:]
+        elif nh_poly:
+            sleeves.extend(o[mark:])
+            del o[mark:]
+    o.extend(sleeves)
 
     rank = lambda n: 2 if active_container(n, state) else (0 if is_container(n, vis, vis_ids, state) else 1)
     for n in sorted(vis, key=rank):
