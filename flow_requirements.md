@@ -918,6 +918,13 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
 - **NT5. Editing.** Clicking the sleeve selects the link (the arrow box sits by the sleeve); dragging a segment
   says it follows the tunnel inside — drag that tunnel (FR95) to reshape both; the end handles still re-attach the
   link. All four parameters are optional fields on the link edge (absent = the defaults above).
+- **NT7. The sleeve's numbers are set in the line's arrow box.** (User: *configure those numbers in the line popup
+  when I select the encapsulating line.*) When the selected line is drawn as a sleeve, its arrow box shows a
+  **sleeve** section — **end A** / **end B** (0–6 × the sleeve radius, step 0.1), **width** (1.1–4 × the inner
+  tunnel, step 0.1), **opacity** (5–100 %) — live while dragging, one undo step per change; the head / width row
+  (not meaningful for a sleeve) is hidden. A value equal to the default is removed from the edge (nothing stored).
+  Verified live: values 0.5 / 4.0 / 2.6× / 70 % re-shape the sleeve and are saved as `nestA` / `nestB` / `nestW` /
+  `nestOp`; setting end A back to 1.0 removes `nestA`.
 - **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
   Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
   wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.

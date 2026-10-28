@@ -827,6 +827,9 @@
     for (const btn of p.querySelectorAll("#ep-costrow button")) btn.classList.toggle("on", (btn.getAttribute("data-cost") || "") === (e.cost || ""));
     $("ep-sizerow").style.display = isPipe ? "none" : "flex";
     $("ep-gaterow").style.display = isPipe && e.gate ? "flex" : "none";   // FR102: gate badge size
+    const sleeve = !!nestHost(e);   // NT7: the sleeve's numbers, only when this line is drawn as a sleeve
+    for (const r of p.querySelectorAll(".ep-nest")) r.style.display = sleeve ? "flex" : "none";
+    if (sleeve) { $("ep-sizerow").style.display = "none"; for (const k in NEST) { $("ep-" + k).value = nestP(e, k); $("ep-" + k + "v").textContent = nestFmt(k, nestP(e, k)); } }
     for (const btn of p.querySelectorAll("#ep-rolerow button")) btn.classList.toggle("on", btn.getAttribute("data-role") === role);
     $("ep-id").textContent = e.id;
     for (const btn of p.querySelectorAll("#ep-zrow button")) btn.classList.toggle("on", btn.getAttribute("data-z") === (e.z === "front" ? "front" : "back"));
@@ -1661,6 +1664,13 @@
   };
   $("ep-id").onclick = () => { const e = selEdgeObj(); if (!e) return;   // FR96: copy the line's id to refer to it
     navigator.clipboard.writeText(e.id).then(() => status(`copied line id <b>${e.id}</b>`), () => status(`line id: <b>${e.id}</b>`)); };
+  const nestFmt = (k, v) => k === "nestOp" ? Math.round(v * 100) + "%" : (+v).toFixed(1) + (k === "nestW" ? "×" : "");
+  for (const k in NEST) $("ep-" + k).oninput = () => {   // NT7: sleeve gaps / width / opacity, live
+    const e = selEdgeObj(); if (!e) return;
+    const v = Math.round(+$("ep-" + k).value * 100) / 100;
+    if (v === NEST[k]) delete e[k]; else e[k] = v;   // the default is not stored
+    $("ep-" + k + "v").textContent = nestFmt(k, v); markDirty(true); render();
+  };
   $("ep-gr").oninput = () => { const e = selEdgeObj(); if (!e) return;   // FR102: resize the open gate
     const v = +$("ep-gr").value; if (v === GATE_GAP) delete e.gr; else e.gr = v;
     $("ep-grv").textContent = v; markDirty(true); render(); };
