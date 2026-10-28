@@ -395,6 +395,10 @@
     const R = nestP(e, "nestW") * (nh.t.pw || 22) / 2, s = trimPoly(nh.pts, "start", nestP(e, "nestA") * R);
     return { R, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
   }
+  function panelLine(e, ends) {   // the line the arrow box is placed against + dragged relative to (NT9: for a sleeve, the
+    const nh = nestHost(e);        // tunnel stretch it wraps — fixed while end A / B / width change, so the box never jumps)
+    return nh ? nh.pts : dedupe(pipePoly(ends.a, ends.b, e));
+  }
   function gateSplit(poly, e) {   // FR93: the pipe is interrupted at the gate box's centre (an opened port)
     const gn = e.gate && node(e.gate);
     if (!gn || !visible(gn) || !(e.via || []).includes(e.gate)) return null;
@@ -809,8 +813,7 @@
     const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
     const ends = e && edgeEnds(e), a = ends && ends.a, b = ends && ends.b;
     if (!e || !a || !b) { p.style.display = "none"; S._panelEdge = null; return; }
-    const nh = nestHost(e), sl = nh && sleevePoly(e, nh);   // NT: a sleeve's box sits by the sleeve, not its unused own route
-    const poly = sl && sl.poly ? sl.poly : dedupe(pipePoly(a, b, e)), mid = midOfPoly(poly), k = S.view.k;
+    const poly = panelLine(e, ends), mid = midOfPoly(poly), k = S.view.k;
     p.style.display = "block";   // shown before measuring: FR79 the box sits clear of the line so every segment stays grabbable
     const W = p.offsetWidth, Hh = p.offsetHeight, mx = S.view.x + mid.x * k, my = S.view.y + mid.y * k, pad = ((e.pw || 22) / 2) * k + 8;
     const hits = (x, y) => poly.some((q, i) => {   // would the box at (x, y) cover any segment of the line?
@@ -1386,9 +1389,9 @@
   function edgeDragStart(e, wp) {
     const base = { id: e.id, wx0: wp.x, wy0: wp.y, moved: false };
     const nh = nestHost(e);
-    if (nh) {   // NT5: a sleeve has no route of its own — it follows the tunnel inside it
-      status(`<b>${e.id}</b> is drawn around <b>${nh.t.id}</b> — drag that tunnel to reshape both (or set <code>nest: false</code> for a plain line)`);
-      return { ...base, fixed: true };
+    if (nh) {   // NT9: a sleeve has no route of its own — dragging its segment drags that segment of the tunnel inside
+      status(`<b>${e.id}</b> is drawn around <b>${nh.t.id}</b> — dragging moves that tunnel's segment; the sleeve follows`);
+      return edgeDragStart(nh.t, wp);
     }
     if (!e.path && viaBoxes(e).length) {   // FR95: drag one leg of a through-route; the run across a via box stays put
       const { a, b } = edgeEnds(e), r = viaRouteSegs(a, b, e), sg = r.segs[projPoly(r.pts, wp).i];
@@ -1688,7 +1691,7 @@
     ev.preventDefault();
     const e = selEdgeObj(); if (!e) return;
     // FR98: dragging stores the box's spot ON the line (e.bp, diagram units from the line's midpoint) — saved + undoable
-    const ends = edgeEnds(e), mid = ends && midOfPoly(dedupe(pipePoly(ends.a, ends.b, e)));
+    const ends = edgeEnds(e), mid = ends && midOfPoly(panelLine(e, ends));
     if (!mid) return;
     const k = S.view.k, r = panel.getBoundingClientRect(), host = panel.offsetParent.getBoundingClientRect();
     const st = { x: ev.clientX, y: ev.clientY, dx: (r.left - host.left - S.view.x) / k - mid.x, dy: (r.top - host.top - S.view.y) / k - mid.y };

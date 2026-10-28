@@ -916,7 +916,7 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
 - **NT4. The link's icon stays visible on the sleeve.** For now the LAN-cable / wifi / USB badge (FR89) and the
   label are drawn on the sleeve (at its midpoint) instead of changing the ends.
 - **NT5. Editing.** Clicking the sleeve selects the link (the arrow box sits by the sleeve); dragging a segment
-  says it follows the tunnel inside — drag that tunnel (FR95) to reshape both; the end handles still re-attach the
+  drags that segment of the tunnel inside (NT9) — the sleeve follows; the end handles still re-attach the
   link. All four parameters are optional fields on the link edge (absent = the defaults above).
 - **NT7. The sleeve's numbers are set in the line's arrow box.** (User: *configure those numbers in the line popup
   when I select the encapsulating line.*) When the selected line is drawn as a sleeve, its arrow box shows a
@@ -932,6 +932,16 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   the box, so it can reach the drawn icon (the boxes are drawn on top, so it disappears under the icon, never over
   it). Mirrored in `docs/gen_flow_svg.py` `trim_poly`. Verified live: end A −1.2 / end B −1.5 makes the sleeve touch
   the server icon and the router's antennas; editor ↔ renderer identical.
+- **NT9. Sleeve editing fixes.** (User, on `setup-map;method=wifi;net=w1;reach=cloudflare;name=buy`: *it glitches when
+  I go negative; I can't move the rightmost vertical segment of `e_scable` any more; when I grab the box to adjust
+  the end distance it jumps ~2.5× its width to the right before I can move it.*) (1) The arrow box of a sleeve is
+  anchored to the **tunnel stretch it wraps** (fixed), not to the sleeve itself — before, its midpoint moved with
+  end A / B, so the box and the slider under the mouse shifted while sliding (the glitch). (2) Placing and dragging
+  the box use that **same anchor** (`panelLine`) — before, the box was placed by the sleeve but dragged relative to
+  the link's own, unused route, so the first drag jumped (FR98 `bp` offsets). (3) Dragging a sleeve's segment
+  **drags that segment of the tunnel inside** (FR95 leg offsets, stored on the tunnel) and the sleeve follows.
+  Verified live: box fixed while sliding end A 1 → −4; a grab moves the box exactly with the mouse; the rightmost
+  vertical segment drags (x 938 → 822) and the sleeve follows.
 - **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
   Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
   wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.
