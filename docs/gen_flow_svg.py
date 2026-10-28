@@ -493,8 +493,8 @@ def cable_svg(poly, color, c):   # NT13: the LAN-cable sleeve (flat cable + moul
 NEST = {"nestA": 1, "nestB": 2, "nestW": 1.9, "nestOp": 0.4}   # NT1–NT5 — mirrors flow.js NEST
 
 
-def nest_p(e, k):
-    return e[k] if isinstance(e.get(k), (int, float)) else NEST[k]
+def nest_p(e, k, own=False):   # own = a LAN cable carrying no tunnel (NT14): solid by default — mirrors flow.js nestP
+    return e[k] if isinstance(e.get(k), (int, float)) else (1 if k == "nestOp" and own else NEST[k])
 
 
 def trim_poly(poly, which, length):   # cut length off one end across segments (None = nothing left) — mirrors flow.js trimPoly
@@ -724,9 +724,10 @@ def render(d):
         tube = role == "tunnel"
         badge = None
         nh, nh_poly, nh_r = nest_host(e), None, 0
-        if nh:
-            nh_r = nest_p(e, "nestW") * (nh[0].get("pw") or 22) / 2
-            s_ = trim_poly(nh[1], "start", nest_p(e, "nestA") * nh_r)
+        own_ = not nh and kind in ("cable", "lan") and role == "link" and not e.get("fromOn") and not e.get("toOn") and e.get("nest") is not False   # NT14
+        if nh or own_:
+            nh_r = nest_p(e, "nestW") * ((nh[0].get("pw") or 22) if nh else 22) / 2
+            s_ = trim_poly(nh[1] if nh else _dedupe(pipe_poly(a, b, e)), "start", nest_p(e, "nestA") * nh_r)
             nh_poly = s_ and trim_poly(s_, "end", nest_p(e, "nestB") * nh_r)
         if tube:
             poly = _dedupe(pipe_poly(a, b, e, vbs(e)))
@@ -744,7 +745,7 @@ def render(d):
             lan_ = kind in ("cable", "lan")
             col_ = line_color(e) or ("#7b828a" if lan_ else "#8b949e")
             body_ = cable_svg(nh_poly, col_, nh_r) if lan_ else mario_pipe_svg(nh_poly, col_, 2 * nh_r)   # NT13
-            o.append(f'<g opacity="{nest_p(e, "nestOp"):g}">' + body_ + "</g>")
+            o.append(f'<g opacity="{nest_p(e, "nestOp", own_):g}">' + body_ + "</g>")
             mx, my = mid_of_poly(nh_poly)
             badge = EDGE_ICON.get(kind)
             if badge:

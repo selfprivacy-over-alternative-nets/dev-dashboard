@@ -973,6 +973,14 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   in `docs/gen_flow_svg.py`), so end A / end B (incl. negative), width still apply; the plug tips sit where the sleeve
   ends. **`nestOp` still fades the whole cable** (default 0.4 → the tunnel shows through; 1 = solid). The wifi sleeve
   is unchanged. Verified: plug geometry identical in editor and renderer; screenshots at 40 % and 100 %.
+- **NT14. Every LAN line is drawn as that cable.** (User: *replace all LAN cables with that design.*) A `kind`
+  `cable` / `lan` link that carries **no** tunnel (today `e_cable`, your computer → server "netboot", cable-install
+  views) is now drawn with the NT13 cable design too, along **its own route** (its segments still drag as before,
+  FR79), half-width = `nestW` × 22 / 2 like a sleeve, ends cut by `nestA` / `nestB` (incl. negative). Having nothing to
+  show through, its **opacity defaults to 1 (solid)**; a cable that carries a tunnel keeps 0.4. The arrow box shows the
+  sleeve sliders for every LAN cable; a value equal to its own default is not stored. `nest: false` keeps the old
+  thin line. Only `setup-map` has LAN lines (`e_cable`, `e_scable`). Verified: `e_cable` drawn solid (opacity 1),
+  `e_scable` 0.4; sliders show 1.0 / 2.0 / 1.9× / 100 %; dragging its own segment still works; editor ↔ renderer identical.
 - **NT12. The moving USB stick's size is a parameter.** (User: *a numeric factor w.r.t. the line width to increase
   the size of the moving USB icon.*) Field **`usbS`** on a USB link = the stick's radius ÷ the line width
   (default **1.8**, i.e. today's size on `e_usb`'s width-6 line); the stick's icon and the travelling light scale

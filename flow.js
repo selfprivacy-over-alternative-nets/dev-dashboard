@@ -358,7 +358,10 @@
   // so the tunnel sticks out of it at both ends; nestW = sleeve width ÷ tunnel width, nestOp = its opacity.
   // `nest: false` keeps the plain line. Positions never change: the sleeve simply follows the tunnel's route.
   const NEST = { nestA: 1, nestB: 2, nestW: 1.9, nestOp: 0.4 };
-  const nestP = (e, k) => typeof e[k] === "number" ? e[k] : NEST[k];
+  // own = a LAN cable that carries no tunnel (NT14): it has nothing to show through, so it defaults to solid
+  const nestDef = (k, own) => k === "nestOp" && own ? 1 : NEST[k];
+  const nestP = (e, k, own) => typeof e[k] === "number" ? e[k] : nestDef(k, own);
+  const isLan = (e) => (e.kind === "cable" || e.kind === "lan") && roleOf(e) === "link" && !e.fromOn && !e.toOn && e.nest !== false;
   function tunnelLegs(t) {   // [{ from, to, pts }] — each stretch of a drawn tunnel between two consecutive boxes
     if (!isTube(t) || !edgeDrawn(t) || t.fromOn || t.toOn) return [];
     const ends = edgeEnds(t); if (!ends) return [];
@@ -390,6 +393,10 @@
     }
     if (p.length < 2) return null;
     return whichEnd === "end" ? p.reverse() : p;
+  }
+  function ownCable(e, a, b) {   // NT14: a LAN cable with no tunnel inside — the cable design along its own route
+    const R = nestP(e, "nestW") * 22 / 2, s = trimPoly(dedupe(pipePoly(a, b, e)), "start", nestP(e, "nestA") * R);
+    return { R, own: true, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
   }
   function sleevePoly(e, nh) {
     const R = nestP(e, "nestW") * (nh.t.pw || 22) / 2, s = trimPoly(nh.pts, "start", nestP(e, "nestA") * R);
@@ -748,13 +755,13 @@
       if (!visible(e)) continue;
       const ends = edgeEnds(e, boxOf); if (!ends) continue;
       const { a, b } = ends, kind = e.kind || "plain";
-      const nh = nestHost(e), sl = nh && sleevePoly(e, nh);
+      const nh = nestHost(e), sl = nh ? sleevePoly(e, nh) : isLan(e) ? ownCable(e, a, b) : null;   // NT14: every LAN line is a cable
       const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : sl && sl.poly ? gSleeve : gEdges);
       let mx, my, iconOnLine = false;
       const role = roleOf(e);
       if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
         el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
-        const sg = el("g", { opacity: nestP(e, "nestOp") }, g);
+        const sg = el("g", { opacity: nestP(e, "nestOp", !!sl.own) }, g);
         if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#7b828a", sl.R);   // NT13
         else drawMarioPipe(sg, sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
         if (S.selEdge === e.id) selPoly = sl.poly;
@@ -892,9 +899,9 @@
     $("ep-gaterow").style.display = isPipe && e.gate ? "flex" : "none";   // FR102: gate badge size
     $("ep-usbrow").style.display = e.kind === "usb" && role === "link" ? "flex" : "none";   // NT12
     if (e.kind === "usb") { $("ep-usbS").value = usbS(e); $("ep-usbSv").textContent = usbS(e).toFixed(1) + "×"; }
-    const sleeve = !!nestHost(e);   // NT7: the sleeve's numbers, only when this line is drawn as a sleeve
+    const own = !nestHost(e), sleeve = !own || isLan(e);   // NT7 / NT14: the sleeve's numbers, for a sleeve or any LAN cable
     for (const r of p.querySelectorAll(".ep-nest")) r.style.display = sleeve ? "flex" : "none";
-    if (sleeve) { $("ep-sizerow").style.display = "none"; for (const k in NEST) { $("ep-" + k).value = nestP(e, k); $("ep-" + k + "v").textContent = nestFmt(k, nestP(e, k)); } }
+    if (sleeve) { $("ep-sizerow").style.display = "none"; for (const k in NEST) { $("ep-" + k).value = nestP(e, k, own); $("ep-" + k + "v").textContent = nestFmt(k, nestP(e, k, own)); } }
     for (const btn of p.querySelectorAll("#ep-rolerow button")) btn.classList.toggle("on", btn.getAttribute("data-role") === role);
     $("ep-id").textContent = e.id;
     for (const btn of p.querySelectorAll("#ep-zrow button")) btn.classList.toggle("on", btn.getAttribute("data-z") === (e.z === "front" ? "front" : "back"));
@@ -1739,7 +1746,7 @@
   for (const k in NEST) $("ep-" + k).oninput = () => {   // NT7: sleeve gaps / width / opacity, live
     const e = selEdgeObj(); if (!e) return;
     const v = Math.round(+$("ep-" + k).value * 100) / 100;
-    if (v === NEST[k]) delete e[k]; else e[k] = v;   // the default is not stored
+    if (v === nestDef(k, !nestHost(e))) delete e[k]; else e[k] = v;   // the default is not stored
     $("ep-" + k + "v").textContent = nestFmt(k, v); markDirty(true); render();
   };
   $("ep-gr").oninput = () => { const e = selEdgeObj(); if (!e) return;   // FR102: resize the open gate
