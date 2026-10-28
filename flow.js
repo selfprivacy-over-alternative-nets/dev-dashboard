@@ -417,41 +417,34 @@
     mo(lg, d([ca, ...poly, cb]), `0;${f(L0 / Lt)};${f((L0 + Lp) / Lt)};1;1;1`);
     el("animate", { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.5;0.55;1", dur: USB_T + "s", repeatCount: "indefinite" }, lg);
   }
-  // NT11: a LAN link's sleeve is drawn as a LAN CABLE — a round jacket (outline, body, highlight, shadow) ending in a
-  // boot + clear RJ45 plug (gold contacts, latch) at each end; the plug tips sit exactly where the sleeve ends (NT2 /
-  // NT8), so end A / end B / width / opacity still apply. Geometry in units of the sleeve radius R; mirrored in
-  // docs/gen_flow_svg.py cable_svg.
-  function cablePlugs(poly, R) {   // [{ P (tip), u (unit, pointing out of the cable) }] for both ends
+  // NT13: a LAN link's sleeve is drawn as a LAN CABLE (the chosen design): one flat colour with a thin dark outline; at
+  // each end a moulded boot — straight behind the head, |||| grip ribs, then a straight taper into the cable with a small
+  // step at the cable's thickness — and a clear RJ45 head with 8 gold contacts and the latch lever on top. The plug tips
+  // sit exactly where the sleeve ends (NT2 / NT8); nestOp still fades the whole cable so the tunnel can show through.
+  // Sizes in units of the cable's half-width c (= the sleeve radius); mirrored in docs/gen_flow_svg.py cable_svg.
+  const CBL = { headL: 1.26, headW: 1.52, straightL: 1.7, ribsL: 2.43, neckL: 3.39, step: 0.1, DARK: "#1f2328", HEAD: "#e9edf1", LATCH: "#d3dae1", GOLD: "#c9a43a" };
+  function cablePlugs(poly) {   // [{ P (tip), u (unit, pointing out of the cable) }] for both ends
     const end = (P, Q) => { const L = Math.hypot(P.x - Q.x, P.y - Q.y) || 1; return { P, u: { x: (P.x - Q.x) / L, y: (P.y - Q.y) / L } }; };
     return [end(poly[0], poly[1]), end(poly[poly.length - 1], poly[poly.length - 2])];
   }
-  function drawCable(parent, poly, color, R) {
-    const BOOT = 0.6 * R, BODY = 1.6 * R, OL = "#0a140a", W = 2 * R;
-    const j0 = trimPoly(poly, "start", BOOT + BODY), jacket = j0 && trimPoly(j0, "end", BOOT + BODY);
+  function drawCable(parent, poly, color, c) {
+    const K = CBL, j0 = trimPoly(poly, "start", K.neckL * c - 1), jacket = j0 && trimPoly(j0, "end", K.neckL * c - 1);
     const pts = dedupe(jacket || poly), d = "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
-    el("path", { d, fill: "none", stroke: OL, "stroke-width": W + 4, "stroke-linejoin": "round" }, parent);
-    el("path", { d, fill: "none", stroke: color, "stroke-width": W, "stroke-linejoin": "round" }, parent);
-    for (let i = 1; i < pts.length; i++) {   // round-jacket shading: a light stripe on one side, a dark one on the other
-      const A = pts[i - 1], B = pts[i], h = Math.abs(A.y - B.y) < 0.5, o = 0.42 * R;
-      const ln = (dx, dy, s, w) => el("line", { x1: A.x + dx, y1: A.y + dy, x2: B.x + dx, y2: B.y + dy, stroke: s, "stroke-width": w, "stroke-linecap": "round" }, parent);
-      ln(h ? 0 : -o, h ? -o : 0, shade(color, 1.55), 0.32 * R); ln(h ? 0 : o, h ? o : 0, shade(color, 0.55), 0.32 * R);
-    }
-    if (!jacket) return;   // too short for plugs: just the jacket
-    const rect = (P, u, from, to, w, attrs) => {   // axis-aligned box along u, from..to back from the tip P, w wide
-      const A = { x: P.x - u.x * from, y: P.y - u.y * from }, B = { x: P.x - u.x * to, y: P.y - u.y * to }, hz = Math.abs(u.x) > Math.abs(u.y);
-      return el("rect", hz ? { x: Math.min(A.x, B.x), y: P.y - w / 2, width: Math.abs(A.x - B.x), height: w, ...attrs }
-                           : { x: P.x - w / 2, y: Math.min(A.y, B.y), width: w, height: Math.abs(A.y - B.y), ...attrs }, parent);
-    };
-    for (const { P, u } of cablePlugs(poly, R)) {
-      const nx = -u.y, ny = u.x, sw = Math.max(1, 0.1 * R);
-      rect(P, u, BOOT + BODY, BODY, 2.2 * R, { fill: shade(color, 0.7), stroke: OL, "stroke-width": sw, rx: 0.25 * R });   // boot
-      rect(P, u, BODY, 0, 2.4 * R, { fill: "#dfe6ee", "fill-opacity": 0.85, stroke: OL, "stroke-width": sw, rx: 0.15 * R });   // clear plug
-      const Lx = { x: P.x + nx * 1.3 * R, y: P.y + ny * 1.3 * R };   // latch on one side
-      rect(Lx, u, 1.3 * R, 0.3 * R, 0.3 * R, { fill: "#c3ccd6", stroke: OL, "stroke-width": sw * 0.8 });
-      for (let k = 0; k < 6; k++) {   // 6 gold contacts at the tip
-        const off = (-0.75 + k * 0.3) * R, x = P.x + nx * off, y = P.y + ny * off;
-        el("line", { x1: x - u.x * 0.08 * R, y1: y - u.y * 0.08 * R, x2: x - u.x * 0.7 * R, y2: y - u.y * 0.7 * R, stroke: "#d4a72c", "stroke-width": 0.12 * R }, parent);
-      }
+    el("path", { d, fill: "none", stroke: K.DARK, "stroke-width": 2 * c + 3, "stroke-linejoin": "miter" }, parent);
+    el("path", { d, fill: "none", stroke: color, "stroke-width": 2 * c, "stroke-linejoin": "miter" }, parent);
+    if (!jacket) return;   // too short for two plugs: just the cable
+    for (const { P, u } of cablePlugs(poly)) {
+      const f = (a, b) => ({ x: P.x - u.x * a * c - u.y * b * c, y: P.y - u.y * a * c + u.x * b * c });   // a = back from the tip, b = across
+      const poly_ = (q, attrs) => el("polygon", { points: q.map((v) => `${v.x},${v.y}`).join(" "), ...attrs }, parent);
+      const ln = (a1, b1, a2, b2, s, w) => { const p = f(a1, b1), q = f(a2, b2); el("line", { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: s, "stroke-width": w }, parent); };
+      const OLA = { stroke: K.DARK, "stroke-width": 1.4 }, hw = K.headW - 0.04, rw = K.headW - 0.1, nw = 1 + K.step;
+      poly_([f(K.headL, -hw), f(K.straightL, -hw), f(K.ribsL, -rw), f(K.neckL, -nw), f(K.neckL, nw), f(K.ribsL, rw), f(K.straightL, hw), f(K.headL, hw)], { fill: color, ...OLA });   // boot
+      for (let k = 0; k < 6; k++) { const a = K.straightL + 0.04 + k * (K.ribsL - K.straightL - 0.08) / 5, h = K.headW - 0.09 - (a - K.straightL) / (K.ribsL - K.straightL) * 0.06;
+        ln(a, -h, a, h, K.DARK, 0.07 * c); }   // |||| grip ribs
+      poly_([f(0, -K.headW), f(K.headL, -K.headW), f(K.headL, K.headW), f(0, K.headW)], { fill: K.HEAD, ...OLA });   // clear head
+      for (let k = 0; k < 8; k++) { const b = -1.13 + k * 0.323; ln(0.07, b, 0.39, b, K.GOLD, Math.max(0.8, 0.08 * c)); }   // gold contacts
+      poly_([f(0.48, -0.39), f(0.48, 0.39), f(1.52, 0.5), f(1.61, 0.5), f(1.61, -0.5), f(1.52, -0.5)], { fill: K.LATCH, stroke: K.DARK, "stroke-width": 1.5 });   // latch lever
+      ln(0.48, -0.39, 0.48, 0.39, K.DARK, 2);   // its hinge
     }
   }
   function panelLine(e, ends) {   // the line the arrow box is placed against + dragged relative to (NT9: for a sleeve, the
@@ -762,7 +755,7 @@
       if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
         el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
         const sg = el("g", { opacity: nestP(e, "nestOp") }, g);
-        if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#8b949e", sl.R);   // NT11
+        if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#7b828a", sl.R);   // NT13
         else drawMarioPipe(sg, sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
         if (S.selEdge === e.id) selPoly = sl.poly;
         const m = midOfPoly(sl.poly); mx = m.x; my = m.y;

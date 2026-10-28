@@ -448,46 +448,45 @@ def usb_trip_svg(poly, a, b, R):   # R = moving stick radius (usbS × line width
             + f'<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.55;1" dur="{USB_T}s" repeatCount="indefinite"/></g></g>')
 
 
-def cable_svg(poly, color, R):   # NT11: a LAN-cable sleeve (jacket + boot + RJ45 plug at each end) — mirrors flow.js drawCable
-    BOOT, BODY, OL, W = 0.6 * R, 1.6 * R, "#0a140a", 2 * R
-    j0 = trim_poly(poly, "start", BOOT + BODY)
-    jacket = j0 and trim_poly(j0, "end", BOOT + BODY)
+CBL = {"headL": 1.26, "headW": 1.52, "straightL": 1.7, "ribsL": 2.43, "neckL": 3.39, "step": 0.1,
+       "DARK": "#1f2328", "HEAD": "#e9edf1", "LATCH": "#d3dae1", "GOLD": "#c9a43a"}   # NT13 — mirrors flow.js CBL
+
+
+def cable_svg(poly, color, c):   # NT13: the LAN-cable sleeve (flat cable + moulded boot + RJ45 head + latch) — mirrors flow.js drawCable
+    K = CBL
+    j0 = trim_poly(poly, "start", K["neckL"] * c - 1)
+    jacket = j0 and trim_poly(j0, "end", K["neckL"] * c - 1)
     pts = _dedupe(jacket or poly)
     d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-    o = [f'<path d="{d}" fill="none" stroke="{OL}" stroke-width="{W + 4:g}" stroke-linejoin="round"/>',
-         f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{W:g}" stroke-linejoin="round"/>']
-    ln = lambda x1, y1, x2, y2, s, w: f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{s}" stroke-width="{w:g}" stroke-linecap="round"/>'
-    for i in range(1, len(pts)):
-        (ax, ay), (bx, by) = pts[i - 1], pts[i]
-        h, off = abs(ay - by) < 0.5, 0.42 * R
-        for sgn, col in ((-1, shade(color, 1.55)), (1, shade(color, 0.55))):
-            dx, dy = (0, sgn * off) if h else (sgn * off, 0)
-            o.append(ln(ax + dx, ay + dy, bx + dx, by + dy, col, 0.32 * R))
+    o = [f'<path d="{d}" fill="none" stroke="{K["DARK"]}" stroke-width="{2 * c + 3:g}" stroke-linejoin="miter"/>',
+         f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{2 * c:g}" stroke-linejoin="miter"/>']
     if not jacket:
         return "".join(o)
-
-    def rect(P, u, frm, to, w, attrs):
-        A = (P[0] - u[0] * frm, P[1] - u[1] * frm)
-        B = (P[0] - u[0] * to, P[1] - u[1] * to)
-        if abs(u[0]) > abs(u[1]):
-            x, y, ww, hh = min(A[0], B[0]), P[1] - w / 2, abs(A[0] - B[0]), w
-        else:
-            x, y, ww, hh = P[0] - w / 2, min(A[1], B[1]), w, abs(A[1] - B[1])
-        return f'<rect x="{x:.1f}" y="{y:.1f}" width="{ww:.1f}" height="{hh:.1f}" {attrs}/>'
 
     def end(P, Q):
         L = ((P[0] - Q[0]) ** 2 + (P[1] - Q[1]) ** 2) ** 0.5 or 1
         return P, ((P[0] - Q[0]) / L, (P[1] - Q[1]) / L)
-    sw = max(1, 0.1 * R)
     for P, u in (end(poly[0], poly[1]), end(poly[-1], poly[-2])):
-        nx, ny = -u[1], u[0]
-        o.append(rect(P, u, BOOT + BODY, BODY, 2.2 * R, f'fill="{shade(color, 0.7)}" stroke="{OL}" stroke-width="{sw:g}" rx="{0.25 * R:g}"'))
-        o.append(rect(P, u, BODY, 0, 2.4 * R, f'fill="#dfe6ee" fill-opacity="0.85" stroke="{OL}" stroke-width="{sw:g}" rx="{0.15 * R:g}"'))
-        o.append(rect((P[0] + nx * 1.3 * R, P[1] + ny * 1.3 * R), u, 1.3 * R, 0.3 * R, 0.3 * R, f'fill="#c3ccd6" stroke="{OL}" stroke-width="{sw * 0.8:g}"'))
+        f = lambda a, b: (P[0] - u[0] * a * c - u[1] * b * c, P[1] - u[1] * a * c + u[0] * b * c)
+        pg = lambda q, attrs: '<polygon points="' + " ".join(f"{x:.1f},{y:.1f}" for x, y in q) + f'" {attrs}/>'
+
+        def ln(a1, b1, a2, b2, s, w):
+            (x1, y1), (x2, y2) = f(a1, b1), f(a2, b2)
+            return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{s}" stroke-width="{w:g}"/>'
+        ola = f'stroke="{K["DARK"]}" stroke-width="1.4"'
+        hw, rw, nw = K["headW"] - 0.04, K["headW"] - 0.1, 1 + K["step"]
+        o.append(pg([f(K["headL"], -hw), f(K["straightL"], -hw), f(K["ribsL"], -rw), f(K["neckL"], -nw),
+                     f(K["neckL"], nw), f(K["ribsL"], rw), f(K["straightL"], hw), f(K["headL"], hw)], f'fill="{color}" {ola}'))
         for k in range(6):
-            off = (-0.75 + k * 0.3) * R
-            x, y = P[0] + nx * off, P[1] + ny * off
-            o.append(ln(x - u[0] * 0.08 * R, y - u[1] * 0.08 * R, x - u[0] * 0.7 * R, y - u[1] * 0.7 * R, "#d4a72c", 0.12 * R).replace(' stroke-linecap="round"', ""))
+            a = K["straightL"] + 0.04 + k * (K["ribsL"] - K["straightL"] - 0.08) / 5
+            h = K["headW"] - 0.09 - (a - K["straightL"]) / (K["ribsL"] - K["straightL"]) * 0.06
+            o.append(ln(a, -h, a, h, K["DARK"], 0.07 * c))
+        o.append(pg([f(0, -K["headW"]), f(K["headL"], -K["headW"]), f(K["headL"], K["headW"]), f(0, K["headW"])], f'fill="{K["HEAD"]}" {ola}'))
+        for k in range(8):
+            b = -1.13 + k * 0.323
+            o.append(ln(0.07, b, 0.39, b, K["GOLD"], max(0.8, 0.08 * c)))
+        o.append(pg([f(0.48, -0.39), f(0.48, 0.39), f(1.52, 0.5), f(1.61, 0.5), f(1.61, -0.5), f(1.52, -0.5)], f'fill="{K["LATCH"]}" stroke="{K["DARK"]}" stroke-width="1.5"'))
+        o.append(ln(0.48, -0.39, 0.48, 0.39, K["DARK"], 2))
     return "".join(o)
 
 
@@ -742,8 +741,9 @@ def render(d):
                 o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))
             mx, my = longest_mid(poly) if e.get("via") else poly[max(1, len(poly) // 2) - 1]
         elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
-            col_ = line_color(e) or "#8b949e"
-            body_ = cable_svg(nh_poly, col_, nh_r) if kind in ("cable", "lan") else mario_pipe_svg(nh_poly, col_, 2 * nh_r)   # NT11
+            lan_ = kind in ("cable", "lan")
+            col_ = line_color(e) or ("#7b828a" if lan_ else "#8b949e")
+            body_ = cable_svg(nh_poly, col_, nh_r) if lan_ else mario_pipe_svg(nh_poly, col_, 2 * nh_r)   # NT13
             o.append(f'<g opacity="{nest_p(e, "nestOp"):g}">' + body_ + "</g>")
             mx, my = mid_of_poly(nh_poly)
             badge = EDGE_ICON.get(kind)

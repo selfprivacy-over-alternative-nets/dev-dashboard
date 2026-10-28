@@ -952,7 +952,7 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   same markup in the live page and the static SVG (`usb_trip_svg`); not clickable; hidden when the viewer prefers
   reduced motion (CSS media query, also inside the static SVG). Verified with the SVG timeline paused at 0.3 /
   0.9 / 1.7 / 2.6 / 3.1 / 4.2 / 5.6 s.
-- **NT11. A LAN link's sleeve is drawn as a LAN cable.** (User: *change the encapsulating LAN tunnel to an
+- **NT11. A LAN link's sleeve is drawn as a LAN cable** *(look superseded by NT13)*. (User: *change the encapsulating LAN tunnel to an
   encapsulating LAN cable*; agreed reasoning: a cable with RJ45 plugs is recognised without a legend, while a pipe
   around a pipe reads as "a tunnel inside a tunnel".) For `kind` `cable` / `lan` the NT1 sleeve is no longer a
   Mario pipe but a **cable**: a round jacket (dark outline, body in the line colour — default grey `#8b949e`, a
@@ -961,6 +961,18 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   The plug tips sit exactly where the sleeve ends, so end A / end B (incl. negative, NT8), width and opacity work
   unchanged; a stretch too short for two plugs shows just the jacket. The wifi sleeve stays a see-through pipe.
   Mirrored in `docs/gen_flow_svg.py` `cable_svg`; verified: plug / boot geometry identical in editor and renderer.
+- **NT13. The LAN cable is the chosen "design 3, refined".** (User picked it from the galleries — 100 forms, then
+  20 duct variants, then 20 end-cap designs — with: *one bland colour; the |||| of the flexible part kept; the latch on
+  top of the end block that shows the gold contacts; no flange at the neck — the boot tapers from the grip ribs
+  straight into the cable with a small step at the cable's thickness*, and *keep the opacity so the tunnel can show
+  through*.) Replaces the NT11 look for `kind` `cable` / `lan` sleeves: the cable is **one flat colour** (the line
+  colour, default slate `#7b828a`) with a thin dark outline; at each end a **moulded boot** (straight behind the head,
+  six **grip ribs**, then a straight **taper** down to a neck 10 % wider than the cable — the small step), a **clear
+  RJ45 head** with **8 gold contacts** at the tip, and the **latch lever on top of the head** (hinged behind the
+  contacts, stopping before the ribs). All sizes are multiples of the cable's half-width (`CBL` in `flow.js`, mirrored
+  in `docs/gen_flow_svg.py`), so end A / end B (incl. negative), width still apply; the plug tips sit where the sleeve
+  ends. **`nestOp` still fades the whole cable** (default 0.4 → the tunnel shows through; 1 = solid). The wifi sleeve
+  is unchanged. Verified: plug geometry identical in editor and renderer; screenshots at 40 % and 100 %.
 - **NT12. The moving USB stick's size is a parameter.** (User: *a numeric factor w.r.t. the line width to increase
   the size of the moving USB icon.*) Field **`usbS`** on a USB link = the stick's radius ÷ the line width
   (default **1.8**, i.e. today's size on `e_usb`'s width-6 line); the stick's icon and the travelling light scale
