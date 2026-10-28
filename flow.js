@@ -378,6 +378,11 @@
   }
   function trimPoly(poly, whichEnd, len) {   // cut len off one end, across as many segments as needed (null = nothing left)
     let p = whichEnd === "end" ? poly.slice().reverse() : poly.slice(), left = len;
+    if (left < 0 && p.length >= 2) {   // NT8: negative = lengthen the end segment outward (reach into the box, up to its icon)
+      const L = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+      p[0] = { x: p[0].x + (p[0].x - p[1].x) / L * -left, y: p[0].y + (p[0].y - p[1].y) / L * -left };
+      return whichEnd === "end" ? p.reverse() : p;
+    }
     while (p.length >= 2) {
       const L = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y);
       if (L > left) { const t = left / L; p[0] = { x: p[0].x + (p[1].x - p[0].x) * t, y: p[0].y + (p[1].y - p[0].y) * t }; break; }

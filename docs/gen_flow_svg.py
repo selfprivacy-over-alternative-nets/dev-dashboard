@@ -435,6 +435,10 @@ def nest_p(e, k):
 def trim_poly(poly, which, length):   # cut length off one end across segments (None = nothing left) — mirrors flow.js trimPoly
     p = list(reversed(poly)) if which == "end" else list(poly)
     left = length
+    if left < 0 and len(p) >= 2:   # NT8: negative = lengthen the end segment outward — mirrors flow.js
+        L = ((p[0][0] - p[1][0]) ** 2 + (p[0][1] - p[1][1]) ** 2) ** 0.5 or 1
+        p[0] = (p[0][0] + (p[0][0] - p[1][0]) / L * -left, p[0][1] + (p[0][1] - p[1][1]) / L * -left)
+        return list(reversed(p)) if which == "end" else p
     while len(p) >= 2:
         L = ((p[1][0] - p[0][0]) ** 2 + (p[1][1] - p[0][1]) ** 2) ** 0.5
         if L > left:

@@ -925,6 +925,13 @@ text balloon or line offset in the diagram JSON is touched; only how links are d
   (not meaningful for a sleeve) is hidden. A value equal to the default is removed from the edge (nothing stored).
   Verified live: values 0.5 / 4.0 / 2.6× / 70 % re-shape the sleeve and are saved as `nestA` / `nestB` / `nestW` /
   `nestOp`; setting end A back to 1.0 removes `nestA`.
+- **NT8. End gaps can be negative, so the sleeve can touch the icons.** (User: *allow sliding the distance into
+  negative values w.r.t. the radius — hit boxes are square but icons aren't; I want it to be able to touch the
+  icons.*) `nestA` / `nestB` (and their sliders) go from **−4** to 6: a negative gap **lengthens** the sleeve's
+  end segment outward by that many radii, past where the tunnel stretch meets the box's square outline and into
+  the box, so it can reach the drawn icon (the boxes are drawn on top, so it disappears under the icon, never over
+  it). Mirrored in `docs/gen_flow_svg.py` `trim_poly`. Verified live: end A −1.2 / end B −1.5 makes the sleeve touch
+  the server icon and the router's antennas; editor ↔ renderer identical.
 - **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
   Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
   wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.
