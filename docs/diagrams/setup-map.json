@@ -52,7 +52,7 @@
     },
     {
       "dir": "both",
-      "eo": -5,
+      "eo": -160,
       "from": "server",
       "id": "e_scable",
       "kind": "cable",
@@ -69,12 +69,16 @@
           "uc"
         ]
       },
-      "so": -127,
+      "so": -145,
       "ss": 17,
       "to": "router"
     },
     {
-      "eo": -134,
+      "bp": {
+        "dx": 476,
+        "dy": -219
+      },
+      "eo": -160,
       "from": "server",
       "id": "e_swifi",
       "kind": "wifi",
@@ -87,7 +91,7 @@
           "ub"
         ]
       },
-      "so": -134,
+      "so": -148,
       "ss": 19,
       "to": "router"
     },
@@ -148,6 +152,7 @@
           "tailscale"
         ]
       },
+      "so": 430,
       "to": "relayTS",
       "via": [
         "router"
@@ -189,7 +194,7 @@
           "cloudflare"
         ]
       },
-      "so": 9,
+      "so": 433,
       "to": "relayCF",
       "via": [
         "router"
@@ -212,7 +217,7 @@
     },
     {
       "color": "#3b82f6",
-      "eo": 317,
+      "eo": 197,
       "from": "server",
       "id": "e_v6",
       "kind": "pipe",
@@ -228,14 +233,19 @@
           "ipv6"
         ]
       },
+      "so": 382,
       "to": "inet",
       "via": [
         "router"
       ]
     },
     {
+      "bp": {
+        "dx": -143,
+        "dy": -487
+      },
       "color": "#eab308",
-      "eo": 334,
+      "eo": 129,
       "from": "server",
       "gate": "router",
       "gx": -8,
@@ -245,6 +255,7 @@
       "label": "Direct · IPv4 · needs public IP",
       "legs": {
         "router>inet": {
+          "mo": 286,
           "so": 154,
           "ss": -9
         }
@@ -255,6 +266,7 @@
           "portfwd"
         ]
       },
+      "so": 12,
       "to": "inet",
       "via": [
         "router"
@@ -456,7 +468,7 @@
       "label": "",
       "lw": 5,
       "role": "action",
-      "so": -6,
+      "so": 121,
       "to": "pfwarn"
     },
     {
@@ -466,8 +478,7 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -86,
-      "es": -26,
+      "eo": -33,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
@@ -504,14 +515,14 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -92,
+      "eo": -17,
       "es": 19,
       "from": "you",
       "id": "e8",
       "kind": "plain",
       "label": "",
       "role": "action",
-      "so": -203,
+      "so": -128,
       "ss": -40,
       "to": "buy"
     },
@@ -611,8 +622,8 @@
     },
     {
       "bp": {
-        "dx": 1048,
-        "dy": 462
+        "dx": -844,
+        "dy": 550
       },
       "cost": "central",
       "dir": "to",
@@ -623,7 +634,7 @@
       "kind": "plain",
       "label": "",
       "role": "action",
-      "so": -203,
+      "so": -250,
       "ss": -40,
       "to": "tsname"
     },
@@ -634,8 +645,7 @@
       },
       "cost": "central",
       "dir": "to",
-      "eo": -99,
-      "es": -26,
+      "eo": -40,
       "from": "tsname",
       "id": "e_ts_srv",
       "kind": "plain",
@@ -991,8 +1001,8 @@
         ]
       },
       "w": 240,
-      "x": 860,
-      "y": 515
+      "x": 583,
+      "y": 408
     },
     {
       "color": "red",
@@ -1007,7 +1017,7 @@
         ]
       },
       "w": 173,
-      "x": 29,
+      "x": 155,
       "y": 422
     },
     {
