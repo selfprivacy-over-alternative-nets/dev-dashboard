@@ -901,3 +901,110 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   with ⌖ anchored (FR104) every load re-panned to the anchor spot — now **the anchor spot moves along with your pan /
   zoom**, so it agrees with the view you saved. Verified (Save intercepted — nothing written): pan → dirty; Save sends
   `meta.view`; reload with the browser memory cleared restores the same pan + zoom, with and without an anchor.
+
+## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
+
+The physical links and the tunnels used to be drawn as separate lines: e.g. on
+`setup-map;method=cable;net=0a;reach=portfwd;name=buy` the LAN cable `e_scable` ran server → router on its own, and
+the yellow tunnel showed how the server reaches the internet — but in reality that yellow tunnel runs *through* the
+LAN cable. This scope draws the tunnel inside the connection that carries it. **No positions change** — no device,
+text balloon or line offset in the diagram JSON is touched; only how links are drawn.
+
+- **NT1. A link that carries a tunnel is drawn as a sleeve around it.** A physical link (`role: link` — cable /
+  wifi / usb / lan) whose two ends are two **consecutive stops of a visible tunnel's route** (`from` → `via`… →
+  `to`, either direction) is drawn as a **larger tunnel around that stretch of the tunnel**, following the
+  tunnel's route exactly (not the link's own route). Found automatically for every view (e.g. `e_scable` around the
+  yellow / purple / orange / grey / blue tunnel, `e_swifi` on wifi-only), so each Reach shows its own tunnel inside
+  the same cable. A link that carries no tunnel (or `nest: false`) stays a plain line.
+- **NT2. The sleeve stops short of both ends, by different factors.** It ends **`nestA` × its radius** from the box
+  at end A (the link's `from`, default **1**) and **`nestB` × its radius** from end B (`to`, default **2**, wider),
+  so the inner tunnel **comes out further from the device** at both ends. The cut is measured along the route (over
+  bends if needed); a stretch too short for both cuts falls back to the plain line.
+- **NT3. Wider and see-through.** Sleeve width = **`nestW`** × the inner tunnel's width (`pw`, default 22; default
+  **1.9**), opacity **`nestOp`** (default **0.4**). It is drawn **above every tunnel** (so the tunnel visibly runs
+  *inside* it) and still **below the boxes**; `z: "front"` (FR96) still puts it above the boxes.
+- **NT4. The link's icon stays visible on the sleeve.** For now the LAN-cable / wifi / USB badge (FR89) and the
+  label are drawn on the sleeve (at its midpoint) instead of changing the ends.
+- **NT5. Editing.** Clicking the sleeve selects the link (the arrow box sits by the sleeve); dragging a segment
+  drags that segment of the tunnel inside (NT9) — the sleeve follows; the end handles still re-attach the
+  link. All four parameters are optional fields on the link edge (absent = the defaults above).
+- **NT7. The sleeve's numbers are set in the line's arrow box.** (User: *configure those numbers in the line popup
+  when I select the encapsulating line.*) When the selected line is drawn as a sleeve, its arrow box shows a
+  **sleeve** section — **end A** / **end B** (0–6 × the sleeve radius, step 0.1), **width** (1.1–4 × the inner
+  tunnel, step 0.1), **opacity** (5–100 %) — live while dragging, one undo step per change; the head / width row
+  (not meaningful for a sleeve) is hidden. A value equal to the default is removed from the edge (nothing stored).
+  Verified live: values 0.5 / 4.0 / 2.6× / 70 % re-shape the sleeve and are saved as `nestA` / `nestB` / `nestW` /
+  `nestOp`; setting end A back to 1.0 removes `nestA`.
+- **NT8. End gaps can be negative, so the sleeve can touch the icons.** (User: *allow sliding the distance into
+  negative values w.r.t. the radius — hit boxes are square but icons aren't; I want it to be able to touch the
+  icons.*) `nestA` / `nestB` (and their sliders) go from **−4** to 6: a negative gap **lengthens** the sleeve's
+  end segment outward by that many radii, past where the tunnel stretch meets the box's square outline and into
+  the box, so it can reach the drawn icon (the boxes are drawn on top, so it disappears under the icon, never over
+  it). Mirrored in `docs/gen_flow_svg.py` `trim_poly`. Verified live: end A −1.2 / end B −1.5 makes the sleeve touch
+  the server icon and the router's antennas; editor ↔ renderer identical.
+- **NT9. Sleeve editing fixes.** (User, on `setup-map;method=wifi;net=w1;reach=cloudflare;name=buy`: *it glitches when
+  I go negative; I can't move the rightmost vertical segment of `e_scable` any more; when I grab the box to adjust
+  the end distance it jumps ~2.5× its width to the right before I can move it.*) (1) The arrow box of a sleeve is
+  anchored to the **tunnel stretch it wraps** (fixed), not to the sleeve itself — before, its midpoint moved with
+  end A / B, so the box and the slider under the mouse shifted while sliding (the glitch). (2) Placing and dragging
+  the box use that **same anchor** (`panelLine`) — before, the box was placed by the sleeve but dragged relative to
+  the link's own, unused route, so the first drag jumped (FR98 `bp` offsets). (3) Dragging a sleeve's segment
+  **drags that segment of the tunnel inside** (FR95 leg offsets, stored on the tunnel) and the sleeve follows.
+  Verified live: box fixed while sliding end A 1 → −4; a grab moves the box exactly with the mouse; the rightmost
+  vertical segment drags (x 938 → 822) and the sleeve follows.
+- **NT10. A USB link animates the stick carrying the data.** (User: *show a USB-stick icon travelling across (and
+  back) the line for USB transfer, with a small light as payload that comes out of "your computer" and goes into
+  "your new private server".*) Every `kind: usb` link (today `e_usb`, USB install views) gets a looping **6 s**
+  animation: a small **light** appears at the source box's centre (it shows through the laptop's screen) and moves
+  to the line start (0–10 %), rides the **USB stick** (an `ic-usb` badge) along the line (10–45 %), goes into the
+  target box's centre and fades out under its icon (45–55 %); the stick waits, then travels **back empty**
+  (55–90 %) and waits at the start. Plain SVG `<animateMotion>` along the drawn route (follows any re-routing), the
+  same markup in the live page and the static SVG (`usb_trip_svg`); not clickable; hidden when the viewer prefers
+  reduced motion (CSS media query, also inside the static SVG). Verified with the SVG timeline paused at 0.3 /
+  0.9 / 1.7 / 2.6 / 3.1 / 4.2 / 5.6 s.
+- **NT11. A LAN link's sleeve is drawn as a LAN cable** *(look superseded by NT13)*. (User: *change the encapsulating LAN tunnel to an
+  encapsulating LAN cable*; agreed reasoning: a cable with RJ45 plugs is recognised without a legend, while a pipe
+  around a pipe reads as "a tunnel inside a tunnel".) For `kind` `cable` / `lan` the NT1 sleeve is no longer a
+  Mario pipe but a **cable**: a round jacket (dark outline, body in the line colour — default grey `#8b949e`, a
+  light and a dark stripe for roundness) ending at each end in a **boot** (darker, 0.6 R long, 2.2 R wide) and a
+  **clear RJ45 plug** (1.6 R long, 2.4 R wide, 6 gold contacts at the tip, a latch on one side), R = sleeve radius.
+  The plug tips sit exactly where the sleeve ends, so end A / end B (incl. negative, NT8), width and opacity work
+  unchanged; a stretch too short for two plugs shows just the jacket. The wifi sleeve stays a see-through pipe.
+  Mirrored in `docs/gen_flow_svg.py` `cable_svg`; verified: plug / boot geometry identical in editor and renderer.
+- **NT13. The LAN cable is the chosen "design 3, refined".** (User picked it from the galleries — 100 forms, then
+  20 duct variants, then 20 end-cap designs — with: *one bland colour; the |||| of the flexible part kept; the latch on
+  top of the end block that shows the gold contacts; no flange at the neck — the boot tapers from the grip ribs
+  straight into the cable with a small step at the cable's thickness*, and *keep the opacity so the tunnel can show
+  through*.) Replaces the NT11 look for `kind` `cable` / `lan` sleeves: the cable is **one flat colour** (the line
+  colour, default slate `#7b828a`) with a thin dark outline; at each end a **moulded boot** (straight behind the head,
+  six **grip ribs**, then a straight **taper** down to a neck 10 % wider than the cable — the small step), a **clear
+  RJ45 head** with **8 gold contacts** at the tip, and the **latch lever on top of the head** (hinged behind the
+  contacts, stopping before the ribs). All sizes are multiples of the cable's half-width (`CBL` in `flow.js`, mirrored
+  in `docs/gen_flow_svg.py`), so end A / end B (incl. negative), width still apply; the plug tips sit where the sleeve
+  ends. **`nestOp` still fades the whole cable** (default 0.4 → the tunnel shows through; 1 = solid). The wifi sleeve
+  is unchanged. Verified: plug geometry identical in editor and renderer; screenshots at 40 % and 100 %.
+- **NT14. Every LAN line is drawn as that cable.** (User: *replace all LAN cables with that design.*) A `kind`
+  `cable` / `lan` link that carries **no** tunnel (today `e_cable`, your computer → server "netboot", cable-install
+  views) is now drawn with the NT13 cable design too, along **its own route** (its segments still drag as before,
+  FR79), half-width = `nestW` × 22 / 2 like a sleeve, ends cut by `nestA` / `nestB` (incl. negative). Having nothing to
+  show through, its **opacity defaults to 1 (solid)**; a cable that carries a tunnel keeps 0.4. The arrow box shows the
+  sleeve sliders for every LAN cable; a value equal to its own default is not stored. `nest: false` keeps the old
+  thin line. Only `setup-map` has LAN lines (`e_cable`, `e_scable`). Verified: `e_cable` drawn solid (opacity 1),
+  `e_scable` 0.4; sliders show 1.0 / 2.0 / 1.9× / 100 %; dragging its own segment still works; editor ↔ renderer identical.
+- **NT12. The moving USB stick's size is a parameter.** (User: *a numeric factor w.r.t. the line width to increase
+  the size of the moving USB icon.*) Field **`usbS`** on a USB link = the stick's radius ÷ the line width
+  (default **1.8**, i.e. today's size on `e_usb`'s width-6 line); the stick's icon and the travelling light scale
+  with it. Set with a **usb stick** slider (0.5–6×) in the arrow box of a USB link; the default is not stored.
+  Mirrored in `usb_trip_svg`. Verified live: 1.8× → 3.5× grows the stick radius 10.8 → 21, saved as `usbS: 3.5`.
+- **NT15. Applied to every diagram (merged into main).** (User: *apply those USB and LAN-cable and tunnel-in-tunnel
+  changes to all the diagrams.*) The behaviour is generic — any `kind: cable / lan` link is drawn as the NT13 cable,
+  any link between two consecutive stops of a shown tunnel becomes a sleeve, any `kind: usb` link gets the NT10
+  stick — so merging puts it in every diagram. Data: the only other physical connection, `tunnels`' **`p_lan`**
+  (*home LAN*, server → router), was a grey tunnel pipe with a hand-drawn 130-unit path that reached neither box; it
+  is now a **LAN cable** (`kind: cable`, `role: link`) routed box to box (path removed) so its plugs fit. Its routes
+  still start at the router (none run server → router), so it carries no sleeve there; `install` / `overview` have
+  no USB / LAN connections (their "netboot / USB" arrows are actions). Verified: all 550 view combinations of all
+  diagrams render with no page errors.
+- **NT6. Mirrored in the static SVG** (`docs/gen_flow_svg.py`: `pipe_legs`, `nest_host`, `trim_poly`, `NEST`).
+  Verified: editor ↔ renderer sleeve geometry identical point-for-point in five views (cable/portfwd,
+  wifi/onion, wifi-only/tailscale, usb/trycloudflare, cable+wifi/ipv6); no diagram JSON changed.

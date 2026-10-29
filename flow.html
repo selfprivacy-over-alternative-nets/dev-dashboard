@@ -99,6 +99,9 @@
     #edgepanel input[type=range] { width: 82px; vertical-align: middle; }
     #edgepanel input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--border);
                                    background: var(--panel); border-radius: 4px; cursor: pointer; }
+    .usb-trip { pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) { .usb-trip { display: none; } }   /* NT10 */
+    #edgepanel .ep-nest .val { width: 30px; }
     #edgepanel .val { color: var(--dim); font-size: 11px; width: 22px; display: inline-block; text-align: right; }
     #edgepanel #ep-id { color: var(--fg); font-size: 12px; background: var(--panel); border: 1px solid var(--border);
                         border-radius: 4px; padding: 1px 6px; cursor: copy; user-select: all; }
@@ -198,6 +201,18 @@
       <div class="row" id="ep-sizerow">
         <label>head</label><input id="ep-ah" type="range" min="6" max="48" step="1"><span class="val" id="ep-ahv"></span>
         <label>width</label><input id="ep-lw" type="range" min="1" max="24" step="1"><span class="val" id="ep-lwv"></span>
+      </div>
+      <div class="row ep-nest" id="ep-nestrow1">
+        <label>sleeve</label>
+        <label title="Gap at end A (the line's start box), in sleeve radii — negative reaches into the box, up to its icon">end A</label><input id="ep-nestA" type="range" min="-4" max="6" step="0.1"><span class="val" id="ep-nestAv"></span>
+        <label title="Gap at end B (the line's end box), in sleeve radii — negative reaches into the box, up to its icon">end B</label><input id="ep-nestB" type="range" min="-4" max="6" step="0.1"><span class="val" id="ep-nestBv"></span>
+      </div>
+      <div class="row ep-nest" id="ep-nestrow2">
+        <label title="Sleeve width ÷ the width of the tunnel inside it">width</label><input id="ep-nestW" type="range" min="1.1" max="4" step="0.1"><span class="val" id="ep-nestWv"></span>
+        <label title="How solid the sleeve is (lower = more see-through)">opacity</label><input id="ep-nestOp" type="range" min="0.05" max="1" step="0.05"><span class="val" id="ep-nestOpv"></span>
+      </div>
+      <div class="row" id="ep-usbrow">
+        <label title="Size of the moving USB stick, as a multiple of the line width">usb stick</label><input id="ep-usbS" type="range" min="0.5" max="6" step="0.1"><span class="val" id="ep-usbSv"></span>
       </div>
       <div class="row" id="ep-gaterow">
         <label>gate</label><input id="ep-gr" type="range" min="10" max="60" step="1" title="Size of the open gate in the router — drag the gate itself to move it"><span class="val" id="ep-grv"></span>

@@ -4,19 +4,9 @@
       "color": "#6e7681",
       "from": "server",
       "id": "p_lan",
-      "kind": "pipe",
+      "kind": "cable",
       "label": "home LAN",
-      "path": [
-        {
-          "x": 230,
-          "y": 595
-        },
-        {
-          "x": 360,
-          "y": 595
-        }
-      ],
-      "role": "tunnel",
+      "role": "link",
       "to": "router"
     },
     {

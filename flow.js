@@ -333,23 +333,131 @@
   }
   function viaRouteSegs(aBox, bBox, e) {   // segs[j] = { leg, key, H } (null = the run across a via box's centre)
     const vb = viaBoxes(e), ids = [e.from, ...viaIds(e), e.to], boxes = [aBox, ...vb, bBox], last = boxes.length - 2;
-    let pts = [], segs = [];
+    let pts = [], segs = [], ranges = [];   // ranges[i] = [first, last] index of leg i in pts (NT2)
     for (let i = 0; i <= last; i++) {
       const o = legO(e, ids, i);
       let leg = zRouteSegs(boxes[i], boxes[i + 1], o);
       // leaving a via box on the side it was entered = a dead end, not "through" → leave on the other axis instead
       if (i > 0 && sideOf(pts[pts.length - 1], boxes[i]) === sideOf(leg.pts[0], boxes[i])) leg = zRouteSegs(boxes[i], boxes[i + 1], { ...o, _H: !leg.H });
       const ls = leg.segs.map((key) => ({ leg: i, key, H: leg.H, cv: leg.cv }));
-      if (i === 0) { pts = leg.pts; segs = ls; }
+      if (i === 0) { pts = leg.pts; segs = ls; ranges.push([0, pts.length - 1]); }
       else { const c = ids[i] === e.gate ? gatePoint(e, boxes[i]) : center(boxes[i]);   // FR100: the pipe crosses at the gate
-        pts = pts.slice(0, -1).concat(throughBox(pts[pts.length - 1], leg.pts[0], boxes[i], c), leg.pts.slice(1)); segs = segs.concat([null, null, null, null], ls); }
+        const s0 = pts.length + 3;   // = where leg.pts[0] lands after the 5 through-box points replace the last point
+        pts = pts.slice(0, -1).concat(throughBox(pts[pts.length - 1], leg.pts[0], boxes[i], c), leg.pts.slice(1)); segs = segs.concat([null, null, null, null], ls);
+        ranges.push([s0, pts.length - 1]); }
     }
-    return { pts, segs, ids };
+    return { pts, segs, ids, ranges };
   }
   const pipePoly = (aBox, bBox, e) => {
     if (Array.isArray(e.path) && e.path.length >= 2) return e.path.map((p) => ({ x: p.x, y: p.y }));
     return viaBoxes(e).length ? viaRouteSegs(aBox, bBox, e).pts : zRoute(aBox, bBox, e);
   };
+  // NT1–NT5 (nested-tunnel scope): a physical link (cable / wifi / usb) between two boxes that a visible tunnel runs
+  // between is drawn as a wider, see-through SLEEVE around that stretch of the tunnel — the tunnel travels THROUGH the
+  // cable. The sleeve stops nestA × its radius short of end A (the link's `from`) and nestB × its radius short of end B,
+  // so the tunnel sticks out of it at both ends; nestW = sleeve width ÷ tunnel width, nestOp = its opacity.
+  // `nest: false` keeps the plain line. Positions never change: the sleeve simply follows the tunnel's route.
+  const NEST = { nestA: 1, nestB: 2, nestW: 1.9, nestOp: 0.4 };
+  // own = a LAN cable that carries no tunnel (NT14): it has nothing to show through, so it defaults to solid
+  const nestDef = (k, own) => k === "nestOp" && own ? 1 : NEST[k];
+  const nestP = (e, k, own) => typeof e[k] === "number" ? e[k] : nestDef(k, own);
+  const isLan = (e) => (e.kind === "cable" || e.kind === "lan") && roleOf(e) === "link" && !e.fromOn && !e.toOn && e.nest !== false;
+  function tunnelLegs(t) {   // [{ from, to, pts }] — each stretch of a drawn tunnel between two consecutive boxes
+    if (!isTube(t) || !edgeDrawn(t) || t.fromOn || t.toOn) return [];
+    const ends = edgeEnds(t); if (!ends) return [];
+    if (!Array.isArray(t.path) && viaBoxes(t).length) {
+      const r = viaRouteSegs(ends.a, ends.b, t);
+      return r.ranges.map(([i, j], k) => ({ from: r.ids[k], to: r.ids[k + 1], pts: r.pts.slice(i, j + 1) }));
+    }
+    return [{ from: t.from, to: t.to, pts: pipePoly(ends.a, ends.b, t) }];
+  }
+  function nestHost(e) {   // the tunnel stretch this link carries (oriented from e.from to e.to), or null
+    if (e.nest === false || roleOf(e) !== "link" || e.fromOn || e.toOn) return null;
+    for (const t of S.data.edges) for (const L of tunnelLegs(t)) {
+      if (L.from === e.from && L.to === e.to) return { t, pts: dedupe(L.pts) };
+      if (L.from === e.to && L.to === e.from) return { t, pts: dedupe(L.pts).reverse() };
+    }
+    return null;
+  }
+  function trimPoly(poly, whichEnd, len) {   // cut len off one end, across as many segments as needed (null = nothing left)
+    let p = whichEnd === "end" ? poly.slice().reverse() : poly.slice(), left = len;
+    if (left < 0 && p.length >= 2) {   // NT8: negative = lengthen the end segment outward (reach into the box, up to its icon)
+      const L = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+      p[0] = { x: p[0].x + (p[0].x - p[1].x) / L * -left, y: p[0].y + (p[0].y - p[1].y) / L * -left };
+      return whichEnd === "end" ? p.reverse() : p;
+    }
+    while (p.length >= 2) {
+      const L = Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y);
+      if (L > left) { const t = left / L; p[0] = { x: p[0].x + (p[1].x - p[0].x) * t, y: p[0].y + (p[1].y - p[0].y) * t }; break; }
+      left -= L; p = p.slice(1);
+    }
+    if (p.length < 2) return null;
+    return whichEnd === "end" ? p.reverse() : p;
+  }
+  function ownCable(e, a, b) {   // NT14: a LAN cable with no tunnel inside — the cable design along its own route
+    const R = nestP(e, "nestW") * 22 / 2, s = trimPoly(dedupe(pipePoly(a, b, e)), "start", nestP(e, "nestA") * R);
+    return { R, own: true, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
+  }
+  function sleevePoly(e, nh) {
+    const R = nestP(e, "nestW") * (nh.t.pw || 22) / 2, s = trimPoly(nh.pts, "start", nestP(e, "nestA") * R);
+    return { R, poly: s && trimPoly(s, "end", nestP(e, "nestB") * R) };
+  }
+  // NT10: a USB link shows the stick carrying data — a small light comes out of the source box (from under its icon),
+  // rides the stick along the line and goes into the target box; the stick then travels back empty. 6 s loop, SVG
+  // <animateMotion> (same markup in docs/gen_flow_svg.py); hidden when the viewer prefers reduced motion (CSS).
+  const USB_T = 6, USB_KT = "0;0.1;0.45;0.55;0.9;1", USB_S = 1.8;
+  const usbS = (e) => typeof e.usbS === "number" ? e.usbS : USB_S;   // NT12: moving stick's radius ÷ the line width
+  function usbTrip(parent, poly, a, b, R) {
+    if (!poly || poly.length < 2) return;
+    const ca = center(a), cb = center(b), last = poly[poly.length - 1], f = (v) => (+v.toFixed(4)).toString();
+    const len = (p) => p.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - p[i].x, q.y - p[i].y), 0);
+    const d = (p) => "M " + p.map((q) => `${f(q.x)} ${f(q.y)}`).join(" L ");
+    const L0 = Math.hypot(poly[0].x - ca.x, poly[0].y - ca.y), Lp = len(poly), Lt = L0 + Lp + Math.hypot(cb.x - last.x, cb.y - last.y) || 1;
+    const G = el("g", { class: "usb-trip" }, parent), mo = (g, path, kp) =>
+      el("animateMotion", { dur: USB_T + "s", repeatCount: "indefinite", path, keyPoints: kp, keyTimes: USB_KT, calcMode: "linear" }, g);
+    const sg = el("g", {}, G);   // the stick: waits while the light comes out, carries it over, waits, comes back empty
+    el("circle", { r: R, fill: "#0b0e14", stroke: "#c9d1d9", "stroke-width": 1.5 }, sg);
+    el("use", { href: "#ic-usb", x: -0.82 * R, y: -0.82 * R, width: 1.64 * R, height: 1.64 * R }, sg).style.color = "#c9d1d9";
+    mo(sg, d(poly), "0;0;1;1;0;0");
+    const lg = el("g", {}, G);   // the light (payload): computer centre → line start → line end → server centre
+    el("circle", { r: 0.82 * R, fill: "#fff3a0", opacity: 0.35 }, lg); el("circle", { r: 0.36 * R, fill: "#fffbe0" }, lg);
+    mo(lg, d([ca, ...poly, cb]), `0;${f(L0 / Lt)};${f((L0 + Lp) / Lt)};1;1;1`);
+    el("animate", { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.5;0.55;1", dur: USB_T + "s", repeatCount: "indefinite" }, lg);
+  }
+  // NT13: a LAN link's sleeve is drawn as a LAN CABLE (the chosen design): one flat colour with a thin dark outline; at
+  // each end a moulded boot — straight behind the head, |||| grip ribs, then a straight taper into the cable with a small
+  // step at the cable's thickness — and a clear RJ45 head with 8 gold contacts and the latch lever on top. The plug tips
+  // sit exactly where the sleeve ends (NT2 / NT8); nestOp still fades the whole cable so the tunnel can show through.
+  // Sizes in units of the cable's half-width c (= the sleeve radius); mirrored in docs/gen_flow_svg.py cable_svg.
+  const CBL = { headL: 1.26, headW: 1.52, straightL: 1.7, ribsL: 2.43, neckL: 3.39, step: 0.1, DARK: "#1f2328", HEAD: "#e9edf1", LATCH: "#d3dae1", GOLD: "#c9a43a" };
+  function cablePlugs(poly) {   // [{ P (tip), u (unit, pointing out of the cable) }] for both ends
+    const end = (P, Q) => { const L = Math.hypot(P.x - Q.x, P.y - Q.y) || 1; return { P, u: { x: (P.x - Q.x) / L, y: (P.y - Q.y) / L } }; };
+    return [end(poly[0], poly[1]), end(poly[poly.length - 1], poly[poly.length - 2])];
+  }
+  function drawCable(parent, poly, color, c) {
+    const K = CBL, j0 = trimPoly(poly, "start", K.neckL * c - 1), jacket = j0 && trimPoly(j0, "end", K.neckL * c - 1);
+    const pts = dedupe(jacket || poly), d = "M " + pts.map((p) => `${p.x} ${p.y}`).join(" L ");
+    el("path", { d, fill: "none", stroke: K.DARK, "stroke-width": 2 * c + 3, "stroke-linejoin": "miter" }, parent);
+    el("path", { d, fill: "none", stroke: color, "stroke-width": 2 * c, "stroke-linejoin": "miter" }, parent);
+    if (!jacket) return;   // too short for two plugs: just the cable
+    for (const { P, u } of cablePlugs(poly)) {
+      const f = (a, b) => ({ x: P.x - u.x * a * c - u.y * b * c, y: P.y - u.y * a * c + u.x * b * c });   // a = back from the tip, b = across
+      const poly_ = (q, attrs) => el("polygon", { points: q.map((v) => `${v.x},${v.y}`).join(" "), ...attrs }, parent);
+      const ln = (a1, b1, a2, b2, s, w) => { const p = f(a1, b1), q = f(a2, b2); el("line", { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: s, "stroke-width": w }, parent); };
+      const OLA = { stroke: K.DARK, "stroke-width": 1.4 }, hw = K.headW - 0.04, rw = K.headW - 0.1, nw = 1 + K.step;
+      poly_([f(K.headL, -hw), f(K.straightL, -hw), f(K.ribsL, -rw), f(K.neckL, -nw), f(K.neckL, nw), f(K.ribsL, rw), f(K.straightL, hw), f(K.headL, hw)], { fill: color, ...OLA });   // boot
+      for (let k = 0; k < 6; k++) { const a = K.straightL + 0.04 + k * (K.ribsL - K.straightL - 0.08) / 5, h = K.headW - 0.09 - (a - K.straightL) / (K.ribsL - K.straightL) * 0.06;
+        ln(a, -h, a, h, K.DARK, 0.07 * c); }   // |||| grip ribs
+      poly_([f(0, -K.headW), f(K.headL, -K.headW), f(K.headL, K.headW), f(0, K.headW)], { fill: K.HEAD, ...OLA });   // clear head
+      for (let k = 0; k < 8; k++) { const b = -1.13 + k * 0.323; ln(0.07, b, 0.39, b, K.GOLD, Math.max(0.8, 0.08 * c)); }   // gold contacts
+      poly_([f(0.48, -0.39), f(0.48, 0.39), f(1.52, 0.5), f(1.61, 0.5), f(1.61, -0.5), f(1.52, -0.5)], { fill: K.LATCH, stroke: K.DARK, "stroke-width": 1.5 });   // latch lever
+      ln(0.48, -0.39, 0.48, 0.39, K.DARK, 2);   // its hinge
+    }
+  }
+  function panelLine(e, ends) {   // the line the arrow box is placed against + dragged relative to (NT9: for a sleeve, the
+    const nh = nestHost(e);        // tunnel stretch it wraps — fixed while end A / B / width change, so the box never jumps)
+    return nh ? nh.pts : dedupe(pipePoly(ends.a, ends.b, e));
+  }
   function gateSplit(poly, e) {   // FR93: the pipe is interrupted at the gate box's centre (an opened port)
     const gn = e.gate && node(e.gate);
     if (!gn || !visible(gn) || !(e.via || []).includes(e.gate)) return null;
@@ -661,14 +769,29 @@
 
     let selPoly = null;
     const gFront = el("g", { class: "front-edges" });   // FR96: z "front" lines, put above the boxes once they're drawn
+    const gSleeve = el("g", { class: "sleeves" });   // NT3: sleeves go above every tunnel (so the tunnel shows INSIDE them)
     for (const e of S.data.edges) {
       if (!visible(e)) continue;
       const ends = edgeEnds(e, boxOf); if (!ends) continue;
       const { a, b } = ends, kind = e.kind || "plain";
-      const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : gEdges);
+      const nh = nestHost(e), sl = nh ? sleevePoly(e, nh) : isLan(e) ? ownCable(e, a, b) : null;   // NT14: every LAN line is a cable
+      const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : sl && sl.poly ? gSleeve : gEdges);
       let mx, my, iconOnLine = false;
       const role = roleOf(e);
-      if (isTube(e)) {
+      if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
+        el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
+        const sg = el("g", { opacity: nestP(e, "nestOp", !!sl.own) }, g);
+        if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#7b828a", sl.R);   // NT13
+        else drawMarioPipe(sg, sl.poly, lineColor(e) || "#8b949e", 2 * sl.R);
+        if (S.selEdge === e.id) selPoly = sl.poly;
+        const m = midOfPoly(sl.poly); mx = m.x; my = m.y;
+        const badge = kind !== "plain" && EDGE_ICON[kind];
+        if (badge) {
+          el("circle", { cx: mx, cy: my, r: EBADGE / 2 + 5, fill: "#0b0e14", stroke: lineColor(e) || "#6e7681", "stroke-width": 2 }, g);
+          const u = el("use", { href: "#ic-" + badge, x: mx - EBADGE / 2, y: my - EBADGE / 2, width: EBADGE, height: EBADGE }, g);
+          u.style.color = "#c9d1d9"; iconOnLine = true;
+        }
+      } else if (isTube(e)) {
         const poly = dedupe(pipePoly(a, b, e));
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         const gs = gateSplit(poly, e);   // FR93: port-forward = the pipe is broken open at the router
@@ -711,6 +834,7 @@
           u.style.color = "#c9d1d9";
           iconOnLine = true;
         }
+        if (kind === "usb") usbTrip(g, poly, a, b, usbS(e) * lw);   // NT10 / NT12: stick radius = usbS × line width
       }
       if (e.label) { const t = el("text", { x: mx, y: my - (isTube(e) ? 18 : iconOnLine ? EBADGE / 2 + 12 : 4), "text-anchor": "middle" }, g);
         if (iconOnLine) t.setAttribute("class", "halo");
@@ -757,6 +881,7 @@
       el("circle", { cx: gt.c.x, cy: gt.c.y, r: gt.r - 1, fill: "#0b0e14", stroke: gt.color, "stroke-width": 3 }, gg);
       const u = el("use", { href: "#ic-barrier", x: gt.c.x - s / 2, y: gt.c.y - s / 2, width: s, height: s }, gg); u.style.color = gt.color;
     }
+    gEdges.appendChild(gSleeve);   // NT3: after all tunnels, still under the boxes
     gNodes.appendChild(gFront);   // FR102: "front" lines go above the gate badges too (an arrowhead on a gate stays visible)
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(anchorBox(sn, boxOf[sn.id])); }   // FR99: on the icon
@@ -769,7 +894,7 @@
     const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
     const ends = e && edgeEnds(e), a = ends && ends.a, b = ends && ends.b;
     if (!e || !a || !b) { p.style.display = "none"; S._panelEdge = null; return; }
-    const poly = dedupe(pipePoly(a, b, e)), mid = midOfPoly(poly), k = S.view.k;
+    const poly = panelLine(e, ends), mid = midOfPoly(poly), k = S.view.k;
     p.style.display = "block";   // shown before measuring: FR79 the box sits clear of the line so every segment stays grabbable
     const W = p.offsetWidth, Hh = p.offsetHeight, mx = S.view.x + mid.x * k, my = S.view.y + mid.y * k, pad = ((e.pw || 22) / 2) * k + 8;
     const hits = (x, y) => poly.some((q, i) => {   // would the box at (x, y) cover any segment of the line?
@@ -791,6 +916,11 @@
     for (const btn of p.querySelectorAll("#ep-costrow button")) btn.classList.toggle("on", (btn.getAttribute("data-cost") || "") === (e.cost || ""));
     $("ep-sizerow").style.display = isPipe ? "none" : "flex";
     $("ep-gaterow").style.display = isPipe && e.gate ? "flex" : "none";   // FR102: gate badge size
+    $("ep-usbrow").style.display = e.kind === "usb" && role === "link" ? "flex" : "none";   // NT12
+    if (e.kind === "usb") { $("ep-usbS").value = usbS(e); $("ep-usbSv").textContent = usbS(e).toFixed(1) + "×"; }
+    const own = !nestHost(e), sleeve = !own || isLan(e);   // NT7 / NT14: the sleeve's numbers, for a sleeve or any LAN cable
+    for (const r of p.querySelectorAll(".ep-nest")) r.style.display = sleeve ? "flex" : "none";
+    if (sleeve) { $("ep-sizerow").style.display = "none"; for (const k in NEST) { $("ep-" + k).value = nestP(e, k, own); $("ep-" + k + "v").textContent = nestFmt(k, nestP(e, k, own)); } }
     for (const btn of p.querySelectorAll("#ep-rolerow button")) btn.classList.toggle("on", btn.getAttribute("data-role") === role);
     $("ep-id").textContent = e.id;
     for (const btn of p.querySelectorAll("#ep-zrow button")) btn.classList.toggle("on", btn.getAttribute("data-z") === (e.z === "front" ? "front" : "back"));
@@ -1343,6 +1473,11 @@
   }
   function edgeDragStart(e, wp) {
     const base = { id: e.id, wx0: wp.x, wy0: wp.y, moved: false };
+    const nh = nestHost(e);
+    if (nh) {   // NT9: a sleeve has no route of its own — dragging its segment drags that segment of the tunnel inside
+      status(`<b>${e.id}</b> is drawn around <b>${nh.t.id}</b> — dragging moves that tunnel's segment; the sleeve follows`);
+      return edgeDragStart(nh.t, wp);
+    }
     if (!e.path && viaBoxes(e).length) {   // FR95: drag one leg of a through-route; the run across a via box stays put
       const { a, b } = edgeEnds(e), r = viaRouteSegs(a, b, e), sg = r.segs[projPoly(r.pts, wp).i];
       if (!sg) { status(`that part runs through <b>${e.via.join(", ")}</b> — drag the line just outside it to move where it enters / leaves`); return { ...base, fixed: true }; }
@@ -1623,6 +1758,19 @@
   };
   $("ep-id").onclick = () => { const e = selEdgeObj(); if (!e) return;   // FR96: copy the line's id to refer to it
     navigator.clipboard.writeText(e.id).then(() => status(`copied line id <b>${e.id}</b>`), () => status(`line id: <b>${e.id}</b>`)); };
+  const nestFmt = (k, v) => k === "nestOp" ? Math.round(v * 100) + "%" : (+v).toFixed(1) + (k === "nestW" ? "×" : "");
+  $("ep-usbS").oninput = () => {   // NT12: moving USB stick size (× line width)
+    const e = selEdgeObj(); if (!e) return;
+    const v = Math.round(+$("ep-usbS").value * 10) / 10;
+    if (v === USB_S) delete e.usbS; else e.usbS = v;
+    $("ep-usbSv").textContent = v.toFixed(1) + "×"; markDirty(true); render();
+  };
+  for (const k in NEST) $("ep-" + k).oninput = () => {   // NT7: sleeve gaps / width / opacity, live
+    const e = selEdgeObj(); if (!e) return;
+    const v = Math.round(+$("ep-" + k).value * 100) / 100;
+    if (v === nestDef(k, !nestHost(e))) delete e[k]; else e[k] = v;   // the default is not stored
+    $("ep-" + k + "v").textContent = nestFmt(k, v); markDirty(true); render();
+  };
   $("ep-gr").oninput = () => { const e = selEdgeObj(); if (!e) return;   // FR102: resize the open gate
     const v = +$("ep-gr").value; if (v === GATE_GAP) delete e.gr; else e.gr = v;
     $("ep-grv").textContent = v; markDirty(true); render(); };
@@ -1635,7 +1783,7 @@
     ev.preventDefault();
     const e = selEdgeObj(); if (!e) return;
     // FR98: dragging stores the box's spot ON the line (e.bp, diagram units from the line's midpoint) — saved + undoable
-    const ends = edgeEnds(e), mid = ends && midOfPoly(dedupe(pipePoly(ends.a, ends.b, e)));
+    const ends = edgeEnds(e), mid = ends && midOfPoly(panelLine(e, ends));
     if (!mid) return;
     const k = S.view.k, r = panel.getBoundingClientRect(), host = panel.offsetParent.getBoundingClientRect();
     const st = { x: ev.clientX, y: ev.clientY, dx: (r.left - host.left - S.view.x) / k - mid.x, dy: (r.top - host.top - S.view.y) / k - mid.y };
