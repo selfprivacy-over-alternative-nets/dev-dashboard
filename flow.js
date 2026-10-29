@@ -452,6 +452,25 @@
     const n = node(id); if (!n || !visible(n)) return null;
     const c = center(anchorBox(n, rbox(n))); return { x: S.view.x + c.x * S.view.k, y: S.view.y + c.y * S.view.k };
   }
+  // FR112: moving / zooming the whole diagram is a change you can save — the save button lights up (no undo step), and
+  // Save stores the view in the diagram (meta.view = the diagram point at the canvas centre + the zoom, so it holds on any
+  // window size). A load uses the saved view first, else this browser's remembered one (FR94), else ⤢ fit. While ⌖ is
+  // anchored (FR104) the anchor spot moves along with your pan / zoom, so the anchor never snaps the view back.
+  function currentView() {
+    const r = svg.getBoundingClientRect(), k = S.view.k;
+    return { cx: Math.round((r.width / 2 - S.view.x) / k * 10) / 10, cy: Math.round((r.height / 2 - S.view.y) / k * 10) / 10, k: Math.round(k * 1000) / 1000 };
+  }
+  function savedView() {   // the diagram's saved view as a pan/zoom for this window, or null
+    const v = S.data && S.data.meta && S.data.meta.view;
+    if (!v || ![v.cx, v.cy, v.k].every((n) => typeof n === "number" && isFinite(n)) || v.k < 0.2 || v.k > 3) return null;
+    const r = svg.getBoundingClientRect();
+    return { x: r.width / 2 - v.cx * v.k, y: r.height / 2 - v.cy * v.k, k: v.k };
+  }
+  function viewMoved() {   // the user panned / zoomed / fitted: unsaved change + keep an active anchor in step
+    setDirty(true);
+    const a = getAnchor(), p = a && itemScreen(a.id);
+    if (p) setAnchor({ ...a, x: Math.round(p.x), y: Math.round(p.y) });
+  }
   function applyAnchor() {   // put the anchored box on the anchor spot, if this view shows it (zoom unchanged)
     const a = getAnchor(), n = a && node(a.id);
     if (!n || !visible(n)) return false;
@@ -1106,13 +1125,15 @@
       if (toggleState) for (const k in toggleState) S.toggle[k] = toggleState[k];
       normalizeToggles(); writeHash();
       buildCrumbs(); buildPicker(); buildToggles(); buildLegend();
-      const v = recallView(id); if (v) { S.view = { x: v.x, y: v.y, k: v.k }; applyView(); } else fit();   // FR94
+      const v = savedView() || recallView(id); if (v) { S.view = { x: v.x, y: v.y, k: v.k }; applyView(); } else fit();   // FR112, FR94
       applyAnchor();   // FR104: an anchored box sits on its spot in this diagram too (its zoom kept)
       render();
       status(`loaded <b>${id}</b> — ${S.data.nodes.length} nodes, ${S.data.edges.length} edges`);
     } catch (e) { status(`could not load ${id}.json — ${e.message}`); }
   }
   async function save() {
+    S.data.meta.view = currentView();   // FR112: the view is saved with the diagram
+    if (!S.pendingEdit) S.base = snap();
     const body = serialize(S.data);
     if (S.backend) {
       try {
@@ -1136,7 +1157,7 @@
   function zoomAt(cx, cy, f) {
     const k = Math.min(3, Math.max(0.2, S.view.k * f)), r = svg.getBoundingClientRect();
     const wx = (cx - r.left - S.view.x) / S.view.k, wy = (cy - r.top - S.view.y) / S.view.k;
-    S.view.k = k; S.view.x = cx - r.left - wx * k; S.view.y = cy - r.top - wy * k; applyView();
+    S.view.k = k; S.view.x = cx - r.left - wx * k; S.view.y = cy - r.top - wy * k; applyView(); viewMoved();
   }
   function fit() {
     const vis = S.data.nodes.filter(visible);
@@ -1523,6 +1544,7 @@
       markDirty(true); render();
     } else if (S.mode === "pan" && S.panStart) {
       S.view.x = S.panStart.vx + (ev.clientX - S.panStart.x); S.view.y = S.panStart.vy + (ev.clientY - S.panStart.y); applyView();
+      if (ev.clientX !== S.panStart.x || ev.clientY !== S.panStart.y) viewMoved();   // FR112
     }
   });
   function clearRubber() { if (S.rubber) { S.rubber.remove(); S.rubber = null; } S.draw = null; }
@@ -1568,7 +1590,7 @@
   $("settype").onclick = setType;
   $("setcontainer").onclick = setContainer;
   $("edittoggles").onclick = editToggles;
-  $("fit").onclick = fit;
+  $("fit").onclick = () => { fit(); viewMoved(); };
   const mid = () => ({ x: svg.getBoundingClientRect().left + svg.clientWidth / 2, y: svg.getBoundingClientRect().top + svg.clientHeight / 2 });
   $("zin").onclick = () => { const m = mid(); zoomAt(m.x, m.y, 1.2); };
   $("zout").onclick = () => { const m = mid(); zoomAt(m.x, m.y, 1 / 1.2); };

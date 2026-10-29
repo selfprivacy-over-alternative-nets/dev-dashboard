@@ -152,7 +152,7 @@
           "tailscale"
         ]
       },
-      "so": 430,
+      "so": 12,
       "to": "relayTS",
       "via": [
         "router"
@@ -627,14 +627,14 @@
       },
       "cost": "central",
       "dir": "to",
-      "eo": -78,
+      "eo": -17,
       "es": 19,
       "from": "you",
       "id": "e_ts_you",
       "kind": "plain",
       "label": "",
       "role": "action",
-      "so": -250,
+      "so": -142,
       "ss": -40,
       "to": "tsname"
     },
@@ -645,7 +645,7 @@
       },
       "cost": "central",
       "dir": "to",
-      "eo": -40,
+      "eo": -99,
       "from": "tsname",
       "id": "e_ts_srv",
       "kind": "plain",
@@ -830,7 +830,12 @@
           }
         }
       }
-    ]
+    ],
+    "view": {
+      "cx": 913.1,
+      "cy": 212.1,
+      "k": 1.157
+    }
   },
   "nodes": [
     {
@@ -1207,8 +1212,8 @@
         ]
       },
       "w": 310,
-      "x": 938,
-      "y": -32
+      "x": 1073,
+      "y": -40
     }
   ]
 }

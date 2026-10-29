@@ -891,3 +891,13 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   matrix. / meet. services** (handover 11: single-hostname tunnels serve the API only); **bandwidth limits (not
   published)**, still **beta**; a new name can take **~10 min** to work (DNS); **reinstall → new name, old links
   stop working** until the box keeps its Tailscale state (handover 13 node-sprawl). Verified live, no overlaps.
+- **FR112. Moving / zooming the whole diagram is a saved change.** (User, on `setup-map;method=cable;net=0a;reach=tailscale`:
+  *when I drag the whole system down and right the save button does not become orange; if I change something else too
+  and save, the next reload still shows the system at its original place, and the zoom level is not saved either.*)
+  **Amends FR94** (view was per-browser only, never in the JSON). Panning, wheel / ＋ / − zoom and ⤢ fit now mark the
+  diagram **unsaved** (save button orange) — without an undo step. **Save** writes **`meta.view` = `{cx, cy, k}`**: the
+  diagram point at the centre of the canvas and the zoom, so it is right on any window size. **Opening** a diagram uses
+  the saved view first, else this browser's remembered one (FR94), else ⤢ fit. Cause of "back at the original place":
+  with ⌖ anchored (FR104) every load re-panned to the anchor spot — now **the anchor spot moves along with your pan /
+  zoom**, so it agrees with the view you saved. Verified (Save intercepted — nothing written): pan → dirty; Save sends
+  `meta.view`; reload with the browser memory cleared restores the same pan + zoom, with and without an anchor.
