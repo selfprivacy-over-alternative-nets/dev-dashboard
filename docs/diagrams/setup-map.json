@@ -78,10 +78,7 @@
         "net": [
           "0a",
           "0b",
-          "0c",
-          "w1",
-          "ua",
-          "uc"
+          "0c"
         ]
       },
       "so": -145,
@@ -103,9 +100,7 @@
       "role": "link",
       "showWhen": {
         "net": [
-          "0d",
-          "w2",
-          "ub"
+          "0d"
         ]
       },
       "so": -148,
@@ -126,8 +121,7 @@
       "role": "link",
       "showWhen": {
         "net": [
-          "0c",
-          "uc"
+          "0c"
         ]
       },
       "to": "routerY"
@@ -772,9 +766,23 @@
             "label": "VM",
             "value": "vm"
           }
+        ],
+        "sameLayout": [
+          [
+            "cable",
+            "wifi",
+            "usb"
+          ]
         ]
       },
       {
+        "aliases": {
+          "ua": "0a",
+          "ub": "0d",
+          "uc": "0c",
+          "w1": "0a",
+          "w2": "0d"
+        },
         "default": "0a",
         "id": "net",
         "label": "Network",
@@ -794,26 +802,6 @@
           {
             "label": "wifi-only",
             "value": "0d"
-          },
-          {
-            "label": "B via LAN",
-            "value": "w1"
-          },
-          {
-            "label": "B via wifi",
-            "value": "w2"
-          },
-          {
-            "label": "cable→R",
-            "value": "ua"
-          },
-          {
-            "label": "wifi→R",
-            "value": "ub"
-          },
-          {
-            "label": "cable→R, wifi→Y",
-            "value": "uc"
           }
         ],
         "optionsWhen": {
@@ -825,14 +813,14 @@
               "0d"
             ],
             "usb": [
-              "ua",
-              "ub",
-              "uc"
+              "0a",
+              "0c",
+              "0d"
             ],
             "vm": [],
             "wifi": [
-              "w1",
-              "w2"
+              "0a",
+              "0d"
             ]
           }
         }
@@ -966,8 +954,7 @@
       "nodeType": "device",
       "showWhen": {
         "net": [
-          "0c",
-          "uc"
+          "0c"
         ]
       },
       "w": 180,
@@ -1295,7 +1282,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "buy"
@@ -1320,7 +1309,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "buy"
@@ -1345,7 +1336,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "buy"
@@ -1370,7 +1363,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "duckdns"
@@ -1395,7 +1390,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "net": [
           "0d"
@@ -1417,7 +1414,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "net": [
           "0c"
@@ -1439,7 +1438,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "net": [
           "0b"
@@ -1461,7 +1462,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "net": [
           "0a"
@@ -1483,7 +1486,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "duckdns"
@@ -1508,7 +1513,9 @@
       "nodeType": "info",
       "showWhen": {
         "method": [
-          "cable"
+          "cable",
+          "wifi",
+          "usb"
         ],
         "name": [
           "buy"
@@ -1523,56 +1530,6 @@
       "w": 137,
       "x": 1303,
       "y": 209
-    },
-    {
-      "color": "note",
-      "h": 81,
-      "icon": "block",
-      "id": "v6block11",
-      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
-      "nodeType": "info",
-      "showWhen": {
-        "method": [
-          "wifi"
-        ],
-        "name": [
-          "buy"
-        ],
-        "net": [
-          "w1"
-        ],
-        "reach": [
-          "ipv6"
-        ]
-      },
-      "w": 137,
-      "x": 1301,
-      "y": 220
-    },
-    {
-      "color": "note",
-      "h": 81,
-      "icon": "block",
-      "id": "v6block12",
-      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
-      "nodeType": "info",
-      "showWhen": {
-        "method": [
-          "wifi"
-        ],
-        "name": [
-          "duckdns"
-        ],
-        "net": [
-          "w1"
-        ],
-        "reach": [
-          "ipv6"
-        ]
-      },
-      "w": 137,
-      "x": 1296,
-      "y": 206
     }
   ]
 }

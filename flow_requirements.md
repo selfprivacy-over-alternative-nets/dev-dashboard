@@ -933,6 +933,22 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   Verified live (nothing saved): copy + paste of `v6block` in the IPv6 view; icon menu (25 icons, current marked) →
   pick *warn*; PC upload → 4 KB PNG data URL drawn as a picture; link upload; pasting into *tunnels* → `v6block1`
   with its uploaded picture. (The "site refuses" fallback could not be reproduced in the test browser.)
+- **FR115. LAN cable, wifi and USB installs share ONE layout; only the install line differs.** (User, comparing
+  `setup-map;method=cable;net=0a;reach=onion` / `method=wifi;net=w1;…` / `method=usb;net=ua;…`: *make the wifi just the
+  same as the LAN except the wifi-vs-LAN-cable difference — ideally collapse to one JSON with only that one edge
+  difference; I just cleaned up the LAN diagrams, so use those.*) It already was one JSON with canonical positions;
+  the divergence came from (a) each install method having its **own values for the same network** (`w1` / `ua` =
+  `0a`, `w2` / `ub` = `0d`, `uc` = `0c`) and (b) per-view copies tied to one method (FR113 / FR114). Now:
+  **one set of `net` values** (`0a` cable→R, `0b` cable+wifi→R, `0c` cable→R + wifi→Y, `0d` wifi-only) — wifi offers
+  `0a` / `0d`, USB `0a` / `0c` / `0d`, LAN all four; every `showWhen` / `hideIn` was rewritten, and old links keep
+  working through the toggle's **`aliases`** (`net=w1` → `0a`, …). The `method` toggle has **`sameLayout`**
+  `[["cable", "wifi", "usb"]]`: those values are **one view** for adding, pasting and deleting (FR113 / FR114 — view
+  keys use `cable`, new items get all three), so the layouts can't drift apart again; VM stays separate. Migration
+  (LAN = the source of truth): items made in a LAN view now show for wifi / USB on the same network (method
+  condition widened to the group); the wifi-only copies `v6block11` / `v6block12` were dropped; wifi / USB `hideIn`
+  entries dropped, LAN ones kept. Verified: all 24 network × reach × name combinations are identical across LAN /
+  wifi / USB except `e_cable` / `e_wifi` / `e_usb`; old `w1` / `w2` / `ua` / `ub` / `uc` links open the matching
+  view; a line drawn in wifi appears in LAN + USB (not VM) and one Delete in USB removes it from all three.
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on

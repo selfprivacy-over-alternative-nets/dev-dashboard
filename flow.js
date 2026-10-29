@@ -114,6 +114,7 @@
     return opts;
   }
   function normalizeToggles() {
+    for (const t of toggles()) if (t.aliases && t.aliases[S.toggle[t.id]]) S.toggle[t.id] = t.aliases[S.toggle[t.id]];   // FR115: old values (net=w1 → 0a)
     // two passes so dependent option lists settle
     for (let pass = 0; pass < 2; pass++) {
       for (const t of toggles()) {
@@ -131,9 +132,12 @@
   }
   // FR113: a view = one toggle combination, keyed "method=cable;net=0c;…" (n/a toggles left out). An item deleted in one
   // view while other views still show it is only hidden there (o.hideIn = [view keys]); Shift+Delete removes it everywhere.
-  const viewKey = (st = S.toggle) => toggles().filter((t) => st[t.id] != null).map((t) => `${t.id}=${st[t.id]}`).join(";");
+  // FR115: values in one of a toggle's sameLayout groups (method: LAN cable / wifi / USB) are ONE view for adding, pasting
+  // and deleting — keys use the group's first value, new items get the whole group — so only their own lines differ.
+  const sameGroup = (t, v) => (Array.isArray(t.sameLayout) && t.sameLayout.find((g) => g.includes(v))) || null;
+  const viewKey = (st = S.toggle) => toggles().filter((t) => st[t.id] != null).map((t) => `${t.id}=${(sameGroup(t, st[t.id]) || [st[t.id]])[0]}`).join(";");
   const visible = (o) => whenMatches(o.showWhen) && !(Array.isArray(o.hideIn) && o.hideIn.includes(viewKey()));
-  const thisViewWhen = () => { const w = {}; for (const t of toggles()) if (S.toggle[t.id] != null) w[t.id] = [S.toggle[t.id]]; return Object.keys(w).length ? w : null; };
+  const thisViewWhen = () => { const w = {}; for (const t of toggles()) if (S.toggle[t.id] != null) w[t.id] = [...(sameGroup(t, S.toggle[t.id]) || [S.toggle[t.id]])]; return Object.keys(w).length ? w : null; };
   const activeContainerOf = (n) => (n.container && whenMatches(n.containerWhen)) ? n.container : null;
 
   /* ---------- geometry with containment (FR36) ---------- */
