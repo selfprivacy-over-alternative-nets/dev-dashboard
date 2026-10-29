@@ -139,6 +139,7 @@
           "vm"
         ]
       },
+      "so": 103,
       "to": "inet"
     },
     {
@@ -230,7 +231,7 @@
     },
     {
       "color": "#3b82f6",
-      "eo": 317,
+      "eo": 162,
       "from": "server",
       "id": "e_v6",
       "kind": "pipe",
@@ -240,6 +241,7 @@
           "so": 137
         }
       },
+      "mo": -521,
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -498,14 +500,14 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -86,
+      "eo": -189,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
       "label": "",
       "lw": 5,
       "role": "info",
-      "so": 8,
+      "so": -23,
       "to": "server"
     },
     {
@@ -535,7 +537,7 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -19,
+      "eo": 29,
       "es": 19,
       "from": "you",
       "id": "e8",
@@ -891,8 +893,8 @@
       }
     ],
     "view": {
-      "cx": 742.7,
-      "cy": 216.7,
+      "cx": 822,
+      "cy": 167.9,
       "k": 1.051
     }
   },
@@ -1064,8 +1066,8 @@
         ]
       },
       "w": 137,
-      "x": 804,
-      "y": 513
+      "x": 411,
+      "y": 358
     },
     {
       "color": "red",
@@ -1530,6 +1532,55 @@
       "w": 137,
       "x": 1303,
       "y": 209
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block11",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "0a"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1295,
+      "y": 224
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block12",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1303,
+      "y": 212
     }
   ]
 }
