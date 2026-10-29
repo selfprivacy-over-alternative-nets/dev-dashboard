@@ -61,7 +61,7 @@
 </symbol></defs>
 <rect x="30" y="-78" width="620" height="604" fill="#0b0e14"/>
 <rect x="60" y="40" width="560" height="64" rx="26" ry="26" fill="#2a2410" stroke="#d6a015" stroke-width="2"/>
-<use href="#ic-cart" x="328.0" y="46" width="24" height="24" style="color:#d6a015"/>
+<use href="#ic-cart" x="328.0" y="46.0" width="24.0" height="24.0" style="color:#d6a015"/>
 <text x="340.0" y="82.0" text-anchor="middle" font-size="12" fill="#c9d1d9">Add these records at your</text>
 <text x="340.0" y="97.0" text-anchor="middle" font-size="12" fill="#c9d1d9">domain registrar / DNS host</text>
 <rect x="60" y="124" width="560" height="46" rx="8" ry="8" fill="#10231a" stroke="#3fb950" stroke-width="1.6" stroke-dasharray="2 4"/>
@@ -81,7 +81,7 @@
 <text x="340.0" y="385.0" text-anchor="middle" font-size="12" fill="#c9d1d9">Cloudflare DNS:   set nameservers → Cloudflare (at the registrar)</text>
 <rect x="60" y="424" width="560" height="72" rx="8" ry="8" fill="#2a1113" stroke="#e5484d" stroke-width="1.6" stroke-dasharray="2 4"/>
 <path d="M 606 424 L 620 438 L 620 424 Z" fill="#0b0e14"/><path d="M 606 424 L 606 438 L 620 438 Z" fill="#e5484d" fill-opacity="0.5" stroke="#e5484d" stroke-width="1.2"/>
-<use href="#ic-onion" x="328.0" y="430" width="24" height="24" style="color:#e5484d"/>
+<use href="#ic-onion" x="328.0" y="430.0" width="24.0" height="24.0" style="color:#e5484d"/>
 <text x="340.0" y="466.0" text-anchor="middle" font-size="12" fill="#c9d1d9">Port-forward &amp; Direct-IPv6 need A/AAAA pointing at your home IP.</text>
 <text x="340.0" y="481.0" text-anchor="middle" font-size="12" fill="#c9d1d9">.onion needs NONE of this — no registrar, no records.</text>
 <g><rect x="282" y="-70" width="360" height="80" rx="6" fill="#14181f" fill-opacity="0.88" stroke="#30363d"/><text x="291" y="-55" font-size="9" letter-spacing="0.6" fill="#6e7681">BOXES</text><rect x="291" y="-50" width="31" height="15" rx="7.5" fill="#14181f" stroke="#8b949e" stroke-width="2"/><text x="331" y="-38.5" font-size="11" fill="#6e7681">action — something you do</text><rect x="291" y="-30" width="31" height="15" rx="7.5" fill="#14181f" stroke="#8b949e" stroke-width="1.6" stroke-dasharray="2 4"/><path d="M 316 -30 L 316 -24 L 322 -24 Z" fill="#8b949e"/><text x="331" y="-18.5" font-size="11" fill="#6e7681">information</text><use href="#ic-laptop" x="297.5" y="-11.5" width="18" height="18" style="color:#8b949e"/><text x="331" y="1.5" font-size="11" fill="#6e7681">(hardware) device</text></g>

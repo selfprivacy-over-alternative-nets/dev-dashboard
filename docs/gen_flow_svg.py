@@ -197,6 +197,12 @@ def anchor_box(n, b, vis, vis_ids, state):   # FR92: lines attach to a pictogram
     return (ix + bb[0] * k, iy + bb[1] * k, bb[2] * k, bb[3] * k)
 
 
+def icon_svg(icon, x, y, s, color, images):   # FR114: a sprite, or "img:<key>" = a picture kept in meta.images — mirrors flow.js drawIcon
+    if str(icon).startswith("img:") and images.get(icon[4:]):
+        return f'<image href="{html.escape(images[icon[4:]], quote=True)}" x="{x:.1f}" y="{y:.1f}" width="{s:.1f}" height="{s:.1f}" preserveAspectRatio="xMidYMid meet"/>'
+    return f'<use href="#ic-{icon}" x="{x:.1f}" y="{y:.1f}" width="{s:.1f}" height="{s:.1f}" style="color:{color}"/>'
+
+
 def picto_geom(b, lines):   # FR89: icon fills the box above the label lines (mirrors flow.js pictoGeom)
     lh = len([l for l in lines if l]) * 15
     gap = 6 if lh else 0
@@ -359,7 +365,7 @@ def mid_of_poly(poly):   # point at half the total polyline length (label/icon p
 def pipe_spot_box(spec, edges, box, state, anc=None, vbs=None):   # FR80/81 an edge end ON a pipe — mirrors flow.js onPipeBox
     pid, _, key = str(spec).partition(":")
     pe = next((x for x in edges if x["id"] == pid), None)
-    if not pe or role_of(pe) != "tunnel" or pe.get("fromOn") or pe.get("toOn") or not when_ok(pe.get("showWhen"), state):
+    if not pe or role_of(pe) != "tunnel" or pe.get("fromOn") or pe.get("toOn") or not shown(pe, state):
         return None
     a, b = (anc(pe["from"]), anc(pe["to"])) if anc else (box.get(pe["from"]), box.get(pe["to"]))   # FR92: as drawn
     if not a or not b:
@@ -593,6 +599,11 @@ def default_state(toggles):
     return state
 
 
+def shown(o, state):   # FR113: showWhen matches and the item isn't hidden in this exact view — mirrors flow.js visible
+    key = ";".join(f"{k}={v}" for k, v in state.items() if v is not None)   # state is built in toggle order
+    return when_ok(o.get("showWhen"), state) and key not in (o.get("hideIn") or [])
+
+
 def when_ok(when, state):
     if not when:
         return True
@@ -648,18 +659,19 @@ def is_container(n, nodes, vis_ids, state):
 
 def auto_see_through(n, nodes, edges, vis_ids, state):
     """FR76: a box holding a child that has drawn pipes/arrows turns translucent (derived, not saved)."""
-    drawn = [e for e in edges if when_ok(e.get("showWhen"), state) and e["from"] in vis_ids and e["to"] in vis_ids]
+    drawn = [e for e in edges if shown(e, state) and e["from"] in vis_ids and e["to"] in vis_ids]
     return any(k["id"] in vis_ids and active_container(k, state) == n["id"]
                and any(k["id"] in (e["from"], e["to"]) for e in drawn) for k in nodes)
 
 
 def render(d):
+    images = (d.get("meta") or {}).get("images") or {}   # FR114: uploaded pictures used as icons
     toggles = (d.get("meta") or {}).get("toggles", [])
     state = default_state(toggles)
     nodes = d.get("nodes", [])
     edges = d.get("edges", [])
     by_id = {n["id"]: n for n in nodes}
-    vis = [n for n in nodes if when_ok(n.get("showWhen"), state)]
+    vis = [n for n in nodes if shown(n, state)]
     vis_ids = {n["id"] for n in vis}
     box = {n["id"]: rbox(n, by_id, vis_ids, state) for n in vis}
 
@@ -698,7 +710,7 @@ def render(d):
         if e.get("nest") is False or role_of(e) != "link" or e.get("fromOn") or e.get("toOn"):
             return None
         for t in edges:
-            if role_of(t) != "tunnel" or t.get("fromOn") or t.get("toOn") or not when_ok(t.get("showWhen"), state):
+            if role_of(t) != "tunnel" or t.get("fromOn") or t.get("toOn") or not shown(t, state):
                 continue
             ta, tb = anc(t["from"]), anc(t["to"])
             if not ta or not tb:
@@ -712,7 +724,7 @@ def render(d):
 
     sleeves = []   # NT3: drawn after every tunnel, still under the boxes
     for e in edges:
-        if not when_ok(e.get("showWhen"), state):
+        if not shown(e, state):
             continue
         mark = len(o)
         a = pipe_spot_box(e["fromOn"], edges, box, state, anc, vbs) if e.get("fromOn") else anc(e["from"])
@@ -809,7 +821,7 @@ def render(d):
         if n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
             # FR89: a device IS its icon (pictogram) — no box drawn; the box still sizes + anchors it
             s_, ix, iy, ty = picto_geom(bx, lines)
-            o.append(f'<use href="#ic-{n["icon"]}" x="{ix:.1f}" y="{iy:.1f}" width="{s_:.1f}" height="{s_:.1f}" style="color:{stroke}"/>')
+            o.append(icon_svg(n["icon"], ix, iy, s_, stroke, images))
             for i, ln in enumerate(lines):
                 o.append(f'<text x="{cx:.1f}" y="{ty + i * 15:.1f}" text-anchor="middle" font-size="12"{HALO} fill="{FG}">{html.escape(ln)}</text>')
             if n.get("childDiagram"):
@@ -823,7 +835,7 @@ def render(d):
             o.append(dog_ear_svg(bx, stroke, bg))
         if n.get("icon"):
             isz = 34 if n.get("nodeType") == "device" else 24   # FR89: a container device keeps its box, bigger icon
-            o.append(f'<use href="#ic-{n["icon"]}" x="{cx - isz / 2:.1f}" y="{bx[1] + 6:.0f}" width="{isz}" height="{isz}" style="color:{stroke}"/>')
+            o.append(icon_svg(n["icon"], cx - isz / 2, bx[1] + 6, isz, stroke, images))
             ty = bx[1] + isz + 18
         else:
             ty = bx[1] + bx[3] / 2.0 + 4

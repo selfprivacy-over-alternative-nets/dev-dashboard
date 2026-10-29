@@ -1,34 +1,47 @@
 {
   "edges": [
     {
-      "eo": -21,
+      "bp": {
+        "dx": 488,
+        "dy": -4
+      },
+      "eo": 10,
       "es": 37,
       "from": "you",
       "id": "e_cable",
       "kind": "cable",
       "label": "netboot",
       "mo": -66,
+      "nestA": -0.4,
+      "nestB": 0.5,
       "role": "link",
       "showWhen": {
         "method": [
           "cable"
         ]
       },
-      "so": -38,
+      "so": -7,
       "to": "server"
     },
     {
+      "bp": {
+        "dx": 197,
+        "dy": -151
+      },
+      "eo": -150,
+      "es": -7,
       "from": "you",
       "id": "e_wifi",
       "kind": "wifi",
       "label": "install over wifi",
-      "mo": 344,
+      "mo": -176,
       "role": "link",
       "showWhen": {
         "method": [
           "wifi"
         ]
       },
+      "so": 217,
       "to": "router"
     },
     {
@@ -59,6 +72,7 @@
       "label": "",
       "mo": 250,
       "nestB": -4,
+      "nestOp": 0.85,
       "role": "link",
       "showWhen": {
         "net": [
@@ -84,6 +98,8 @@
       "id": "e_swifi",
       "kind": "wifi",
       "label": "",
+      "nestA": 1.6,
+      "nestB": -3.1,
       "role": "link",
       "showWhen": {
         "net": [
@@ -97,12 +113,16 @@
       "to": "router"
     },
     {
-      "eo": 5,
+      "bp": {
+        "dx": -366,
+        "dy": 383
+      },
+      "eo": -74,
       "from": "server",
       "id": "e_sY",
       "kind": "wifi",
       "label": "",
-      "mo": -250,
+      "mo": -166,
       "role": "link",
       "showWhen": {
         "net": [
@@ -144,7 +164,7 @@
       "label": "outbound tunnel",
       "legs": {
         "router>relayTS": {
-          "so": 64
+          "so": 136
         }
       },
       "role": "tunnel",
@@ -161,11 +181,12 @@
     },
     {
       "color": "#8b949e",
-      "eo": 245,
+      "eo": 4,
       "from": "relayTS",
       "id": "e_ts_run",
       "kind": "pipe",
       "label": "",
+      "mo": 156,
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -176,14 +197,13 @@
     },
     {
       "color": "#f38020",
-      "eo": -2,
       "from": "server",
       "id": "e_cf_up",
       "kind": "pipe",
       "label": "outbound tunnel",
       "legs": {
         "router>relayCF": {
-          "so": 68
+          "so": 135
         }
       },
       "role": "tunnel",
@@ -200,7 +220,7 @@
     },
     {
       "color": "#f38020",
-      "eo": 250,
+      "eo": -7,
       "from": "relayCF",
       "id": "e_cf_run",
       "kind": "pipe",
@@ -211,11 +231,12 @@
           "cloudflare"
         ]
       },
+      "so": 295,
       "to": "inet"
     },
     {
       "color": "#3b82f6",
-      "eo": 197,
+      "eo": 317,
       "from": "server",
       "id": "e_v6",
       "kind": "pipe",
@@ -231,7 +252,8 @@
           "ipv6"
         ]
       },
-      "so": 382,
+      "so": 12,
+      "ss": 136,
       "to": "inet",
       "via": [
         "router"
@@ -416,16 +438,20 @@
     {
       "cost": "central",
       "dir": "from",
-      "eo": -2,
+      "eo": 12,
       "from": "cffree",
       "id": "e2",
       "kind": "plain",
       "label": "",
       "role": "info",
-      "so": -2,
+      "so": 12,
       "to": "relayCF"
     },
     {
+      "bp": {
+        "dx": 108,
+        "dy": -168
+      },
       "cost": "central",
       "dir": "to",
       "eo": 31,
@@ -435,6 +461,7 @@
       "label": "",
       "lw": 9,
       "role": "info",
+      "so": 5,
       "to": "tsname"
     },
     {
@@ -467,6 +494,7 @@
       "lw": 5,
       "role": "action",
       "so": 121,
+      "ss": 36,
       "to": "pfwarn"
     },
     {
@@ -476,7 +504,7 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -33,
+      "eo": -86,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
@@ -513,15 +541,16 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -17,
+      "eo": -19,
       "es": 19,
       "from": "you",
       "id": "e8",
       "kind": "plain",
       "label": "",
+      "mo": 12,
       "role": "action",
-      "so": -128,
-      "ss": -40,
+      "so": -130,
+      "ss": 21,
       "to": "buy"
     },
     {
@@ -569,14 +598,14 @@
       },
       "cost": "central",
       "dir": "to",
-      "eo": -78,
+      "eo": -19,
       "es": 19,
       "from": "you",
       "id": "e_try_you",
       "kind": "plain",
       "label": "",
       "role": "action",
-      "so": -203,
+      "so": -144,
       "ss": -40,
       "to": "cffree"
     },
@@ -612,10 +641,10 @@
       "kind": "plain",
       "label": "",
       "lw": 5,
-      "mo": 278,
+      "mo": 271,
       "role": "info",
       "so": 92,
-      "ss": 644,
+      "ss": 638,
       "to": "friend"
     },
     {
@@ -672,6 +701,50 @@
       "so": 92,
       "ss": 644,
       "to": "friend"
+    },
+    {
+      "eo": 9,
+      "from": "relayTS",
+      "id": "e10",
+      "kind": "pipe",
+      "label": "",
+      "mo": -97,
+      "role": "tunnel",
+      "so": -27,
+      "ss": -22,
+      "to": "routerY"
+    },
+    {
+      "dir": "to",
+      "eo": 24,
+      "from": "relayCF",
+      "id": "e11",
+      "kind": "pipe",
+      "label": "",
+      "mo": -100,
+      "role": "tunnel",
+      "so": -7,
+      "to": "routerY"
+    },
+    {
+      "bp": {
+        "dx": 259,
+        "dy": 104
+      },
+      "color": "#813d9c",
+      "dir": "to",
+      "eo": 29,
+      "from": "routerY",
+      "hideIn": [
+        "method=cable;net=0c;reach=cloudflare;name=buy"
+      ],
+      "id": "e12",
+      "kind": "pipe",
+      "label": "",
+      "mo": 74,
+      "role": "tunnel",
+      "so": -74,
+      "to": "inet"
     }
   ],
   "meta": {
@@ -830,9 +903,9 @@
       }
     ],
     "view": {
-      "cx": 913.1,
-      "cy": 212.1,
-      "k": 1.157
+      "cx": 742.7,
+      "cy": 216.7,
+      "k": 1.051
     }
   },
   "nodes": [
@@ -898,8 +971,8 @@
         ]
       },
       "w": 180,
-      "x": 219,
-      "y": 459
+      "x": 657,
+      "y": 331
     },
     {
       "childDiagram": "tunnels",
@@ -937,8 +1010,8 @@
         ]
       },
       "w": 190,
-      "x": 826,
-      "y": 474
+      "x": 821,
+      "y": 546
     },
     {
       "color": "orange",
@@ -969,8 +1042,8 @@
         ]
       },
       "w": 190,
-      "x": 793,
-      "y": 485
+      "x": 790,
+      "y": 550
     },
     {
       "color": "orange",
@@ -993,7 +1066,7 @@
     },
     {
       "color": "note",
-      "h": 90,
+      "h": 81,
       "icon": "block",
       "id": "v6block",
       "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
@@ -1003,9 +1076,9 @@
           "ipv6"
         ]
       },
-      "w": 240,
-      "x": 583,
-      "y": 408
+      "w": 137,
+      "x": 804,
+      "y": 513
     },
     {
       "color": "red",
@@ -1021,7 +1094,7 @@
       },
       "w": 173,
       "x": 155,
-      "y": 422
+      "y": 421
     },
     {
       "childDiagram": "registrar",
@@ -1210,8 +1283,296 @@
         ]
       },
       "w": 310,
-      "x": 1073,
-      "y": -40
+      "x": 956,
+      "y": -55
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block1",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "0c"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 867,
+      "y": 307
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block2",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "0c"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1309,
+      "y": 219
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block3",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "0d"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1300,
+      "y": 213
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block4",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "net": [
+          "0d"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1297,
+      "y": 227
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "barrier",
+      "id": "v6block5",
+      "label": "Expect possible alerts from:\n -IT security on corporate networks\n - or regimes that don't support privacy\n when using Tor to connect to your own cloud.",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "net": [
+          "0d"
+        ],
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 258,
+      "x": 708,
+      "y": 72
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "barrier",
+      "id": "v6block6",
+      "label": "Expect possible alerts from:\n -IT security on corporate networks\n - or regimes that don't support privacy\n when using Tor to connect to your own cloud.",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "net": [
+          "0c"
+        ],
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 258,
+      "x": 844,
+      "y": 329
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "barrier",
+      "id": "v6block7",
+      "label": "Expect possible alerts from:\n -IT security on corporate networks\n - or regimes that don't support privacy\n when using Tor to connect to your own cloud.",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "net": [
+          "0b"
+        ],
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 258,
+      "x": 805,
+      "y": 322
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "barrier",
+      "id": "v6block8",
+      "label": "Expect possible alerts from:\n -IT security on corporate networks\n - or regimes that don't support privacy\n when using Tor to connect to your own cloud.",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "net": [
+          "0a"
+        ],
+        "reach": [
+          "onion"
+        ]
+      },
+      "w": 258,
+      "x": 830,
+      "y": 324
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block9",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "net": [
+          "0b"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1304,
+      "y": 206
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block10",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "0b"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1303,
+      "y": 209
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block11",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "wifi"
+        ],
+        "name": [
+          "buy"
+        ],
+        "net": [
+          "w1"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1301,
+      "y": 220
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block12",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "wifi"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "net": [
+          "w1"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1296,
+      "y": 206
     }
   ]
 }

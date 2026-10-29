@@ -129,7 +129,11 @@
     for (const k in when) if (!when[k].includes(S.toggle[k])) return false;
     return true;
   }
-  const visible = (o) => whenMatches(o.showWhen);
+  // FR113: a view = one toggle combination, keyed "method=cable;net=0c;…" (n/a toggles left out). An item deleted in one
+  // view while other views still show it is only hidden there (o.hideIn = [view keys]); Shift+Delete removes it everywhere.
+  const viewKey = (st = S.toggle) => toggles().filter((t) => st[t.id] != null).map((t) => `${t.id}=${st[t.id]}`).join(";");
+  const visible = (o) => whenMatches(o.showWhen) && !(Array.isArray(o.hideIn) && o.hideIn.includes(viewKey()));
+  const thisViewWhen = () => { const w = {}; for (const t of toggles()) if (S.toggle[t.id] != null) w[t.id] = [S.toggle[t.id]]; return Object.keys(w).length ? w : null; };
   const activeContainerOf = (n) => (n.container && whenMatches(n.containerWhen)) ? n.container : null;
 
   /* ---------- geometry with containment (FR36) ---------- */
@@ -514,6 +518,14 @@
     return { s, x: b.x + (b.w - s) / 2, y, ty: y + s + 16 };
   }
   const ICON_BOX = {};   // FR92: icon → [x, y, w, h] of its drawn glyph in the 24×24 grid (data-bbox in icons.svg)
+  // FR114: an icon is a sprite name, or "img:<key>" = an uploaded picture kept in the diagram (meta.images[key] = data URL / link)
+  const imgSrc = (icon) => /^img:/.test(icon || "") ? (((S.data && S.data.meta && S.data.meta.images) || {})[icon.slice(4)] || null) : null;
+  function drawIcon(g, icon, x, y, s, color) {
+    const src = imgSrc(icon);
+    const u = src ? el("image", { href: src, x, y, width: s, height: s, preserveAspectRatio: "xMidYMid meet", class: "nicon" }, g)
+                  : el("use", { href: "#ic-" + icon, x, y, width: s, height: s, class: "nicon" }, g);
+    u.style.color = color; u.style.cursor = "pointer"; return u;
+  }
   function anchorBox(n, b) {   // FR92: lines attach to a pictogram's DRAWN icon, not its invisible box
     if (!n || !b || !isPictogram(n)) return b;
     const g = pictoGeom(b, String(n.label || "").split("\n")), bb = ICON_BOX[n.icon] || [0, 0, 24, 24], k = g.s / 24;
@@ -855,8 +867,7 @@
         const rect = el("rect", { x: hb.x, y: hb.y, width: hb.w, height: hb.h, rx: 3, ry: 3, fill: "transparent", stroke: "none" }, g);
         if (S.sel === n.id) { rect.setAttribute("stroke", pal.stroke); rect.style.strokeWidth = 1.5; }
         const pg = pictoGeom(bx, lines);
-        const u = el("use", { href: "#ic-" + n.icon, x: pg.x, y: pg.y, width: pg.s, height: pg.s }, g);
-        u.style.color = pal.stroke;
+        drawIcon(g, n.icon, pg.x, pg.y, pg.s, pal.stroke);
         lines.forEach((ln, i) => { const t = el("text", { x: cx, y: pg.ty + i * 15, "text-anchor": "middle", class: "halo" }, g); t.textContent = ln; });
       } else {
         const rect = el("rect", { x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: r, ry: r, fill: pal.fill, stroke: pal.stroke }, g);
@@ -867,8 +878,7 @@
         let ty = bx.y + bx.h / 2 + 4;
         if (n.icon) {
           const is = n.nodeType === "device" ? 34 : 24;   // FR89: a container device keeps its box, with a bigger icon
-          const u = el("use", { href: "#ic-" + n.icon, x: cx - is / 2, y: bx.y + 6, width: is, height: is }, g);
-          u.style.color = pal.stroke;
+          drawIcon(g, n.icon, cx - is / 2, bx.y + 6, is, pal.stroke);
           ty = bx.y + is + 18;
         }
         const startY = n.icon ? ty : ty - (lines.length - 1) * 8;
@@ -1183,7 +1193,7 @@
       for (const o of opts) {
         const b = document.createElement("button");
         b.textContent = o.label || o.value; b.className = S.toggle[t.id] === o.value ? "on" : "";
-        b.onclick = () => { S.toggle[t.id] = o.value; normalizeToggles(); writeHash(); buildToggles(); render();
+        b.onclick = () => { S.toggle[t.id] = o.value; normalizeToggles(); writeHash(); dropHiddenSel(); buildToggles(); render();
           applyAnchor(); };   // FR104: the anchored box stays on its spot in every view
         seg.appendChild(b);
       }
@@ -1308,10 +1318,33 @@
     const id = uid("n", (x) => node(x)), r = svg.getBoundingClientRect();
     const c = toWorld({ clientX: r.left + svg.clientWidth / 2, clientY: r.top + svg.clientHeight / 2 });
     S.data.nodes.push({ id, label: "new node", x: c.x - 80, y: c.y - 30, w: 160, h: 64, color: "note", icon: "", childDiagram: "" });
+    const w = thisViewWhen(); if (w) S.data.nodes[S.data.nodes.length - 1].showWhen = w;   // FR113: only in the view it was added in
     S.sel = id; S.selEdge = null; markDirty(true); render(); refreshSwatchSel();
     status(`added <b>${id}</b> — drag it, ✎ rename, ★ icon, colour`);
   }
-  function delSel() {
+  function shownIn(o, isEdge) {   // the views (toggle combinations) that show item o
+    const saved = S.toggle, out = [];
+    for (const st of allStates()) { S.toggle = st;
+      if (visible(o) && (!isEdge || [o.from, o.to].every((id) => { const n = node(id); return n && visible(n); }))) out.push(viewKey(st)); }
+    S.toggle = saved; return out;
+  }
+  function dropHiddenSel() {   // FR113: a selection the current view doesn't show is dropped (so Delete can't hit it)
+    const e = S.selEdge && S.data.edges.find((x) => x.id === S.selEdge);
+    if (S.selEdge && !(e && edgeDrawn(e))) S.selEdge = null;
+    if (S.sel && !(node(S.sel) && visible(node(S.sel)))) S.sel = null;
+  }
+  function delSel(ev) {
+    dropHiddenSel();
+    if (!S.sel && !S.selEdge) { status("nothing selected in this view"); render(); return; }
+    const o = S.selEdge ? S.data.edges.find((e) => e.id === S.selEdge) : S.sel ? node(S.sel) : null;
+    if (o && !(ev && ev.shiftKey) && toggles().length) {   // FR113: only from THIS view while other views still show it
+      const here = viewKey(), others = shownIn(o, !!S.selEdge).filter((k) => k !== here).length;
+      if (others) {
+        o.hideIn = [...new Set([...(o.hideIn || []), here])].sort();
+        status(`removed <b>${o.id}</b> from this view — still in ${others} other view${others === 1 ? "" : "s"} (<b>Shift+Delete</b> removes it everywhere)`);
+        S.sel = null; S.selEdge = null; markDirty(true); render(); return;
+      }
+    }
     if (S.selEdge) { S.data.edges = S.data.edges.filter((e) => e.id !== S.selEdge); status(`deleted edge ${S.selEdge}`); S.selEdge = null; markDirty(true); render(); return; }
     if (!S.sel) { status("nothing selected"); return; }
     S.data.nodes = S.data.nodes.filter((n) => n.id !== S.sel);
@@ -1362,7 +1395,7 @@
     if (!tids.length) { status("no toggles defined (⚙ toggles) — nothing to bind to"); return; }
     const which = prompt(`Show this ONLY for a toggle value.\ntoggle id (${tids.join(", ")}), blank = clear all:`, tids[0]);
     if (which == null) return;
-    if (!which.trim()) { delete o.showWhen; markDirty(true); render(); status("cleared show-when"); return; }
+    if (!which.trim()) { delete o.showWhen; delete o.hideIn; markDirty(true); render(); status("cleared show-when — shown in every view again"); return; }   // FR113: also un-hides
     if (!tids.includes(which.trim())) { status(`no toggle '${which}'`); return; }
     const cur = S.toggle[which.trim()];
     o.showWhen = Object.assign(o.showWhen || {}, { [which.trim()]: [cur] });
@@ -1685,13 +1718,14 @@
   function clearRubber() { if (S.rubber) { S.rubber.remove(); S.rubber = null; } S.draw = null; }
   function endPointer(ev) { if (S.mode) { try { svg.releasePointerCapture(ev.pointerId); } catch (_) {} }
     setTimeout(commitEdit, 0);   // FR97: a drag/resize/draw is one undo step, committed once the pointer is released
-    S.mode = "idle"; S.drag = null; S.panStart = null; S.resize = null; svg.classList.remove("panning"); }
+    S.justDragged = !!((S.drag && S.drag.moved) || S.resize); S.mode = "idle"; S.drag = null; S.panStart = null; S.resize = null; svg.classList.remove("panning"); }
   svg.addEventListener("pointerup", (ev) => {
     if (S.mode === "edgedrag" || S.mode === "enddrag") { S.edrag = null; endPointer(ev); render(); return; }
     if (S.mode === "drawedge" && S.draw) {
       const tgt = S.draw.tgt, src = S.draw.src;
       if (tgt) {
         const id = uid("e", (x) => S.data.edges.some((e) => e.id === x)), e = { id, from: "", to: "", label: "", kind: "plain", dir: "to" };
+        const w = thisViewWhen(); if (w) e.showWhen = w;   // FR113: a new line belongs to the view it was drawn in
         S.data.edges.push(e);
         applyTarget(e, "start", { ...src, pt: null }); applyTarget(e, "end", { ...tgt, pt: null });   // both ends exist first …
         applyTarget(e, "start", src); applyTarget(e, "end", tgt);                                    // … then the exact points
@@ -1715,7 +1749,7 @@
   /* ---------- buttons + keys ---------- */
   $("addnode").onclick = addNode;
   $("addedge").onclick = () => { S.pending = { src: null }; svg.classList.add("addedge"); status("add edge: click <b>source</b> then <b>target</b> (Esc cancels)"); };
-  $("del").onclick = delSel;
+  $("del").onclick = (ev) => delSel(ev);
   $("undo").onclick = undo; $("redo").onclick = redo;
   $("relabel").onclick = relabel;
   $("seticon").onclick = setIcon;
@@ -1818,6 +1852,111 @@
     if (on && S.ghost) { S.ghost = false; render(); }   // Ctrl+Shift = exact-attach drawing (FR81), not the overlay
     if (S.sel) render();   // refresh handle cursors
   }
+  /* ---------- FR114: icon picker (click a box's icon) + uploads ---------- */
+  const picker = $("iconpicker");
+  function closePicker() { picker.hidden = true; picker.textContent = ""; }
+  function setNodeIcon(n, icon) { if (icon) n.icon = icon; else n.icon = ""; markDirty(true); render(); closePicker();
+    status(`<b>${n.id}</b> icon → ${icon ? (icon.startsWith("img:") ? "uploaded picture" : icon) : "none"}`); }
+  function shrinkToDataURL(blob) {   // any picture → PNG data URL, longest side ≤ 128 px (SVG kept as-is)
+    return new Promise((res, rej) => {
+      const fr = new FileReader(); fr.onerror = rej;
+      fr.onload = () => {
+        if (blob.type === "image/svg+xml") { res(fr.result); return; }
+        const im = new Image(); im.onerror = rej;
+        im.onload = () => { const k = Math.min(1, 128 / Math.max(im.width, im.height)), c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
+          c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL("image/png")); };
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(blob);
+    });
+  }
+  function addImage(name, src) {   // store a picture in this diagram; returns its icon value
+    const meta = S.data.meta, imgs = meta.images = meta.images || {};
+    let key = String(name || "image").toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "image", k = key, i = 2;
+    while (imgs[k] && imgs[k] !== src) k = key + "-" + i++;
+    imgs[k] = src; return "img:" + k;
+  }
+  function openPicker(n, cx, cy) {
+    picker.textContent = ""; picker.hidden = false;
+    const head = document.createElement("div"); head.className = "ip-head"; head.textContent = `icon for ${nodeName(n)}`; picker.appendChild(head);
+    const grid = document.createElement("div"); grid.className = "ip-grid"; picker.appendChild(grid);
+    const cell = (icon, title) => { const b = document.createElement("button"); b.className = "ip-cell" + ((n.icon || "") === icon ? " on" : ""); b.title = title;
+      if (!icon) b.textContent = "none";
+      else { const s = document.createElementNS(SVGNS, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", 28); s.setAttribute("height", 28);
+        const src = imgSrc(icon); if (src) el("image", { href: src, x: 0, y: 0, width: 24, height: 24 }, s); else el("use", { href: "#ic-" + icon }, s);
+        s.style.color = "#c9d1d9"; b.appendChild(s); }
+      b.onclick = () => setNodeIcon(n, icon); grid.appendChild(b); };
+    cell("", "no icon");
+    for (const sym of $("defs").querySelectorAll("symbol[id^='ic-']")) { const name = sym.id.slice(3); cell(name, name); }
+    for (const key of Object.keys((S.data.meta && S.data.meta.images) || {})) cell("img:" + key, key + " (uploaded)");
+    const row = document.createElement("div"); row.className = "ip-row"; picker.appendChild(row);
+    const up = document.createElement("button"); up.textContent = "⬆ upload from PC"; row.appendChild(up);
+    const ln = document.createElement("button"); ln.textContent = "🔗 from a link"; row.appendChild(ln);
+    const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true; row.appendChild(file);
+    up.onclick = () => file.click();
+    file.onchange = async () => { const f = file.files[0]; if (!f) return;
+      try { setNodeIcon(n, addImage(f.name, await shrinkToDataURL(f))); } catch (_) { status("could not read that picture"); } };
+    ln.onclick = async () => {
+      const url = (prompt("Picture link (https://…):") || "").trim(); if (!url) return;
+      try { const r = await fetch(url, { mode: "cors" }); if (!r.ok) throw new Error(r.status); setNodeIcon(n, addImage(url.split("/").pop(), await shrinkToDataURL(await r.blob()))); }
+      catch (_) { setNodeIcon(n, addImage(url.split("/").pop(), url));   // the site blocks downloading it: keep the link itself
+        status(`<b>${n.id}</b> icon → linked picture (that site doesn't allow copying it, so the diagram points to the link — needs internet)`); }
+    };
+    const host = $("canvaswrap").getBoundingClientRect();
+    picker.style.left = Math.max(4, Math.min(host.width - 340, cx - host.left + 8)) + "px";
+    picker.style.top = Math.max(4, Math.min(host.height - 380, cy - host.top + 8)) + "px";
+  }
+  // a click (press + release without moving) on a box's icon opens the picker; the press is noted before the editor
+  // captures the pointer (after which the browser's own click no longer lands on the icon)
+  svg.addEventListener("pointerdown", (ev) => {
+    const ic = ev.target.closest && ev.target.closest(".nicon");
+    S.iconDown = ic && !ev.ctrlKey && !ev.metaKey && ev.button === 0 ? { id: nodeIdFromEvent(ev), x: ev.clientX, y: ev.clientY } : null;
+  }, true);
+  svg.addEventListener("pointerup", (ev) => {
+    const d = S.iconDown; S.iconDown = null;
+    if (!d || S.justDragged || Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 4) return;
+    const n = node(d.id); if (n) openPicker(n, ev.clientX, ev.clientY);
+  });
+  document.addEventListener("pointerdown", (ev) => { if (!picker.hidden && !picker.contains(ev.target) && !(ev.target.closest && ev.target.closest(".nicon"))) closePicker(); });
+
+  /* ---------- FR114: copy / paste a box or line — also across diagrams (kept in this browser) ---------- */
+  const CLIP_KEY = "flow.clipboard";
+  let lastWorld = null;
+  svg.addEventListener("pointermove", (ev) => { lastWorld = toWorld(ev); });
+  svg.addEventListener("pointerleave", () => { lastWorld = null; });
+  function copySel() {
+    const meta = S.data.meta || {}, imgs = {};
+    const keep = (icon) => { const s = imgSrc(icon); if (s) imgs[icon.slice(4)] = s; };
+    let clip;
+    if (S.sel) { const n = node(S.sel), b = rbox(n), c = JSON.parse(JSON.stringify(n));
+      delete c.container; delete c.containerWhen; delete c.snapSide; delete c.cdx; delete c.cdy; c.x = Math.round(b.x); c.y = Math.round(b.y); keep(n.icon);
+      clip = { kind: "node", item: c }; }
+    else if (S.selEdge) clip = { kind: "edge", item: JSON.parse(JSON.stringify(S.data.edges.find((e) => e.id === S.selEdge))) };
+    else return false;
+    clip.v = 1; clip.from = S.id; clip.images = imgs;
+    try { localStorage.setItem(CLIP_KEY, JSON.stringify(clip)); } catch (_) { status("could not copy (browser storage blocked)"); return true; }
+    status(`copied <b>${clip.item.id}</b> — Ctrl+V pastes it here or in any other diagram`); return true;
+  }
+  function pasteClip() {
+    let clip; try { clip = JSON.parse(localStorage.getItem(CLIP_KEY) || "null"); } catch (_) {}
+    if (!clip || !clip.item) { status("nothing copied yet — select a box or line and press Ctrl+C"); return; }
+    const it = JSON.parse(JSON.stringify(clip.item)), w = thisViewWhen();
+    delete it.hideIn; if (w) it.showWhen = w; else delete it.showWhen;   // FR113: a pasted item belongs to this view
+    if (/^img:/.test(it.icon || "") && clip.images && clip.images[it.icon.slice(4)]) it.icon = addImage(it.icon.slice(4), clip.images[it.icon.slice(4)]);
+    if (clip.kind === "node") {
+      const base = it.id.replace(/-?\d+$/, "") || "n"; it.id = node(it.id) ? uid(base, (x) => node(x)) : it.id;
+      if (lastWorld) { it.x = Math.round(lastWorld.x - it.w / 2); it.y = Math.round(lastWorld.y - it.h / 2); }
+      else if (clip.from === S.id) { it.x += 30; it.y += 30; }
+      S.data.nodes.push(it); S.sel = it.id; S.selEdge = null;
+    } else {
+      const ok = (id, on) => (on ? S.data.edges.some((x) => x.id === String(on).split(":")[0]) : true) && !!node(id);
+      if (!ok(it.from, it.fromOn) || !ok(it.to, it.toOn)) { status(`can't paste <b>${it.id}</b> here — this diagram has no <b>${!node(it.from) ? it.from : it.to}</b> to connect`); return; }
+      it.id = uid("e", (x) => S.data.edges.some((e) => e.id === x)); S.data.edges.push(it); S.selEdge = it.id; S.sel = null;
+    }
+    markDirty(true); refreshSwatchSel(); render(); status(`pasted <b>${it.id}</b>${clip.from !== S.id ? ` (from ${clip.from})` : ""} — only in this view; 👁 show-when to widen`);
+  }
+
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Control" || ev.key === "Meta") setCtrl(true);
     const textField = ev.target.tagName === "TEXTAREA" || (ev.target.tagName === "INPUT" && !["range", "color", "button", "checkbox"].includes(ev.target.type));
@@ -1826,9 +1965,12 @@
     if (mod && !ev.altKey && (k === "z" || k === "y")) {   // FR97
       ev.preventDefault(); if (k === "y" || ev.shiftKey) redo(); else undo(); return;
     }
+    if (mod && !ev.altKey && k === "c" && !String(window.getSelection())) { if (copySel()) { ev.preventDefault(); return; } }   // FR114
+    if (mod && !ev.altKey && k === "v") { ev.preventDefault(); pasteClip(); return; }
+    if (ev.key === "Escape" && !picker.hidden) { closePicker(); return; }
     // FR87: hold Shift (alone) = overlay every toggle state; not while Shift means "exact spot" (drawing / end drag)
     if (ev.key === "Shift" && !S.ghost && !ev.ctrlKey && !ev.metaKey && S.mode !== "drawedge" && S.mode !== "enddrag") { S.ghost = true; render(); }
-    if (ev.key === "Delete" || ev.key === "Backspace") { if (S.sel || S.selEdge) { ev.preventDefault(); delSel(); } }
+    if (ev.key === "Delete" || ev.key === "Backspace") { if (S.sel || S.selEdge) { ev.preventDefault(); delSel(ev); } }
     else if (ev.key === "Escape") {
       if (S.mode === "drawedge") { clearRubber(); S.mode = "idle"; status("arrow cancelled"); render(); }
       else if (S.pending) { S.pending = null; svg.classList.remove("addedge"); status("cancelled"); }

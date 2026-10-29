@@ -902,6 +902,37 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   zoom**, so it agrees with the view you saved. Verified (Save intercepted — nothing written): pan → dirty; Save sends
   `meta.view`; reload with the browser memory cleared restores the same pan + zoom, with and without an anchor.
 
+- **FR113. Adding and deleting work per view.** (User: *on `setup-map;method=cable;net=0c;reach=ipv6;name=buy`, if I
+  add e12 it also appears in `…;reach=cloudflare;…`, and if I delete it in Cloudflare it is deleted in the IPv6 one as
+  well.*) A view = one toggle combination. **A new line (Ctrl-drag) or box (＋ node) belongs to the view it was made
+  in**: it gets `showWhen` = the current value of every toggle (widen it with 👁 show-when). **Delete** removes the
+  selected item **from this view only** while other views still show it — stored as **`hideIn`** = a list of view keys
+  (`"method=cable;net=0c;reach=cloudflare;name=buy"`, n/a toggles left out); the status bar says how many views still
+  show it. When this is its last view, or with **Shift+Delete**, it is removed from the diagram (with its lines, as
+  before). Switching views drops a selection the new view doesn't show (so Delete can't hit an invisible item);
+  👁 show-when → blank clears `hideIn` too. `docs/gen_flow_svg.py` honours `hideIn` (`shown`). Verified live: a line
+  drawn in IPv6 is absent in Cloudflare; deleting `e_scable` in Cloudflare hides it only there (47 other views keep
+  it); Shift+Delete removes it everywhere; renderer draws it in IPv6, not in that Cloudflare view.
+- **FR114. Copy / paste boxes and lines (also across diagrams); click an icon to change it, or upload one.** (User: *if I
+  select the "Not everyone has IPv6 …" box and press Ctrl+C + Ctrl+V it is not copied — make it work, also across
+  diagrams. I want to click on the forbidden icon and see a menu where I can scroll through all the icons and select a
+  different one, or "upload from PC", or upload through a link.*)
+  - **Copy / paste:** **Ctrl+C** on a selected box or line puts it on the editor's own clipboard (kept in this
+    browser — `localStorage` `flow.clipboard` — so it survives switching / reloading diagrams; text selections keep
+    the browser's normal copy). **Ctrl+V** pastes a copy: a box gets a free id (`v6block` → `v6block1`), lands at the
+    mouse (else 30 px offset), un-nested at its drawn spot; a line keeps its ends and needs both of them in the target
+    diagram (else the status bar says which box is missing). The pasted item **belongs to the current view** (FR113:
+    `showWhen` = this view, no `hideIn`); an uploaded picture it uses travels with it.
+  - **Icon menu:** **click a box's icon** (press + release without moving; a drag still moves the box) → a menu with
+    **every icon** in `docs/icons.svg` in a scrollable grid (the current one highlighted), **none**, this diagram's
+    uploaded pictures, **⬆ upload from PC** and **🔗 from a link**. Escape or a click elsewhere closes it.
+  - **Uploaded pictures** are stored **in the diagram**: `meta.images[<name>]` = a PNG data URL scaled to ≤ 128 px
+    (SVG kept as-is), and the box's `icon` = `"img:<name>"` — so they work offline and in the published SVG
+    (`docs/gen_flow_svg.py` `icon_svg` draws an `<image>`). A link is downloaded the same way; if the site refuses
+    that (no CORS), the link itself is stored and the status bar says it needs internet.
+  Verified live (nothing saved): copy + paste of `v6block` in the IPv6 view; icon menu (25 icons, current marked) →
+  pick *warn*; PC upload → 4 KB PNG data URL drawn as a picture; link upload; pasting into *tunnels* → `v6block1`
+  with its uploaded picture. (The "site refuses" fallback could not be reproduced in the test browser.)
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on

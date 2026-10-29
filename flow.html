@@ -85,6 +85,17 @@
     #legend svg { display: block; flex: none; }
     #legend .lgcap { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim2); margin-top: 2px; }
     /* contextual box for a selected arrow */
+    /* FR114: icon picker */
+    #iconpicker { position: absolute; z-index: 45; width: 330px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+                  padding: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.55); color: var(--fg); }
+    #iconpicker .ip-head { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; margin: 0 2px 6px; }
+    #iconpicker .ip-grid { display: grid; grid-template-columns: repeat(auto-fill, 40px); gap: 4px; max-height: 260px; overflow-y: auto; }
+    #iconpicker .ip-cell { width: 40px; height: 40px; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--border);
+                           border-radius: 6px; cursor: pointer; color: var(--dim); font-size: 10px; padding: 0; }
+    #iconpicker .ip-cell:hover { border-color: var(--blue); }
+    #iconpicker .ip-cell.on { border-color: var(--blue); background: #13233a; }
+    #iconpicker .ip-row { display: flex; gap: 6px; margin-top: 8px; }
+    #iconpicker .ip-row button { flex: 1; background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 6px; cursor: pointer; font-size: 12px; }
     #edgepanel { position: absolute; z-index: 40; background: var(--panel2); border: 1px solid var(--border);
                  border-radius: 8px; padding: 6px 8px; color: var(--fg); display: none;
                  box-shadow: 0 6px 20px rgba(0,0,0,.55); cursor: move; user-select: none; touch-action: none; }
@@ -173,6 +184,7 @@
       </g>
     </svg>
     <div id="legend" hidden></div>
+    <div id="iconpicker" hidden></div>
     <div id="edgepanel">
       <div class="row" id="ep-idrow">
         <span class="grip" title="Drag to move this box · double-click to put it back">⠿</span><label>line</label>
