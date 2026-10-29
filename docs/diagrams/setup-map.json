@@ -798,12 +798,12 @@
             "value": "0b"
           },
           {
-            "label": "cable→R, wifi→Y",
-            "value": "0c"
-          },
-          {
             "label": "wifi-only",
             "value": "0d"
+          },
+          {
+            "label": "cable→R, wifi→Y",
+            "value": "0c"
           }
         ],
         "optionsWhen": {

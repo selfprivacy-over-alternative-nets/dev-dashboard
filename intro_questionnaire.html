@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Find your setup</title>
+<style>
+  :root {
+    --bg: #f6f4ef; --card: #ffffff; --fg: #1f2328; --dim: #57606a; --line: #d8d4ca;
+    --accent: #2f6fd1; --accent-bg: #e8f0fc; --good: #1a7f37; --warn: #9a6700; --warn-bg: #fff8e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0d1117; --card: #161b22; --fg: #e6edf3; --dim: #9198a1; --line: #30363d;
+      --accent: #58a6ff; --accent-bg: #13233a; --good: #3fb950; --warn: #d29922; --warn-bg: #2a2410; }
+  }
+  :root[data-theme="dark"] { --bg: #0d1117; --card: #161b22; --fg: #e6edf3; --dim: #9198a1; --line: #30363d;
+    --accent: #58a6ff; --accent-bg: #13233a; --good: #3fb950; --warn: #d29922; --warn-bg: #2a2410; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+  .top { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .top a { color: var(--dim); font-size: 15px; text-decoration: none; }
+  .top a:hover { color: var(--accent); }
+  .bar { flex: 1; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s; }
+  h1 { font-size: 26px; line-height: 1.25; margin: 6px 0 8px; }
+  .help { color: var(--dim); margin: 0 0 20px; }
+  .opts { display: grid; gap: 12px; }
+  .opt { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 14px 16px; text-align: left;
+         background: var(--card); color: var(--fg); border: 2px solid var(--line); border-radius: 12px; font: inherit; cursor: pointer; }
+  .opt:hover, .opt:focus-visible { border-color: var(--accent); outline: none; }
+  .opt .ic { font-size: 28px; width: 36px; text-align: center; flex: none; }
+  .opt small { display: block; color: var(--dim); font-size: 15px; }
+  .tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; background: var(--accent-bg); color: var(--accent); font-size: 13px; vertical-align: 2px; }
+  .back { margin-top: 20px; background: none; border: none; color: var(--dim); font: inherit; font-size: 16px; cursor: pointer; padding: 6px 0; }
+  .back:hover { color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin: 14px 0; }
+  .card h2 { font-size: 17px; margin: 0 0 8px; }
+  .card ul { margin: 0; padding-left: 20px; }
+  .card li { margin: 4px 0; }
+  .note { background: var(--warn-bg); border-color: var(--warn); }
+  .note h2 { color: var(--warn); }
+  .go { display: block; text-align: center; margin: 22px 0 8px; padding: 16px; border-radius: 12px; background: var(--accent); color: #fff;
+        font-weight: 600; font-size: 19px; text-decoration: none; }
+  .go:hover { filter: brightness(1.08); }
+  .small { color: var(--dim); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><a href="flow.html">← the full map</a><div class="bar"><i id="progress"></i></div></div>
+  <div id="screen"></div>
+</main>
+<script>
+/* A few plain questions → the matching view of the setup map (flow.html#setup-map;method=…;net=…;reach=…;name=…). */
+const Q = {
+  where: { title: "Where should your private cloud live?",
+    help: "Your private cloud is your own place for photos, files and chats — instead of a big company's.",
+    opts: [
+      { ic: "🏠", text: "On a small computer at home that stays switched on", sub: "An old laptop or a mini-PC is fine.", tag: "recommended", set: {}, next: "install" },
+      { ic: "💻", text: "Just try it out on this computer first", sub: "Nothing to buy. It only works while this computer is on.", set: { method: "vm" }, next: "router" },
+    ] },
+  install: { title: "How will you put SelfPrivacy onto that computer?",
+    help: "This is a one-time step. You can ask someone to help with it.",
+    opts: [
+      { ic: "🔌", text: "With a USB stick", sub: "Copy it onto a stick, plug the stick into the other computer.", tag: "easiest", set: { method: "usb" }, next: "net" },
+      { ic: "〰️", text: "With a network cable from this computer", sub: "A cable straight from this computer to the other one.", set: { method: "cable" }, next: "net" },
+      { ic: "📶", text: "Over my home wifi", sub: "No stick or cable needed.", set: { method: "wifi" }, next: "net" },
+    ] },
+  net: { title: "How will that computer connect to the internet?",
+    help: "At home, the internet comes from a box from your internet company — the router.",
+    opts: [
+      { ic: "🔌", text: "With a cable to the internet box", sub: "Most reliable.", tag: "recommended", set: { net: "0a" }, next: "router" },
+      { ic: "📶", text: "Through wifi", sub: "Fine if the box is far away.", set: { net: "0d" }, next: "router" },
+    ] },
+  router: { title: "Do you know what a router is?",
+    help: "It's the box from your internet company, usually with little lights, that gives you wifi.",
+    opts: [
+      { ic: "👍", text: "Yes", set: {}, next: "port" },
+      { ic: "🤷", text: "No, not really", set: {}, next: "helper" },
+    ] },
+  port: { title: "Can you change your router's settings so visitors can reach your cloud?",
+    help: "You log in to the router and open one door for your cloud. Techies call this \"port forwarding\" (port 443). Your friends then connect straight to your home — no company in between.",
+    opts: [
+      { ic: "🛠️", text: "Yes, I can do that", set: { reach: "portfwd" }, next: "name" },
+      { ic: "🙅", text: "No, or I'd rather not", sub: "That's fine — a helper service can do it instead.", set: {}, next: "helper" },
+    ] },
+  name: { title: "Your cloud needs an address people can type, like yourname.com",
+    help: "This is the address your friends use to open your photos and files.",
+    opts: [
+      { ic: "🛒", text: "Buy my own address", sub: "About €10 a year. It's yours, and it never changes.", set: { name: "buy" }, next: "done" },
+      { ic: "🎁", text: "Use a free one", sub: "Like yourname.duckdns.org — free, run by volunteers.", set: { name: "duckdns" }, next: "done" },
+    ] },
+  helper: { title: "A helper service will connect your cloud to the internet. Which do you prefer?",
+    help: "You don't need to change anything on your router.",
+    opts: [
+      { ic: "✨", text: "Free and easy", sub: "A company (Tailscale) gives you a free address.", tag: "easiest", set: { reach: "tailscale" }, next: "done" },
+      { ic: "🛒", text: "My own address", sub: "Buy a name (about €10 a year); a company (Cloudflare) connects it.", set: { reach: "cloudflare", name: "buy" }, next: "done" },
+      { ic: "🕵️", text: "No company at all — most private", sub: "Free. Your friends need the special Tor Browser to visit.", set: { reach: "onion" }, next: "done" },
+    ] },
+};
+const SAY = {   // plain-language summary + what you'll need, per choice
+  method: { vm: "Try it on this computer (it runs only while this computer is on)", usb: "Install with a USB stick", cable: "Install with a network cable", wifi: "Install over your home wifi" },
+  net: { "0a": "The home computer is connected to the router with a cable", "0d": "The home computer uses wifi" },
+  reach: { portfwd: "Friends connect straight to your home (you open a door in the router)", tailscale: "A free helper company (Tailscale) connects your cloud",
+           cloudflare: "Your own address, connected through Cloudflare", onion: "Through the Tor network — no company, friends use the Tor Browser" },
+  name: { buy: "Your own address that you buy (about €10 a year)", duckdns: "A free address from DuckDNS (run by volunteers)" },
+};
+const NEED = { usb: "a USB stick (8 GB or more)", cable: "a network cable", wifi: null, buy: "about €10 a year for your own address" };
+const NOTE = {
+  tailscale: "The free address belongs to Tailscale, and some features of your cloud may need an address of your own later.",
+  onion: "Your friends can only open your cloud with the Tor Browser (free to download).",
+  duckdns: "DuckDNS is run by volunteers on donations — it is free, but has no guarantee.",
+  portfwd: "Your home internet must give you a public address; most providers do. If yours doesn't, choose a helper service instead.",
+};
+let path = [], ans = {};
+function show(id) {
+  const scr = document.getElementById("screen");
+  document.getElementById("progress").style.width = (id === "done" ? 100 : Math.min(90, path.length * 18)) + "%";
+  if (id === "done") return done(scr);
+  const q = Q[id];
+  scr.innerHTML = `<h1>${q.title}</h1><p class="help">${q.help}</p><div class="opts"></div>` + (path.length ? `<button class="back">← Back</button>` : "");
+  const box = scr.querySelector(".opts");
+  for (const o of q.opts) {
+    const b = document.createElement("button"); b.className = "opt";
+    b.innerHTML = `<span class="ic">${o.ic}</span><span>${o.text}${o.tag ? `<span class="tag">${o.tag}</span>` : ""}${o.sub ? `<small>${o.sub}</small>` : ""}</span>`;
+    b.onclick = () => { path.push({ id, ans: { ...ans } }); Object.assign(ans, o.set); show(o.next); };
+    box.appendChild(b);
+  }
+  const back = scr.querySelector(".back");
+  if (back) back.onclick = () => { const p = path.pop(); ans = p.ans; show(p.id); };
+  scr.querySelector(".opt").focus({ preventScroll: true });
+}
+function done(scr) {
+  const a = { ...ans };
+  if (!a.method) a.method = "usb";
+  if (a.method !== "vm" && !a.net) a.net = "0a";
+  const hash = "setup-map;method=" + a.method + (a.method !== "vm" ? ";net=" + a.net : "") + ";reach=" + a.reach + (a.name ? ";name=" + a.name : "");
+  const lines = ["method", "net", "reach", "name"].filter((k) => a[k] && SAY[k][a[k]]).map((k) => `<li>${SAY[k][a[k]]}</li>`).join("");
+  const need = (a.method === "vm" ? ["just this computer — nothing to buy"] : ["a small computer that stays switched on at home", NEED[a.method]])
+    .concat(a.name === "buy" ? [NEED.buy] : []).filter(Boolean);
+  const note = NOTE[a.name === "duckdns" ? "duckdns" : a.reach];
+  scr.innerHTML = `<h1>Here's the setup for you</h1><p class="help">Based on your answers. You can always change your mind later.</p>
+    <div class="card"><h2>Your setup</h2><ul>${lines}</ul></div>
+    <div class="card"><h2>What you'll need</h2><ul>${need.map((x) => `<li>${x}</li>`).join("")}</ul></div>
+    ${note ? `<div class="card note"><h2>Good to know</h2>${note}</div>` : ""}
+    <a class="go" href="flow.html#${hash}">Show me how it works →</a>
+    <p class="small">Opens the map of your setup. <button class="back" id="again">↺ Start again</button> <button class="back" id="prev">← Back</button></p>`;
+  document.getElementById("again").onclick = () => { path = []; ans = {}; show("where"); };
+  document.getElementById("prev").onclick = () => { const p = path.pop(); ans = p.ans; show(p.id); };
+}
+show("where");
+</script>
+</body>
+</html>

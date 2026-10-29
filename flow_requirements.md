@@ -949,6 +949,23 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   entries dropped, LAN ones kept. Verified: all 24 network × reach × name combinations are identical across LAN /
   wifi / USB except `e_cable` / `e_wifi` / `e_usb`; old `w1` / `w2` / `ua` / `ub` / `uc` links open the matching
   view; a line drawn in wifi appears in LAN + USB (not VM) and one Delete in USB removes it from all three.
+- **FR116. Network order, and a grandma-friendly questionnaire that opens the right setup.** (User: *Network order: cable→R,
+  cable+wifi→R, wifi-only, cable→R + wifi→Y.* And, after a non-techie said *"I don't know what any of that is"*: *a quick
+  multiple-choice questionnaire that guides users to the config they should use — do you know what a router is? can
+  you configure port forwarding? buy a domain or rely on an intermediary company's free service? — an
+  intro_questionnaire page that redirects to the right flow, with minimal, simple questions for a grandma.*)
+  (1) The `net` options are ordered `0a` cable→R, `0b` cable+wifi→R, `0d` wifi-only, `0c` cable→R + wifi→Y (each install
+  method still shows only its own). (2) **`intro_questionnaire.html`**: one question per screen in plain words, big
+  buttons with an icon + one-line explanation, a progress bar and ← Back; light / dark follows the device. Questions:
+  *Where should your private cloud live?* (a small computer at home / just try it on this computer = VM) → *How will you
+  put SelfPrivacy onto that computer?* (USB stick / network cable / home wifi) → *How will that computer connect to the
+  internet?* (cable to the internet box / wifi) → *Do you know what a router is?* → if yes: *Can you change your
+  router's settings so visitors can reach your cloud?* ("port forwarding") → if yes: *buy your own address (~€10/yr) or
+  a free one (DuckDNS)* → port-forward; else (no router knowledge, or won't change it): *a helper service — free and easy
+  (Tailscale) / your own address through Cloudflare / no company at all (Tor)*. The end screen sums up the setup, what
+  you'll need, one "good to know" caveat, and **Show me how it works →** opens `flow.html#setup-map;method=…;net=…;
+  reach=…;name=…`. The editor's top bar has a **🧭 Help me choose** link to it. Verified: all 56 answer paths
+  (35 distinct setups) open exactly their view in the map, no page errors; checked at phone width.
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on
