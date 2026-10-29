@@ -599,8 +599,11 @@ def default_state(toggles):
     return state
 
 
+CANON = {}   # FR115: toggle id → {value: the first value of its sameLayout group}; set per diagram in render()
+
+
 def shown(o, state):   # FR113: showWhen matches and the item isn't hidden in this exact view — mirrors flow.js visible
-    key = ";".join(f"{k}={v}" for k, v in state.items() if v is not None)   # state is built in toggle order
+    key = ";".join(f"{k}={CANON.get(k, {}).get(v, v)}" for k, v in state.items() if v is not None)   # state is built in toggle order
     return when_ok(o.get("showWhen"), state) and key not in (o.get("hideIn") or [])
 
 
@@ -665,6 +668,10 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 
 
 def render(d):
+    CANON.clear()
+    for t in (d.get("meta") or {}).get("toggles") or []:   # FR115: values sharing one layout share their view key
+        for g in t.get("sameLayout") or []:
+            CANON.setdefault(t["id"], {}).update({v: g[0] for v in g})
     images = (d.get("meta") or {}).get("images") or {}   # FR114: uploaded pictures used as icons
     toggles = (d.get("meta") or {}).get("toggles", [])
     state = default_state(toggles)

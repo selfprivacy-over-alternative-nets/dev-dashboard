@@ -933,6 +933,39 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   Verified live (nothing saved): copy + paste of `v6block` in the IPv6 view; icon menu (25 icons, current marked) →
   pick *warn*; PC upload → 4 KB PNG data URL drawn as a picture; link upload; pasting into *tunnels* → `v6block1`
   with its uploaded picture. (The "site refuses" fallback could not be reproduced in the test browser.)
+- **FR115. LAN cable, wifi and USB installs share ONE layout; only the install line differs.** (User, comparing
+  `setup-map;method=cable;net=0a;reach=onion` / `method=wifi;net=w1;…` / `method=usb;net=ua;…`: *make the wifi just the
+  same as the LAN except the wifi-vs-LAN-cable difference — ideally collapse to one JSON with only that one edge
+  difference; I just cleaned up the LAN diagrams, so use those.*) It already was one JSON with canonical positions;
+  the divergence came from (a) each install method having its **own values for the same network** (`w1` / `ua` =
+  `0a`, `w2` / `ub` = `0d`, `uc` = `0c`) and (b) per-view copies tied to one method (FR113 / FR114). Now:
+  **one set of `net` values** (`0a` cable→R, `0b` cable+wifi→R, `0c` cable→R + wifi→Y, `0d` wifi-only) — wifi offers
+  `0a` / `0d`, USB `0a` / `0c` / `0d`, LAN all four; every `showWhen` / `hideIn` was rewritten, and old links keep
+  working through the toggle's **`aliases`** (`net=w1` → `0a`, …). The `method` toggle has **`sameLayout`**
+  `[["cable", "wifi", "usb"]]`: those values are **one view** for adding, pasting and deleting (FR113 / FR114 — view
+  keys use `cable`, new items get all three), so the layouts can't drift apart again; VM stays separate. Migration
+  (LAN = the source of truth): items made in a LAN view now show for wifi / USB on the same network (method
+  condition widened to the group); the wifi-only copies `v6block11` / `v6block12` were dropped; wifi / USB `hideIn`
+  entries dropped, LAN ones kept. Verified: all 24 network × reach × name combinations are identical across LAN /
+  wifi / USB except `e_cable` / `e_wifi` / `e_usb`; old `w1` / `w2` / `ua` / `ub` / `uc` links open the matching
+  view; a line drawn in wifi appears in LAN + USB (not VM) and one Delete in USB removes it from all three.
+- **FR116. Network order, and a grandma-friendly questionnaire that opens the right setup.** (User: *Network order: cable→R,
+  cable+wifi→R, wifi-only, cable→R + wifi→Y.* And, after a non-techie said *"I don't know what any of that is"*: *a quick
+  multiple-choice questionnaire that guides users to the config they should use — do you know what a router is? can
+  you configure port forwarding? buy a domain or rely on an intermediary company's free service? — an
+  intro_questionnaire page that redirects to the right flow, with minimal, simple questions for a grandma.*)
+  (1) The `net` options are ordered `0a` cable→R, `0b` cable+wifi→R, `0d` wifi-only, `0c` cable→R + wifi→Y (each install
+  method still shows only its own). (2) **`intro_questionnaire.html`**: one question per screen in plain words, big
+  buttons with an icon + one-line explanation, a progress bar and ← Back; light / dark follows the device. Questions:
+  *Where should your private cloud live?* (a small computer at home / just try it on this computer = VM) → *How will you
+  put SelfPrivacy onto that computer?* (USB stick / network cable / home wifi) → *How will that computer connect to the
+  internet?* (cable to the internet box / wifi) → *Do you know what a router is?* → if yes: *Can you change your
+  router's settings so visitors can reach your cloud?* ("port forwarding") → if yes: *buy your own address (~€10/yr) or
+  a free one (DuckDNS)* → port-forward; else (no router knowledge, or won't change it): *a helper service — free and easy
+  (Tailscale) / your own address through Cloudflare / no company at all (Tor)*. The end screen sums up the setup, what
+  you'll need, one "good to know" caveat, and **Show me how it works →** opens `flow.html#setup-map;method=…;net=…;
+  reach=…;name=…`. The editor's top bar has a **🧭 Help me choose** link to it. Verified: all 56 answer paths
+  (35 distinct setups) open exactly their view in the map, no page errors; checked at phone width.
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on
