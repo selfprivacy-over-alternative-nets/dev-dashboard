@@ -966,6 +966,13 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   you'll need, one "good to know" caveat, and **Show me how it works →** opens `flow.html#setup-map;method=…;net=…;
   reach=…;name=…`. The editor's top bar has a **🧭 Help me choose** link to it. Verified: all 56 answer paths
   (35 distinct setups) open exactly their view in the map, no page errors; checked at phone width.
+- **FR117. The diagram links to its test-matrix cells.** (Handover 16 §2: *every diagram view links to its matrix cell
+  and vice versa.*) The test matrix's axes are this map's toggles (setup `--on` = Install × Network, reach row
+  `--reach`/`--name` = Reach × Name; `requirements.md` reqs 168–173). The top-bar **◧** link follows the current view:
+  on `setup-map;method=cable;net=0a;reach=tailscale` it opens `index.html#method=cable;net=0a;reach=tailscale` (the
+  matrix filtered to that view); on other diagrams it opens the whole matrix. The matrix links back with ▦ per column,
+  row group and cell.
+
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on

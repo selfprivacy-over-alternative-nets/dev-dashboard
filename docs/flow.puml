@@ -19,7 +19,7 @@ sudo bash ~/netboot/start-netboot-server.sh;
 run  <b>./dash find-target</b>
 → it prints the device's MAC + IP, e.g.  MAC 80:e8:2c:15:81:8b  IP 192.168.100.29;
 :<b>2. Install onto it</b>
-run  <b>./dash run install.lan-setup-0d ...</b>  with the MAC + IP from step 1,
+run  <b>./dash run install.cable-0d --on cable-0d ...</b>  with the MAC + IP from step 1,
 your web address, and your wifi name + password (full command below the picture)
 → it asks "erase which disk?", then installs and prints <b>done</b>;
 :<b>3. Test the running box</b>

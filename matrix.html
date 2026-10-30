@@ -63,6 +63,7 @@
   .dot{width:13px;height:13px;border-radius:50%;display:inline-block;cursor:pointer;border:1px solid #0006;position:relative}
   .dot.pass{background:var(--green)} .dot.fail{background:var(--red)} .dot.slow{background:var(--amber)}
   .dot.na{background:transparent;border:1px dashed var(--grey);cursor:default}
+  tr.greyed{opacity:.45} tr.greyed th.net{text-decoration:line-through}  /* kept for reference, can't run */
   .dot.todo{background:transparent;border:1px solid var(--accent);border-radius:2px}
   .dot.q{box-shadow:0 0 0 2px var(--amber)}  /* per-run qualifier ring: forced/manual/cached/substituted/behind (NOT flaky — that's the sequence) */
   .dot .n{position:absolute;top:-7px;right:-7px;font-size:9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:0 3px;color:var(--dim)}
@@ -80,6 +81,7 @@
   .chip{font-family:ui-monospace,monospace;font-size:10px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--fg)}
   .chip.d{border-color:var(--amber);color:var(--amber)}
   .pins{color:var(--dim);font-size:11px}
+  a.dl{text-decoration:none;font-size:11px}  /* ▦ = open that view of the setup diagram (flow.html#setup-map) */
   /* detail drawer */
   #drawer{position:fixed;top:0;right:0;width:min(680px,92vw);height:100vh;background:var(--panel);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .15s;overflow:auto;z-index:40;box-shadow:-10px 0 40px #0008}
   #drawer.open{transform:none}

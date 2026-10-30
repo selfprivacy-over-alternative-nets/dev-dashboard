@@ -21,7 +21,7 @@
 # Standalone / non-interactive apply (every choice explicit, no silent defaults):
 #   bash tools/add-cloudflare.sh --key ~/.ssh/pcname_ed25519 --ip 192.168.1.167 \
 #        --method cloudflare --domain-kind free [--cf-named|--cf-quick] [--domain example.com] \
-#        [--ngrok-token <tok>] [--setup lan-setup-0a]
+#        [--ngrok-token <tok>] [--setup cable-0a]
 #   bash tools/add-cloudflare.sh --plan --default-domain example.com      # decide early, no box
 #
 # --key/--ip are required to APPLY; --plan needs neither.
@@ -31,7 +31,7 @@ set -uo pipefail
 
 PLAN=0; KEY=""; IP=""; METHOD=""; DOMAIN_KIND=""; DOMAIN=""; CF_MODE=""; NGROK_TOKEN=""; CF_TUNNEL_TOKEN=""
 PINGGY_TOKEN=""; LT_SUBDOMAIN=""; DOMAIN_SOURCE=""; DUCKDNS_TOKEN=""; TAILSCALE_AUTHKEY=""
-DEFAULT_DOMAIN=""; SETUP="${SP_SETUP:-lan-setup-0a}"; EXPERT_MODE=0
+DEFAULT_DOMAIN=""; SETUP="${SP_SETUP:-cable-0a}"; EXPERT_MODE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)           PLAN=1;            shift 1;;
@@ -64,6 +64,9 @@ fi
 
 # interactive = is a terminal attached at all (stdout may be captured in --plan, so test /dev/tty)
 INTERACTIVE=0; if { true >/dev/tty; } 2>/dev/null; then INTERACTIVE=1; fi
+# under `./dash run reach.<row>` every input is on the command line (req 172) and a prompt could not show
+# through dash's line-by-line relay — so never ask, fail fast on a missing value instead
+[ "${SP_NONINTERACTIVE:-0}" = 1 ] && INTERACTIVE=0
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
 msg(){ printf '%s\n' "$*" >&2; }                                   # human output -> stderr (safe in --plan)
@@ -90,6 +93,10 @@ box_tty(){ ssh -t $SSHO "root@$IP" "$@"; }
 putfile(){ ssh $SSHO "root@$IP" "cat > '$1'"; }
 NIXX="nix --extra-experimental-features 'nix-command flakes'"
 SUBS=(api cloud git matrix meet)
+# Any step that leaves the route NOT working records why; the script then exits non-zero at the end, so a
+# `./dash run reach.<row>` (or finish_box_setup's step 8) never records a half-applied route as a success.
+APPLY_FAILED=""
+fail_later(){ APPLY_FAILED="${APPLY_FAILED:+$APPLY_FAILED; }$1"; }
 
 # Free-domain SOURCE menu (used when a free CUSTOM domain is wanted). Sets DOMAIN_SOURCE.
 pick_domain_source(){ local ctx="$1" a   # ctx: tunnel (needs NS delegation) | router (A-record only)
@@ -210,7 +217,7 @@ if [ -z "$METHOD" ] && [ "$INTERACTIVE" = 1 ]; then
   if [ "$EXPERT_MODE" = 1 ]; then run_wizard; else recommend_method; fi
   WIZARD_DONE=1
 fi
-METHOD=$(need "$METHOD" --method "transport (cloudflare|tailscale|ipv6|ngrok|pinggy|localtunnel|router|none): ")
+METHOD=$(need "$METHOD" --method "transport (cloudflare|tailscale|ipv6|ngrok|pinggy|localtunnel|router|none): ") || exit 2
 
 # domain, TAILORED to the method (non-interactive / flag-driven path; the interactive wizard above
 # already set these with back-navigation, so skip it then).
@@ -236,7 +243,7 @@ case "$METHOD" in
           *)      msg "    Add that domain as a Cloudflare zone (NS delegation required) first, then:";;
         esac
       fi
-      DOMAIN=$(need "$DOMAIN" --domain "    the custom domain to use (e.g. example.com): ")
+      DOMAIN=$(need "$DOMAIN" --domain "    the custom domain to use (e.g. example.com): ") || exit 2
     else
       DOMAIN=""   # quick tunnel: the box keeps its baked DEFAULT domain internally; public URL is random
     fi ;;
@@ -262,7 +269,7 @@ case "$METHOD" in
       a=$(ask_choice "    OWN the domain (paid) or a FREE one? [paid/free]: " "${Y}    please type 'paid' or 'free'${X}" paid p free f); case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
     fi
     [ "${DOMAIN_KIND:-paid}" = free ] && pick_domain_source router
-    DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. grandma-1.duckdns.org): ") ;;
+    DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. grandma-1.duckdns.org): ") || exit 2 ;;
   router)
     msg "    A router forward needs a domain with public A-records."
     if [ -z "$DOMAIN_KIND" ] && [ "$INTERACTIVE" = 1 ]; then
@@ -270,7 +277,7 @@ case "$METHOD" in
       case "$a" in free|f) DOMAIN_KIND=free;; *) DOMAIN_KIND=paid;; esac
     fi
     [ "${DOMAIN_KIND:-paid}" = free ] && pick_domain_source router
-    DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. myserver.duckdns.org): ") ;;
+    DOMAIN=$(need "$DOMAIN" --domain "    the domain (e.g. myserver.duckdns.org): ") || exit 2 ;;
   none)
     if [ -z "$DOMAIN" ] && [ "$INTERACTIVE" = 1 ]; then
       while :; do DOMAIN=$(ask "    your web address (domain)${DEFAULT_DOMAIN:+ [$DEFAULT_DOMAIN]}: ")
@@ -334,33 +341,45 @@ install_service(){ local unit="$1" exec="$2"
     "[Install]" "WantedBy=multi-user.target" | putfile "/run/systemd/system/$unit.service"
   box "systemctl daemon-reload && systemctl restart $unit.service"
   if box "systemctl is-active --quiet $unit.service"; then msg "${G}✓ service $unit started on the box.${X}"
-  else msg "${R}service $unit failed to start — ssh root@$IP journalctl -u $unit${X}"; fi; }
+  else msg "${R}service $unit failed to start — ssh root@$IP journalctl -u $unit${X}"; fail_later "service $unit not active"; fi; }
 # Locate the SelfPrivacy Flutter app dir (has pubspec.yaml) so the printed command is copy-paste-runnable
 # — `flutter run` MUST run from the app's own dir, not from dev-dashboard. Empty if not found locally.
 _appdir(){ local root d; root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd) || return
   for d in "$root"/*/flutter-app/selfprivacy.org.app "$root"/*/selfprivacy.org.app "$root"/selfprivacy.org.app; do
     [ -f "$d/pubspec.yaml" ] && { echo "$d"; return; }; done; }
-print_app_cmd(){ local host="$1" app; app=$(_appdir)
+print_app_cmd(){ local host="$1" app tok k="${KEY/#$HOME/\~}"; app=$(_appdir)
+  # The token is printed as a command that READS it over SSH, never as its value (it would land in the
+  # terminal transcript and in a dash run log, which ./dash publish commits).
+  tok=$(token_cmd "$k" "$IP")
   # Lead with the `./dash app` command (works from anywhere; all args explicit) — that's the launcher.
-  msg ""; msg "${GR}Open the app — from ANYWHERE (run from your dev-dashboard checkout):${X}"
-  msg "   ${B}./dash app --domain $host --token ${TOKEN:-<box-api-token>} --apex${X}"
+  msg ""; msg "${GR}Open the app from anywhere (run from your dev-dashboard checkout; the token is read from the box over SSH on its LAN — elsewhere paste it from your password manager):${X}"
+  msg "   ${B}./dash app --domain $host --token $tok --apex${X}"
   if [ -n "$app" ]; then
     msg "${GR}   …or directly, without ./dash (from the Flutter app dir):${X}"
-    msg "   ${B}cd $app && flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=${TOKEN:-<box-api-token>}${X}"
+    msg "   ${B}cd $app && flutter run -d linux --dart-define=HTTPS_DOMAIN=$host --dart-define=HTTPS_APEX=1 --dart-define=API_TOKEN=$tok${X}"
   fi
-  msg "${GR}Integration test:${X}"
-  msg "   ${B}./dash run L3.connect.desktop --net https --on $SETUP --ip $IP --key ${KEY/#$HOME/\~} --token ${TOKEN:-<token>}${X}"; }
+  # The matching matrix row = the setup diagram's Reach (+ Name) for this method (tools/net_lib.sh reach_args).
+  local cfn=0; [ "$CF_MODE" = named ] && cfn=1
+  if ! reach_in_diagram "$METHOD"; then
+    msg "${GR}($METHOD has no view in the setup diagram, so no test-matrix row — use the ./dash app command above.)${X}"
+  elif reach_l3_wired "$METHOD" "$cfn"; then
+    msg "${GR}Integration test:${X}"
+    msg "   ${B}./dash run L3.connect.desktop --on $SETUP $(reach_args "$METHOD" "$cfn" "$DOMAIN") --ip $IP --key $k --token $tok${X}"
+  else
+    msg "${GR}Integration test: dash has no automated L3 over a one-hostname tunnel yet — drive the app with the ./dash app command above, then log it:${X}"
+    msg "   ${B}./dash report L3.connect.desktop --status <pass|fail> --duration <seconds> --on $SETUP $(reach_args "$METHOD" "$cfn" "$DOMAIN") --ip $IP --key $k${X}"
+  fi; }
 # WAIT until the box actually answers over the PUBLIC internet — "serving on the box" is not the same as
 # "reachable": tunnel providers publish public DNS for a NEW name minutes after it's enabled. We poll the
 # URL from the laptop (which uses public DNS, unlike the box's MagicDNS) until it responds, with visible
 # progress and a generous ceiling, so a non-technical user just waits and never debugs DNS. (req 149)
 # Returns 0 when reachable, 1 on timeout. SP_REACH_TIMEOUT overrides the ceiling (seconds; default 600).
-wait_reachable(){ local host="$1" t0=$SECONDS ceil=$(( SECONDS + ${SP_REACH_TIMEOUT:-600} )) n=0 code reason wait=10
+wait_reachable(){ local host="$1" path="${2:-/}" t0=$SECONDS ceil=$(( SECONDS + ${SP_REACH_TIMEOUT:-600} )) n=0 code reason wait=10
   msg "${GR}Checking it's reachable from anywhere on the internet. A brand-new address can take a couple of${X}"
   msg "${GR}minutes to go live — this is automatic, just wait. Each check is shown below:${X}"
   while :; do
     n=$((n+1))
-    curl -fsS -m 12 -o /dev/null "https://$host/" 2>/dev/null; code=$?
+    curl -fsS -m 12 -o /dev/null "https://$host$path" 2>/dev/null; code=$?
     if [ "$code" = 0 ]; then
       msg "${G}   ✓ check #$n (${B}$((SECONDS-t0))s${X}${G}): LIVE — https://$host responds from the public internet.${X}"; return 0; fi
     case "$code" in                                   # translate curl's exit code to a plain reason
@@ -379,40 +398,47 @@ wait_reachable(){ local host="$1" t0=$SECONDS ceil=$(( SECONDS + ${SP_REACH_TIME
     sleep "$wait"; [ "$wait" -lt 30 ] && wait=$((wait+5))
   done; }
 
+# Under `./dash run reach.<row>` (non-interactive) a route only counts once the API answers from the public
+# internet on the same endpoint the install verifier checks — printed instructions or a started service are not proof
+# (req 130). Interactive runs keep their guided flow.
+prove_public(){ [ "$INTERACTIVE" = 1 ] && return 0
+  wait_reachable "$1" /api/version || fail_later "https://$1/api/version not reachable from the internet"; }
+
 say "3/4  configuring: $METHOD"
 case "$METHOD" in
   cloudflare)
-    CF=$(ensure_on_box cloudflared cloudflared 0)
+    CF=$(ensure_on_box cloudflared cloudflared 0) || exit 1
     if [ "$CF_MODE" = named ]; then
-      DOMAIN=$(need "$DOMAIN" --domain "custom domain (its zone must be on Cloudflare): ")
+      DOMAIN=$(need "$DOMAIN" --domain "custom domain (its zone must be on Cloudflare): ") || exit 2
       # HEADLESS / remotely-managed — NOTHING is typed on the box, no browser login on the box. You make
       # the tunnel once in the Cloudflare Zero Trust dashboard (on your laptop) and paste its connector
       # TOKEN here; we install cloudflared on the box and run it with that token, all over SSH.
       CF_TUNNEL_TOKEN=$(need "$CF_TUNNEL_TOKEN" --cf-tunnel-token \
-        "Cloudflare tunnel token (Zero Trust ▸ Networks ▸ Tunnels ▸ Create ▸ copy the token): ")
+        "Cloudflare tunnel token (Zero Trust ▸ Networks ▸ Tunnels ▸ Create ▸ copy the token): ") || exit 2
       install_service cloudflared-sp "$CF tunnel --no-autoupdate run --token $CF_TUNNEL_TOKEN"
       if box "systemctl is-active --quiet cloudflared-sp"; then msg "${G}✓ connector running on the box (headless — no box login).${X}"
-      else msg "${Y}connector installed but not active yet — ssh root@$IP journalctl -u cloudflared-sp${X}"; fi
+      else msg "${Y}connector installed but not active yet — ssh root@$IP journalctl -u cloudflared-sp${X}"; fail_later "cloudflared connector not active"; fi
       msg "In the Cloudflare dashboard add these ${B}Public Hostnames${X} to that tunnel, each → ${B}https://localhost:443${X} (origin: TLS ▸ No TLS Verify):"
       for s in "${SUBS[@]}"; do msg "   ${B}$s.$DOMAIN${X}"; done
       msg "${GR}(Adding a public hostname auto-creates its DNS CNAME in the zone — still no box access.)${X}"
+      prove_public "api.$DOMAIN"
       print_app_cmd "api.$DOMAIN"
     else
       msg "Minting a free ${B}quick tunnel${X} (no account) — Cloudflare assigns you a random public URL (printed below)."
       install_service cloudflared-sp "$CF tunnel --no-autoupdate --no-tls-verify --http-host-header api.$BOX_DOMAIN --url https://localhost:443"
       URL=""; for _ in $(seq 1 12); do URL=$(box "journalctl -u cloudflared-sp --no-pager -n 120 2>/dev/null" | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1); [ -n "$URL" ] && break; sleep 3; done
-      if [ -n "$URL" ]; then msg "${G}✓ quick tunnel up:${X} ${B}$URL${X}"; msg "${Y}NOTE: temporary URL (changes on restart), API vhost only. Rerun with a --domain for a stable, all-subdomain setup.${X}"; print_app_cmd "${URL#https://}"
-      else msg "${R}started but no trycloudflare URL yet — ssh root@$IP journalctl -u cloudflared-sp${X}"; fi
+      if [ -n "$URL" ]; then msg "${G}✓ quick tunnel up:${X} ${B}$URL${X}"; prove_public "${URL#https://}"; msg "${Y}NOTE: temporary URL (changes on restart), API vhost only. Rerun with a --domain for a stable, all-subdomain setup.${X}"; print_app_cmd "${URL#https://}"
+      else msg "${R}started but no trycloudflare URL yet — ssh root@$IP journalctl -u cloudflared-sp${X}"; fail_later "no trycloudflare URL"; fi
     fi ;;
   ngrok)
-    NG=$(ensure_on_box ngrok ngrok 1)
-    NGROK_TOKEN=$(need "$NGROK_TOKEN" --ngrok-token "ngrok authtoken (free at https://dashboard.ngrok.com): ")
+    NG=$(ensure_on_box ngrok ngrok 1) || exit 1
+    NGROK_TOKEN=$(need "$NGROK_TOKEN" --ngrok-token "ngrok authtoken (free at https://dashboard.ngrok.com): ") || exit 2
     box "$NG config add-authtoken '$NGROK_TOKEN'"
     DOMARG=""; [ -n "$DOMAIN" ] && DOMARG="--domain api.$DOMAIN"
     install_service ngrok-sp "$NG http https://localhost:443 --host-header=api.$BOX_DOMAIN $DOMARG"
     URL=""; for _ in $(seq 1 12); do URL=$(box "curl -s --max-time 3 http://localhost:4040/api/tunnels 2>/dev/null" | grep -oE 'https://[a-z0-9.-]+\.ngrok[a-z.-]*' | head -1); [ -n "$URL" ] && break; sleep 3; done
     if [ -n "$URL" ]; then msg "${G}✓ ngrok tunnel up:${X} ${B}$URL${X}"; [ -z "$DOMARG" ] && msg "${Y}NOTE: free ngrok = random *.ngrok-free.app, single endpoint. Custom domain is paid.${X}"; print_app_cmd "${URL#https://}"
-    else msg "${R}ngrok started but no URL yet — ssh root@$IP journalctl -u ngrok-sp${X}"; fi ;;
+    else msg "${R}ngrok started but no URL yet — ssh root@$IP journalctl -u ngrok-sp${X}"; fail_later "no ngrok URL"; fi ;;
   pinggy)
     # SSH-based: the box dials OUT over ssh — NOTHING to install (ssh is already there), no router changes.
     # Free = random *.pinggy.link, ~60-min sessions; a pinggy.io token = persistent + custom subdomain.
@@ -424,19 +450,19 @@ case "$METHOD" in
       [ -z "$PT" ] && msg "${Y}NOTE: free pinggy = random hostname + ~60-min sessions. A pinggy.io token (--pinggy-token) makes it persistent/custom.${X}"
       msg "${GR}SelfPrivacy vhosts are Host-routed on :443 — if the api vhost 404s, add Pinggy's Host-header rewrite (pinggy.io docs).${X}"
       print_app_cmd "${URL#https://}"
-    else msg "${R}pinggy started but no URL yet — ssh root@$IP journalctl -u pinggy-sp${X}"; fi ;;
+    else msg "${R}pinggy started but no URL yet — ssh root@$IP journalctl -u pinggy-sp${X}"; fail_later "no pinggy URL"; fi ;;
   localtunnel)
-    LT=$(ensure_on_box nodePackages.localtunnel lt 0)
+    LT=$(ensure_on_box nodePackages.localtunnel lt 0) || exit 1
     install_service localtunnel-sp "$LT --port 443 --local-host localhost --local-https --allow-invalid-cert --host https://localtunnel.me ${LT_SUBDOMAIN:+--subdomain $LT_SUBDOMAIN}"
     URL=""; for _ in $(seq 1 12); do URL=$(box "journalctl -u localtunnel-sp --no-pager -n 160 2>/dev/null" | grep -oE 'https://[a-z0-9-]+\.loca\.lt' | tail -1); [ -n "$URL" ] && break; sleep 3; done
     if [ -n "$URL" ]; then msg "${G}✓ localtunnel up:${X} ${B}$URL${X}"
       msg "${Y}NOTE: loca.lt adds a one-time browser interstitial (API/app clients must send header 'Bypass-Tunnel-Reminder: true'). It fronts ONE endpoint; Host-routed cloud/git/… need separate tunnels.${X}"
       print_app_cmd "${URL#https://}"
-    else msg "${R}localtunnel started but no URL yet — ssh root@$IP journalctl -u localtunnel-sp${X}"; fi ;;
+    else msg "${R}localtunnel started but no URL yet — ssh root@$IP journalctl -u localtunnel-sp${X}"; fail_later "no localtunnel URL"; fi ;;
   tailscale)
     # Tailscale Funnel: FREE, STABLE https://<host>.<tailnet>.ts.net with a valid cert, outbound (no
     # port-forward, CGNAT-proof). tailscaled runs in USERSPACE networking (no kernel TUN needed).
-    TS=$(ensure_on_box tailscale tailscale 0)
+    TS=$(ensure_on_box tailscale tailscale 0) || exit 1
     TSD="$(dirname "$TS")/tailscaled"; SOCK=/run/tailscale/tailscaled.sock
     box "mkdir -p /var/lib/tailscale /run/tailscale"
     install_service tailscaled-sp "$TSD --tun=userspace-networking --state=/var/lib/tailscale/tailscaled.state --socket=$SOCK"
@@ -470,7 +496,7 @@ case "$METHOD" in
         msg ""
       fi
       while :; do
-        TAILSCALE_AUTHKEY=$(need "$TAILSCALE_AUTHKEY" --tailscale-authkey "  ▸ paste the Tailscale auth key (tskey-auth-…) and press Enter: ")
+        TAILSCALE_AUTHKEY=$(need "$TAILSCALE_AUTHKEY" --tailscale-authkey "  ▸ paste the Tailscale auth key (tskey-auth-…) and press Enter: ") || exit 2
         if [ "${TAILSCALE_AUTHKEY#tskey-}" = "$TAILSCALE_AUTHKEY" ]; then
           msg "${Y}  That isn't a Tailscale auth key — it must start with ${B}tskey-auth-${X}${Y}. Copy it again from the Keys page.${X}"
           [ "$INTERACTIVE" = 1 ] && { TAILSCALE_AUTHKEY=""; continue; }
@@ -533,7 +559,7 @@ case "$METHOD" in
       msg "     ${GR}A brand-new Tailscale account has none of these; only repeated re-installs create them.${X}"
       if [ "$INTERACTIVE" != 1 ]; then
         msg "${Y}non-interactive: delete the leftover ${B}selfprivacy*${X}${Y} node(s) at the URL above, then re-run this exact command.${X}"
-        break
+        exit 3
       fi
       ask "  ▸ press ENTER once you've deleted them — I'll re-join and VERIFY the clean name: " >/dev/null
       msg "${GR}re-joining to claim ${B}selfprivacy${X}${GR} (needs a FRESH single-use key — the last one is now spent) …${X}"
@@ -564,10 +590,10 @@ case "$METHOD" in
       msg "     ${GR}If the page has nothing to click, first open ${X}${C}https://login.tailscale.com/admin/dns${X}${GR}, turn on ${X}${B}HTTPS Certificates${X}${GR}, then reopen the link above.${X}"
       msg ""
       if [ "$INTERACTIVE" != 1 ]; then
-        msg "${Y}non-interactive: enable Funnel at the URL above, then re-run this exact command.${X}"; break
+        msg "${Y}non-interactive: enable Funnel at the URL above, then re-run this exact command.${X}"; exit 3
       fi
       _ans=$(ask "  ▸ press ENTER once you've clicked Enable Funnel (or type s then ENTER to skip): ")
-      [ "${_ans,,}" = s ] && { msg "${Y}skipped — once Funnel is enabled, finish by running this ${B}on THIS laptop${X}${Y}:${X} ${GR}ssh root@$IP $FUNNEL${X}"; break; }
+      [ "${_ans,,}" = s ] && { msg "${Y}skipped — once Funnel is enabled, finish by running this ${B}on THIS laptop${X}${Y}:${X} ${GR}ssh root@$IP $FUNNEL${X}"; fail_later "Funnel skipped"; break; }
       _fout=$(box "$FUNNEL" 2>&1)
     done
     # Poll for the live Funnel URL. First-ever HTTPS cert issuance can take ~30-40s, so give it room.
@@ -576,12 +602,14 @@ case "$METHOD" in
     if [ -n "$URL" ]; then
       msg "${G}✓ Tailscale Funnel configured on the box:${X} ${B}https://$URL${X}  (valid cert, no port-forward, CGNAT-proof)"
       if ! wait_reachable "$URL"; then
+        fail_later "https://$URL not reachable from the internet yet"
         msg "  ${GR}Leave it a few more minutes and open ${X}${C}https://$URL${X}${GR} in a browser. If it NEVER comes${X}"
         msg "  ${GR}live, this box has leftover duplicate identities from earlier re-installs — a one-per-install${X}"
         msg "  ${GR}artifact a real single setup won't hit. (Fix: persist the tailscale identity across installs.)${X}"
       fi
       print_app_cmd "$URL"
     else
+      fail_later "Funnel not serving"
       msg "${Y}Funnel isn't serving publicly yet.${X} Confirm it's enabled at ${C}https://login.tailscale.com/admin/dns${X} ${GR}(HTTPS Certificates = on)${X},"
       msg "then run this ${B}on THIS laptop${X} ${GR}(not on the box — it SSHes into the box for you)${X}:"
       msg "   ${GR}ssh root@$IP $FUNNEL && ssh root@$IP $TS --socket=$SOCK funnel status${X}"
@@ -591,7 +619,7 @@ case "$METHOD" in
   ipv6)
     # DECENTRALISED: reach B directly over its public IPv6 — no relay, no NAT, no port-forward. The box
     # firewall already allows :443 (NixOS opens it for v4+v6); we just publish/track an AAAA record.
-    DOMAIN=$(need "$DOMAIN" --domain "domain to point at the box (e.g. grandma-1.duckdns.org): ")
+    DOMAIN=$(need "$DOMAIN" --domain "domain to point at the box (e.g. grandma-1.duckdns.org): ") || exit 2
     V6=$(box_global_ipv6 "$IP" "$KEY")   # autodetect on the box's CURRENT (final) network
     [ -n "$V6" ] || { msg "${R}no routable public IPv6 on the box's current network (IPv4-only / CGNAT). Use --method cloudflare instead.${X}"; exit 1; }
     msg "${G}box has a public IPv6:${X} ${B}$V6${X} — no NAT; :443 already open in the NixOS firewall."
@@ -616,6 +644,7 @@ EOF
       msg "Set an ${B}AAAA${X} record ${B}$DOMAIN → $V6${X} at your DNS host (DuckDNS: pass --duckdns-token to auto-update)."
     fi
     msg "${GR}Cert: the box runs Let's Encrypt for $DOMAIN itself (HTTP-01 over the now-reachable :80, or DNS-01). Visitors need IPv6 too.${X}"
+    prove_public "api.$DOMAIN"
     print_app_cmd "api.$DOMAIN" ;;
   router)
     PUB=$(box "curl -s --max-time 10 https://api.ipify.org"); LAN=$(box 'hostname -I' | awk '{print $1}')
@@ -630,10 +659,14 @@ EOF
       msg "     ${C}*/5 * * * * curl -s 'https://www.duckdns.org/update?domains=${sub:-<sub>}&token=<your-token>&ip='${X}"
       msg "  ${Y}(DuckDNS is dynamic-DNS to YOUR IP — still needs :443 forwarded; it canNOT host a Cloudflare tunnel.)${X}"
     fi
+    prove_public "api.${DOMAIN:-$BOX_DOMAIN}"
     print_app_cmd "api.${DOMAIN:-$BOX_DOMAIN}" ;;
   none)
     msg "${GR}No public tunnel chosen — the box is reachable on the LAN and over its .onion only.${X}"
+    [ "$INTERACTIVE" = 1 ] || box "systemctl is-active --quiet tor && test -s /var/lib/tor/hidden_service/hostname" \
+      || fail_later "the box's Tor onion service is not up (tor inactive or no hostname)"
     print_app_cmd "api.${DOMAIN:-$BOX_DOMAIN}" ;;
   *) msg "${R}--method must be cloudflare | tailscale | ipv6 | ngrok | pinggy | localtunnel | router | none${X}"; exit 2;;
 esac
+if [ -n "$APPLY_FAILED" ]; then say "4/4  NOT done ($METHOD): $APPLY_FAILED"; exit 1; fi
 say "4/4  done ($METHOD)"

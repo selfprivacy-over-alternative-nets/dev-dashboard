@@ -51,7 +51,7 @@ PY
   fi
 }
 
-# wifi setups (usb-0b/0c) need a wifi spec; confirm the SSID is in range without disturbing the
+# wifi setups (usb-0d/0c) need a wifi spec; confirm the SSID is in range without disturbing the
 # current connection (scan only). Internet-through-it can't be checked without connecting.
 wifi_preflight(){
   [ -n "${WIFI_SSID:-}" ] || return 0

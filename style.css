@@ -36,6 +36,27 @@ select, .btn {
 }
 .nettab.on { color: var(--fg); border-color: var(--blue); background: #13233a; }
 .nettab.future { opacity: .45; cursor: not-allowed; }
+/* the setup diagram's toggles as filters (index.html toolbar) */
+.togglebar { display: flex; flex-wrap: wrap; gap: 6px 18px; width: 100%; }
+.togglebar .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.nettab.harness { border-style: dashed; }
+.nettab.fut { font-style: italic; }
+/* greyed-out rows: kept for reference, can't run (no diagram view, no test) */
+.nettab.greyed { opacity: .5; text-decoration: line-through; }
+tr.greyed { opacity: .45; }
+tr.group.reachgrp.greyed td { opacity: .7; }   /* header stays readable: it carries the reason */
+#legend .greyed { opacity: .55; text-decoration: line-through; }
+.dlink { color: var(--blue); font-size: 12px; text-decoration: none; padding: 0 2px; }
+.dlink.big { font-size: 12px; border: 1px solid var(--border); border-radius: 3px; padding: 2px 8px; }
+.alignbanner { width: 100%; padding: 5px 16px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.alignbanner.ok { color: var(--dim); }
+.alignbanner.bad { color: var(--amber); background: #2a2110; border-bottom-color: var(--amber); }
+tr.group.reachgrp td { cursor: pointer; color: var(--fg); text-transform: none; letter-spacing: .3px; font-size: 12px; }
+tr.group.reachgrp td small { color: var(--dim2); }
+tr.reachgrp .caret { color: var(--dim); display: inline-block; width: 1em; }
+table.mtx th.net code { color: var(--dim); font-size: 10px; text-transform: none; }
+.run .fq { color: var(--amber); font-weight: 700; padding-left: 2px; }
+.cell.ni { color: var(--dim2); }
 
 .demobanner { display: none; width: 100%; padding: 6px 16px; background: #241a33;
   color: var(--violet); border-bottom: 1px solid var(--violet); font-weight: 600; letter-spacing: .3px; }

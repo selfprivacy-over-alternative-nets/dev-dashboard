@@ -19,7 +19,7 @@ set -euo pipefail
 # All user-facing args are REQUIRED (no implicit defaults): the written command is the
 # whole truth on any network/device. Omitting one fails fast telling you what to set.
 FLAKE=${FLAKE:?required: path to deploy flake, e.g. FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer}
-IP=${IP:?required: target IP, e.g. IP=192.168.100.50 (lan-setup-0 direct-cable installer) or IP=192.168.1.167 (via router R)}
+IP=${IP:?required: target IP, e.g. IP=192.168.100.50 (cable-* direct-cable installer) or IP=192.168.1.167 (wifi-*: via router R)}
 MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
 KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
 DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=example.com}
@@ -29,6 +29,7 @@ EXTRA=${EXTRA:-$FLAKE/state/extra}             # derived from FLAKE (override on
 NETBOOT_SCRIPT=${NETBOOT_SCRIPT:-$HOME/netboot/start-netboot-server.sh}  # internal
 WAIT_TARGET_S=${WAIT_TARGET_S:-}               # internal timeout (default set below per NETBOOT)
 HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/net_lib.sh"   # reach_args: the setup diagram's --reach/--name for the printed L3 commands
 SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
 export NIX_CONFIG='experimental-features = nix-command flakes'
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
@@ -64,7 +65,7 @@ PY
   fi
 }
 
-# Setup-availability preflight for wifi setups (lan-setup-0b/0c/0d): a wifi spec must be given,
+# Setup-availability preflight for wifi setups (cable-0b/0d/0c, wifi-0d): a wifi spec must be given,
 # and we confirm the SSID is in range WITHOUT disturbing the current connection (scan only).
 # Internet-through-that-wifi can't be verified without connecting, so we don't.
 wifi_preflight(){
@@ -309,12 +310,22 @@ print_next_steps(){
   esac
   echo
   echo "③ Integration-test the whole stack (once <box-ip> is reachable and the name resolves):"
-  echo "     ${BOLD}./dash run L3.connect.desktop --net https --on ${SP_SETUP:-lan-setup-0a} \\${OFF}"
-  echo "     ${BOLD}  --ip <box-LAN-ip> --key ${KEY/#$HOME/\~} --token ${tok}${OFF}   ${GREY}(--ip is the box's LAN/192.168.x.x address, to connect — NOT a public IP)${OFF}"
-  echo "   (no public DNS yet? use  --net tor  against the box's .onion instead.)"
+  # the matrix row = the setup diagram's Reach (+ Name) of the chosen public method (no method = the A-record /
+  # port-forward path of step ②); the token is printed as a command that reads it, never as its value
+  _pm="${PUBLIC_METHOD:-router}"; _k="${KEY/#$HOME/\~}"
+  if ! reach_in_diagram "$_pm"; then
+    echo "     ${GREY}($_pm has no setup-diagram view, so no test-matrix row — open the app with ./dash app --domain <HOST> --token $(token_cmd "$_k" "<box-LAN-ip>") --apex)${OFF}"
+  elif reach_l3_wired "$_pm" "${PUBLIC_CF_NAMED:-0}"; then
+    echo "     ${BOLD}./dash run L3.connect.desktop --on ${SP_SETUP:-cable-0a} $(reach_args "$_pm" "${PUBLIC_CF_NAMED:-0}" "$DOMAIN") \\${OFF}"
+    echo "     ${BOLD}  --ip <box-LAN-ip> --key $_k --token $(token_cmd "$_k" "<box-LAN-ip>")${OFF}   ${GREY}(--ip is the box's LAN/192.168.x.x address, to connect — NOT a public IP)${OFF}"
+  else
+    echo "     ${GREY}(no automated L3 over $_pm yet — open the app with ./dash app --domain <HOST> --token $(token_cmd "$_k" "<box-LAN-ip>") --apex,${OFF}"
+    echo "     ${GREY} then log it: ./dash report L3.connect.desktop --status <pass|fail> --duration <seconds> --on ${SP_SETUP:-cable-0a} $(reach_args "$_pm" "${PUBLIC_CF_NAMED:-0}" "$DOMAIN") --ip <box-LAN-ip> --key $_k)${OFF}"
+  fi
+  echo "   (no public DNS yet? use  --reach onion --net tor  against the box's .onion instead.)"
   echo
   echo "Prefer a guided finish (reboot → wait → read the public IP → DNS records → verify they resolve)?"
-  echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-lan-setup-0a}${PUBLIC_METHOD:+ --public-method $PUBLIC_METHOD --public-cf-named ${PUBLIC_CF_NAMED:-0}}${OFF}"
+  echo "     ${BOLD}bash tools/finish_box_setup.sh --domain $DOMAIN --key ${KEY/#$HOME/\~} --setup ${SP_SETUP:-cable-0a}${PUBLIC_METHOD:+ --public-method $PUBLIC_METHOD --public-cf-named ${PUBLIC_CF_NAMED:-0}}${OFF}"
   echo "   ${GREY}(if you chose a tunnel up-front, that finish embeds it — set up over SSH, nothing typed on the box.)${OFF}"
   echo
   echo "④ No router access / behind double-NAT? Reach the box from ANYWHERE via an outbound tunnel"
@@ -329,7 +340,7 @@ if [ "$NETBOOT" = auto ]; then
   echo "   on-disk: $ondisk"
   stop_netboot
   echo "$ondisk" | grep -q OK || { echo "!! no installed root with secrets.json found on disk — install may have failed"; exit 1; }
-  say "install.native-ethernet [${SP_SETUP:-lan-setup-0}]: INSTALL VERIFIED ON DISK"
+  say "install.${SP_SETUP:-cable-0a} [${SP_SETUP:-cable-0a}]: INSTALL VERIFIED ON DISK"
 
   # Install-only when non-interactive or explicitly requested (TRANSPORT=none): hand off and stop.
   if [ ! -t 0 ] || [ "$TRANSPORT" = none ]; then
@@ -351,7 +362,7 @@ EOM
       case "$_go" in
         n|N|no|NO) : ;;
         *) bash "$HERE/finish_box_setup.sh" --domain "$DOMAIN" --key "$KEY" \
-             ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-lan-setup-0a}" \
+             ${MAC:+--mac "$MAC"} ${WIFI_SSID:+--wifi "$WIFI_SSID"} --setup "${SP_SETUP:-cable-0a}" \
              ${PUBLIC_METHOD:+--public-method "$PUBLIC_METHOD" --public-cf-named "${PUBLIC_CF_NAMED:-0}"} || true ;;
       esac
       # (public access is handled INSIDE finish_box_setup.sh step 8 — it already has the box's IP and
@@ -479,6 +490,15 @@ echo "Add these 5 DNS A-records at your DNS host (home: box LAN IP $IP; public: 
 for sub in api cloud git matrix meet; do printf "     A   %-28s %s\n" "$sub.$DOMAIN" "$IP"; done
 echo
 echo "Integration-test the whole stack (app driven against this backend):"
-echo "     ${B}./dash run L3.connect.desktop --net $TRANSPORT --on ${SP_SETUP:-lan-setup-0a} \\${N}"
-echo "     ${B}  --ip $IP --key ${KEY/#$HOME/\~} --token $TOKEN${N}"
-[ -n "${ONION:-}" ] && echo "   (or --net tor against the box's .onion: $ONION)"
+if [ "$TRANSPORT" = onion ]; then _pm=none; else _pm="${PUBLIC_METHOD:-router}"; fi
+_k="${KEY/#$HOME/\~}"
+if ! reach_in_diagram "$_pm"; then
+  echo "     ($_pm has no setup-diagram view, so no test-matrix row — open the app with ./dash app --domain <HOST> --token $(token_cmd "$_k" "$IP") --apex)"
+elif reach_l3_wired "$_pm" "${PUBLIC_CF_NAMED:-0}"; then
+  echo "     ${B}./dash run L3.connect.desktop --on ${SP_SETUP:-cable-0a} $(reach_args "$_pm" "${PUBLIC_CF_NAMED:-0}" "$DOMAIN") \\${N}"
+  echo "     ${B}  --ip $IP --key $_k --token $(token_cmd "$_k" "$IP")${N}"
+else
+  echo "     (no automated L3 over $_pm yet — open the app with ./dash app --domain <HOST> --token $(token_cmd "$_k" "$IP") --apex,"
+  echo "      then log it: ./dash report L3.connect.desktop --status <pass|fail> --duration <seconds> --on ${SP_SETUP:-cable-0a} $(reach_args "$_pm" "${PUBLIC_CF_NAMED:-0}" "$DOMAIN") --ip $IP --key $_k)"
+fi
+[ -n "${ONION:-}" ] && echo "   (or --reach onion --net tor against the box's .onion: $ONION)"

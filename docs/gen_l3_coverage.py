@@ -11,7 +11,7 @@ import os
 from xml.sax.saxutils import escape
 
 # columns = backend machine (dash install_methods backend: vm vs native)
-COLS = [("VirtualBox VM", "vm-local"), ("Physical box", "lan-setup-* / usb-*")]
+COLS = [("VirtualBox VM", "vm"), ("Physical box", "cable-* / wifi-* / usb-*")]
 # rows = frontend device (catalog client: desktop vs android)
 ROWS = [("Ubuntu laptop", "Flutter desktop app  (.desktop)"),
         ("Android device / emulator", "Flutter app  (.android)")]
@@ -94,7 +94,7 @@ for r, (name, sub) in enumerate(ROWS):
 # footnotes
 fy = GRID_BOTTOM + 28
 o.append(text(M, fy, "transports:  tor = .onion over SOCKS · https = clearnet (system/LE-trusted cert) "
-                     "· chutney = private Tor net (vm-local only).", 11, fill="#555"))
+                     "· chutney = private Tor net (vm only).", 11, fill="#555"))
 o.append(text(M, fy + 20, "Live per-flow × network pass/fail is in the matrix dashboard — its setup "
                           "columns are the backend machine; .desktop/.android tests are the frontend.", 11, fill="#555"))
 o.append(text(M, fy + 40, "L1/L2 are backend-only (a throwaway test-VM, no frontend); only L3 pairs a "

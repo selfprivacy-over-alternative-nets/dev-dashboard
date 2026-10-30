@@ -12,13 +12,15 @@
     <h1><span class="dot">●</span> SelfPrivacy&nbsp;·&nbsp;test&nbsp;matrix</h1>
     <span class="ctl"><label>commit</label><select id="f-commit"></select></span>
     <span class="ctl"><label>config</label><select id="f-config"></select></span>
-    <span class="ctl"><label>networks</label><span id="nettabs"></span></span>
     <span class="spacer"></span>
     <span class="ctl"><label title="off: show only each test's most recent run · on: stack every run (newest first)"><input type="checkbox" id="f-allruns"> all runs</label></span>
     <span class="ctl"><label><input type="checkbox" id="f-demo"> demo</label></span>
     <button class="btn" id="reload">↻ reload</button>
+    <!-- the setup diagram's toggles (Install / Network / Reach / Name) as show/hide filters — filled by app.js -->
+    <span id="toggles" class="togglebar"></span>
   </div>
 
+  <div id="alignbanner" class="alignbanner"></div>
   <div id="demobanner" class="demobanner">DEMO DATA — illustrative, not real runs. Untick “demo” for the real board.</div>
   <div class="summary" id="summary"></div>
 

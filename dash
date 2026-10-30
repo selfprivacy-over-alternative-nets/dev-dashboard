@@ -40,6 +40,8 @@ import time
 
 # Redact live .onion addresses so they never reach the published dashboard.
 _ONION_RE = re.compile(r"[a-z2-7]{16,56}\.onion")
+# A box API token is 64 hex chars; it must never reach a run log (logs are committed by ./dash publish).
+_HEX64_RE = re.compile(r"\b[0-9a-f]{64}\b")
 
 
 def scrub(text):
@@ -70,14 +72,72 @@ def load_catalog():
 
 
 def all_entries(cat):
-    return list(cat.get("tests", [])) + list(cat.get("installs", []))
+    return list(cat.get("tests", [])) + list(cat.get("installs", [])) + list(cat.get("reaches", []))
 
 
 # ── Install setups (--on) + preflight ────────────────────────────────────────
-# The --on value names a setup (vm-local | lan-setup-0/1/2 | usb). Before an
-# install runs, preflight() checks the setup is feasible NOW and, if not, returns
-# an actionable fix instead of half-running. Topology diagrams live in the catalog
-# (install_methods[].topology) so they render in `./dash setups` and the README.
+# The --on value names a setup = one view of the setup diagram (flow.html#setup-map, data
+# docs/diagrams/setup-map.json): its Install toggle + Network toggle → cable-0a/0b/0d/0c, wifi-0a/0d,
+# usb-0a/0d/0c, vm (catalog `setups`; old ids like lan-setup-0d / vm-local are accepted as aliases).
+# Before an install runs, preflight() checks the setup is feasible NOW and, if not, returns an
+# actionable fix instead of half-running. Topology sketches live in the catalog (setups[].topology)
+# so they render in `./dash setups`.
+DIAGRAM_JSON = os.path.join(ROOT, "docs", "diagrams", "setup-map.json")
+
+
+def _all_setups(cat=None):
+    cat = cat or load_catalog()
+    return list(cat.get("setups", [])) + list(cat.get("harness_setups", []))
+
+
+def setup_ids(cat=None):
+    """The --on values a user passes (diagram setups, in diagram order) — the harness test-vm is not one."""
+    return [s["id"] for s in (cat or load_catalog()).get("setups", [])]
+
+
+def setup_entry(sid, cat=None):
+    return next((s for s in _all_setups(cat) if s["id"] == sid), None)
+
+
+def canon_setup(s, cat=None):
+    """(canonical setup id, None) for a diagram setup id, the harness test-vm or a legacy alias
+    (lan-setup-0d → cable-0d, lan-setup-1 → wifi-0a, vm-local → vm, …); (None, why) for a removed or
+    unknown one. Unset stays unset."""
+    if s in (None, "", "-"):
+        return s, None
+    cat = cat or load_catalog()
+    for e in _all_setups(cat):
+        if s == e["id"] or s in (e.get("aliases") or []):
+            return e["id"], None
+    gone = (cat.get("removed_setups") or {}).get(s)
+    if gone:
+        return None, gone
+    return None, f"unknown setup '{s}' — use one of: {' | '.join(setup_ids(cat))}  (./dash setups)"
+
+
+def setup_label(sid, cat=None):
+    s = setup_entry(sid, cat)
+    return (s or {}).get("label") or sid
+
+
+def diagram_view(setup=None, row=None, cat=None):
+    """The setup-diagram view key of a run ("method=cable;net=0a;reach=cloudflare;name=buy"), so a record
+    links straight to flow.html#setup-map;<view>. "" when there is no such view: the harness test-vm (L1/L2),
+    a future or greyed-out row, or a harness row whose reach isn't a diagram Reach (local https). A harness row
+    whose reach IS one (onion over chutney) maps to that reach's view — it simulates it."""
+    cat = cat or load_catalog()
+    if not setup or setup not in setup_ids(cat):
+        return ""
+    s = setup_entry(setup, cat)
+    parts = [f"method={s['method']}"] + ([f"net={s['net']}"] if s.get("net") else [])
+    r = next((x for x in cat.get("reach_rows", []) if x["id"] == row), None) if row else None
+    if r:
+        if r.get("future") or r.get("greyed") or r.get("reach") not in {x["id"] for x in (cat.get("setup_map") or {}).get("reaches", [])}:
+            return ""
+        parts.append(f"reach={r['reach']}")
+        if r.get("name"):
+            parts.append(f"name={r['name']}")
+    return ";".join(parts)
 DIRECT_IFACE = os.environ.get("SP_NETBOOT_IFACE", "enp0s31f6")
 DIRECT_IP = "192.168.100.1"
 
@@ -165,7 +225,7 @@ def _up_ifaces():
 
 def _ipv6_ll_discover():
     """Devices reachable by IPv6 link-local multicast (ff02::1) — works even with NO IPv4 / no DHCP,
-    e.g. a target cabled straight to this laptop (lan-setup-0*). Returns [(mac, iface)]."""
+    e.g. a target cabled straight to this laptop (cable-* setups). Returns [(mac, iface)]."""
     for ifc in _up_ifaces():
         _sh(f"ping -6 -c2 -W1 ff02::1%{ifc} >/dev/null 2>&1", timeout=8)
     res = []
@@ -179,14 +239,15 @@ def _ipv6_ll_discover():
 
 
 def setup_preflight(method):
-    """Return (ok, message): whether `install --on <method>` can run right now."""
-    if method in (None, "", "-", "test-vm", "vm-remote"):
+    """Return (ok, message): whether `install --on <method>` can run right now (method = canonical setup id)."""
+    if method in (None, "", "-", "test-vm"):
         return True, ""
-    if method == "vm-local":
+    kind = (setup_entry(method) or {}).get("method")
+    if kind == "vm":
         if not shutil.which("VBoxManage"):
             return False, "VirtualBox not found (VBoxManage). Install it, e.g. `sudo apt install virtualbox`."
         return True, ""
-    if (method or "").startswith("lan-setup-0"):   # lan-setup-0 / 0a / 0b / 0c / 0d
+    if kind == "cable":                            # cable-0a / 0b / 0d / 0c: netboot over a direct cable
         if not _iface_has_ip(DIRECT_IFACE, DIRECT_IP):
             return False, (
                 f"Direct-link netboot server is not running on {DIRECT_IFACE}.\n"
@@ -194,29 +255,120 @@ def setup_preflight(method):
                 f"  2) sudo bash ~/netboot/start-netboot-server.sh   (leave it running)\n"
                 f"  3) Boot the target into UEFI network mode, then re-run.")
         return True, ""
-    if method in ("lan-setup-1", "lan-setup-2"):
+    if kind == "wifi":                             # wifi-0a / 0d: netboot THROUGH router R
         return False, (
             "Router R is not configured for network boot, so the target cannot PXE over R.\n"
             "  R's own DHCP server fights the installer's DHCP. To use this setup, configure R to EITHER:\n"
             "    - disable R's DHCP and let THIS laptop serve DHCP+TFTP on R's LAN, OR\n"
             "    - set R's DHCP boot options (next-server=this laptop, filename=ipxe.efi) [proxyDHCP],\n"
             "      pointing TFTP/HTTP at ~/netboot.\n"
-            "  Until R is set up, use  --on lan-setup-0  (direct cable)  or  --on usb.\n"
+            "  Until R is set up, run a LAN-cable install instead (./dash run install.cable-0a | install.cable-0b |\n"
+            "  install.cable-0d | install.cable-0c) or a USB-stick one (install.usb-0a | install.usb-0d | install.usb-0c).\n"
             "  Details: dev-dashboard/README.md (Setups).")
-    if (method or "").startswith("usb"):           # usb / usb-0a / 0b / 0c
-        return True, ""  # manual boot; install cmd is @manual
+    if kind == "usb":                              # usb-0a / 0d / 0c: manual boot from the stick
+        return True, ""
     return True, ""
 
 
+def diagram_alignment(cat=None):
+    """Compare the catalog's matrix axes with the setup diagram's toggles (docs/diagrams/setup-map.json):
+    Install/Network/Reach/Name option values + labels, which networks each install method offers, which
+    names each reach offers, and that every diagram (method, net) / (reach, name) view is a matrix
+    setup / reach row. Returns a list of mismatches ([] = aligned)."""
+    cat = cat or load_catalog()
+    try:
+        tg = {t["id"]: t for t in json.load(open(DIAGRAM_JSON))["meta"]["toggles"]}
+    except Exception as ex:
+        return [f"cannot read the diagram toggles from {os.path.relpath(DIAGRAM_JSON, ROOT)}: {ex}"]
+    sm = cat.get("setup_map") or {}
+    out = []
+
+    def opts(tid):
+        return [(o["value"], o.get("label", "")) for o in (tg.get(tid) or {}).get("options", [])]
+
+    for tid, key in (("method", "methods"), ("net", "nets"), ("reach", "reaches"), ("name", "names")):
+        want, have = opts(tid), [(x["id"], x.get("label", "")) for x in sm.get(key, [])]
+        if want != have:
+            out.append(f"toggle '{tid}': diagram {want} ≠ catalog setup_map.{key} {have}")
+    diag_methods = {v for v, _ in opts("method")}
+    for s in cat.get("setups", []):
+        if s.get("method") not in diag_methods:
+            out.append(f"setup {s['id']}: Install {s.get('method')!r} is not a diagram option")
+    net_order = [v for v, _ in opts("net")]
+    nw = ((tg.get("net") or {}).get("optionsWhen") or {}).get("method") or {}
+    for m, _ in opts("method"):
+        want = [n for n in net_order if n in (nw.get(m) or [])] if m in nw else net_order
+        want_ids = [f"{m}-{n}" for n in want] if want else [m]
+        have_ids = [s["id"] for s in cat.get("setups", []) if s.get("method") == m]
+        if want_ids != have_ids:
+            out.append(f"Install={m}: diagram views {want_ids} ≠ catalog setups {have_ids}")
+        for s in cat.get("setups", []):
+            if s.get("method") == m and s["id"] in want_ids and s.get("net") != (s["id"].split("-", 1)[1] if want else None):
+                out.append(f"setup {s['id']}: net field {s.get('net')!r} doesn't match its id")
+    rw = ((tg.get("name") or {}).get("optionsWhen") or {}).get("reach") or {}
+    rows = [(r["reach"], r.get("name")) for r in cat.get("reach_rows", [])
+            if not r.get("harness") and not r.get("future") and not r.get("greyed")]
+    for r in sm.get("reaches", []):
+        want = [n for n, _ in opts("name") if n in (rw.get(r["id"]) or [])] if r["id"] in rw else [n for n, _ in opts("name")]
+        if r.get("names", []) != want:
+            out.append(f"Reach={r['id']}: diagram names {want} ≠ catalog names {r.get('names', [])}")
+        for nm in (want or [None]):
+            if (r["id"], nm) not in rows:
+                out.append(f"diagram view reach={r['id']}" + (f";name={nm}" if nm else "") + " has no matrix reach row")
+    known = {(r["id"], n) for r in sm.get("reaches", []) for n in (r.get("names") or [None])}
+    for rr in rows:
+        if rr not in known:
+            out.append(f"matrix reach row {rr} is not a diagram view")
+    return out
+
+
+def alignment_gate(cat=None):
+    """"" when the matrix matches the setup diagram, else why nothing may run (req 183). Checked before EVERY
+    run / wrap / report: a result recorded against drifted axes lands in a cell that no longer means what it
+    says. No override (not even --allow-dirty) — align catalog.json with the diagram first."""
+    mism = diagram_alignment(cat)
+    if not mism:
+        return ""
+    return (f"{RED}matrix ≠ setup diagram{OFF} — nothing run. Align catalog.json (setup_map / setups / reach_rows) "
+            f"with {os.path.relpath(DIAGRAM_JSON, ROOT)} first (see ./dash setups --check):\n"
+            + "\n".join(f"  - {m}" for m in mism))
+
+
 def cmd_setups(args):
-    ms = load_catalog().get("install_methods", [])
-    print(f"{BOLD}Install setups (--on values){OFF}\n")
-    for m in ms:
-        print(f"{BOLD}{m['id']}{OFF}  {GREY}{m.get('label','')}{OFF}")
-        print(f"  {m.get('desc','')}")
-        for line in (m.get("topology") or "").splitlines():
+    cat = load_catalog()
+    sm = cat.get("setup_map") or {}
+    mlab = {m["id"]: m["label"] for m in sm.get("methods", [])}
+    print(f"{BOLD}Setups (--on values){OFF} = the setup diagram's Install × Network views  "
+          f"{GREY}({sm.get('url', 'flow.html#setup-map')}){OFF}\n")
+    for s in cat.get("setups", []):
+        al = f"   {GREY}(old id: {', '.join(s['aliases'])}){OFF}" if s.get("aliases") else ""
+        print(f"{BOLD}{s['id']}{OFF}  {s.get('label', '')}  {GREY}{mlab.get(s.get('method'), '')}{OFF}{al}")
+        print(f"  {s.get('desc', '')}")
+        print(f"  {GREY}diagram view: {s.get('diagram', '')}{OFF}")
+        for line in (s.get("topology") or "").splitlines():
             print(f"    {CYAN}{line}{OFF}")
         print()
+    for s in cat.get("harness_setups", []):
+        print(f"{BOLD}{s['id']}{OFF}  {GREY}(harness — not a --on value){OFF}  {s.get('desc', '')}\n")
+    print(f"{BOLD}Reach rows (--reach [--name] + the --net the app speaks){OFF} = the diagram's Reach × Name views\n")
+    for r in cat.get("reach_rows", []):
+        tag = f" — {r['greyed']}" if r.get("greyed") else ""   # the labels already say "(harness)" / "(future)"
+        flags = (f"--reach {r['reach']}" + (f" --name {r['name']}" if r.get("name") else "") + f" --net {r['net']}"
+                 if not r.get("future") and not r.get("greyed") else "—")
+        print(f"  {BOLD}{r['id']:<19}{OFF} {flags:<44} {GREY}{r.get('label', '')}{tag}{OFF}")
+    for k, v in (cat.get("removed_setups") or {}).items():
+        print(f"\n{GREY}removed: {k} — {v}{OFF}", end="")
+    mism = diagram_alignment(cat)
+    print("\n")
+    if mism:
+        print(f"{RED}matrix ≠ setup diagram{OFF} ({os.path.relpath(DIAGRAM_JSON, ROOT)}):")
+        for m in mism:
+            print(f"  - {m}")
+        print(f"  update catalog.json (setup_map / setups / reach_rows) + networks.md + test_matrix.md to match the diagram.")
+        if getattr(args, "check", False):
+            sys.exit(1)
+    else:
+        print(f"{GREEN}aligned{OFF} — every setup / reach row matches a view of {os.path.relpath(DIAGRAM_JSON, ROOT)}.")
 
 
 def entry_by_id(cat, cid):
@@ -227,29 +379,32 @@ def entry_by_id(cat, cid):
 
 
 def _resolve_install_alias(cat, cid):
-    """Accept the FINE install-setup ids as run targets: install.lan-setup-0a..0d → the coarse
-    install.lan-setup-0 entry, install.usb-0a..0c → install.usb. The a/b/c/d differ only in post-install
-    connectivity (wifi), not in the install command — so reuse the coarse entry but record the fine
-    setup as its method (so the stamp + matrix column reflect the real variant)."""
-    base = None
-    if re.match(r"^install\.lan-setup-0[a-d]$", cid):
-        base = "install.lan-setup-0"
-    elif re.match(r"^install\.usb-0[a-c]$", cid):
-        base = "install.usb"
-    if not base:
+    """Accept the FINE install ids as run targets: install.<setup> (install.cable-0a … install.usb-0c)
+    → that setup's Install-method entry (install.cable / install.wifi / install.usb), recording the fine
+    setup as its method (so the stamp + matrix column reflect the real variant). The variants of one
+    method differ only in post-install connectivity (the diagram's Network toggle), not in the install
+    command. Legacy ids resolve through the setup aliases (install.lan-setup-0d → install.cable-0d,
+    install.vm-local → install.vm, install.lan-setup-1 → install.wifi-0a)."""
+    if not cid.startswith("install."):
         return None
-    e = next((x for x in all_entries(cat) if x["id"] == base), None)
+    sid, _ = canon_setup(cid.split(".", 1)[1], cat)
+    s = setup_entry(sid, cat) if sid else None
+    if not s or sid == "test-vm":
+        return None
+    fam = next((m.get("install") for m in (cat.get("setup_map") or {}).get("methods", []) if m["id"] == s.get("method")), None)
+    e = next((x for x in all_entries(cat) if x["id"] == fam), None)
     if not e:
         return None
     e = dict(e)
-    e["id"] = cid
-    e["method"] = cid.split(".", 1)[1]   # lan-setup-0d / usb-0a
+    e["id"] = f"install.{sid}"
+    e["method"] = sid
     return e
 
 
 def _wifi_required(setup):
-    """Setups whose target ends up on wifi (so a wifi spec is mandatory): lan-setup-0b/0c/0d, usb-0b/0c."""
-    return (setup or "") in ("lan-setup-0b", "lan-setup-0c", "lan-setup-0d", "usb-0b", "usb-0c")
+    """Setups whose target ends up on wifi, so a wifi spec is mandatory (catalog setups[].target_wifi:
+    cable-0b/0d/0c, wifi-0d, usb-0d/0c)."""
+    return bool((setup_entry(setup) or {}).get("target_wifi"))
 
 
 def is_ci():
@@ -479,38 +634,145 @@ def _env_get(extra_env, key):
 
 def needs_box(entry):
     """True if the test runs against a deployed target box, so the box's deployment identity
-    must match the current code. Per-entry `needs_box` wins; else default: L3 tests do (they
-    run the Flutter app against a deployed box). L1/L2 are self-contained nixosTests that spin
-    their own throwaway VM, so they need no external box (matches the dashboard's needsBox)."""
+    must match the current code. Per-entry `needs_box` wins (the reach.* apply entries set it); else
+    default: L3 tests do (they run the Flutter app against a deployed box). L1/L2 are self-contained
+    nixosTests that spin their own throwaway VM, so they need no external box (matches the
+    dashboard's needsBox)."""
     if "needs_box" in entry:
         return bool(entry["needs_box"])
     return entry.get("level") == "L3"
 
 
+def resolve_reach(entry, net, setup, reach, name, cat=None, check_wired=True):
+    """(row, None) or (None, why): the matrix reach row a run lands in — one view of the setup diagram's
+    Reach (+ Name) toggles, or a harness-only row (onion over chutney, local https). Args-only, no I/O.
+      - reach.* apply entries: fixed by the entry; --reach/--name may repeat it but not contradict it.
+      - every L3 entry (run AND report): --reach is REQUIRED (+ --name when the diagram offers names for that reach,
+        and forbidden otherwise) — it decides the row, so it is never defaulted (reqs 1-6). It must fit
+        --net (onion→tor|chutney, local/tailscale/cloudflare/ipv6/portfwd→https), the setup (harness rows
+        are VM-only) and be wired for that backend kind (catalog reach_rows[].l3_wired).
+      - L2 / the inner L3 recorder on the VM: no choice exists, so it is derived from --net
+        (tor→onion, chutney→onion over chutney, https→local) — and checked if given explicitly.
+      - everything else (L1, installs): no row.
+    check_wired=False (a manual `report`): a human drove it, so "not wired into dash yet" doesn't apply."""
+    cat = cat or load_catalog()
+    rows = cat.get("reach_rows", [])
+    sm = cat.get("setup_map") or {}
+    if entry.get("reach_row"):                                       # reach.<id> apply entries
+        r = next((x for x in rows if x["id"] == entry["reach_row"]), None)
+        if reach and reach != entry.get("reach"):
+            return None, f"{entry['id']} applies --reach {entry.get('reach')}, not {reach}"
+        if name and name != entry.get("reach_name"):
+            return None, f"{entry['id']} applies --name {entry.get('reach_name')}, not {name}"
+        if _setup_backend_kind(setup) != "box":
+            return None, (f"{entry['id']} runs tools/add-cloudflare.sh against an installed BOX over SSH; it is not "
+                          f"wired for --on {setup or '(none)'} — pass a box setup: {' | '.join(s for s in setup_ids(cat) if s != 'vm')}")
+        return r, None
+    lvl = entry.get("level")
+    required = lvl == "L3" and not entry.get("_no_gate")   # the inner L3 recorder inherits the outer run's row
+    if lvl not in ("L2", "L3"):
+        if reach or name:
+            return None, f"{entry['id']} takes no --reach/--name (only L3 flows and reach.* entries do)"
+        return None, None
+    derived = {"tor": "onion", "chutney": "onion", "https": "local"}
+    if lvl == "L2" and reach and reach != derived.get(net):
+        return None, (f"{entry['id']} runs in its own throwaway test VM, so its row follows --net ({net} → "
+                      f"{derived.get(net)}); drop --reach {reach}")
+    if not reach:
+        if required:
+            return None, ("--reach is required: the diagram's Reach — "
+                          + " | ".join(r["id"] for r in sm.get("reaches", [])) + " — or local (harness, VM https); "
+                          "plus --name buy|duckdns|trycf where that reach has names. See ./dash setups")
+        reach = derived.get(net)
+        if not reach:
+            return None, None
+    rdef = next((x for x in sm.get("reaches", []) if x["id"] == reach), None)
+    allowed_names = (rdef or {}).get("names") or []
+    if allowed_names and not name:
+        return None, f"--reach {reach} needs --name {'|'.join(allowed_names)} (the diagram's Name toggle)"
+    if name and not allowed_names:
+        return None, f"--reach {reach} has no Name choice in the diagram — drop --name {name}"
+    if name and name not in allowed_names:
+        return None, f"--reach {reach} --name must be one of {'|'.join(allowed_names)} (got {name})"
+    cands = [x for x in rows if x["reach"] == reach and (x.get("name") or None) == (name or None)]
+    if not cands:
+        return None, f"unknown reach '{reach}' — use one of: " + " | ".join(
+            sorted({x['reach'] for x in rows if not x.get('future') and not x.get('greyed')}))
+    r = next((x for x in cands if x["net"] == net), None)
+    if not r:
+        return None, (f"--reach {reach}{' --name ' + name if name else ''} goes with --net "
+                      f"{' | '.join(x['net'] for x in cands if not x.get('greyed')) or '(none — greyed out)'}, not --net {net}")
+    if r.get("future"):
+        return None, f"{r['label']}: roadmap transport, not wired yet"
+    if r.get("greyed"):
+        return None, f"{r['label']}: {r['greyed']}"   # the label says "(greyed out)"
+    if r.get("setups") and setup and setup not in r["setups"]:
+        return None, f"N/A — {r['label']} is harness-only (setups: {', '.join(r['setups'])}), not for --on {setup}. {r.get('desc', '')}"
+    if check_wired and lvl == "L3" and _setup_backend_kind(setup) not in (r.get("l3_wired") or []):
+        return None, f"not wired yet — L3 over {r['label']} on --on {setup}: {r.get('desc', '')}"
+    return r, None
+
+
+def resolve_method(entry, method, cat=None):
+    """(canonical setup a run lands in, None) or (None, why) — shared by `run` and `report`. --on takes a diagram
+    setup (or a legacy alias); the harness test-vm is only valid as an entry's OWN method (L2). An install id names
+    its setup (install.cable-0d) — or only its Install method (install.cable), then --on picks the Network variant;
+    --on may repeat the id's setup but never contradict it."""
+    cat = cat or load_catalog()
+    m_in, err = canon_setup(method, cat)
+    if err:
+        return None, f"--on {method}: {err}"
+    m_entry, _ = canon_setup(entry.get("method"), cat)
+    if m_in and m_in not in setup_ids(cat) and m_in != m_entry:
+        return None, (f"--on {m_in} is harness-only (the L1/L2 self-contained test VM), not a setup you pass — "
+                      f"use one of: {' | '.join(setup_ids(cat))}")
+    if m_in and entry.get("level") in ("L1", "L2") and m_in != m_entry:
+        return None, f"{entry['id']} runs in its own throwaway test VM — it takes no --on (got --on {method})"
+    if entry.get("category") != "install":
+        return m_in or m_entry or "-", None
+    fam = (setup_entry(m_entry, cat) or {}).get("method") if m_entry else entry.get("method")
+    if m_entry in setup_ids(cat):
+        if m_in and m_in != m_entry:
+            return None, f"{entry['id']} installs setup {m_entry}; --on {method} contradicts it."
+        return m_entry, None
+    if m_in and (setup_entry(m_in, cat) or {}).get("method") == fam:
+        return m_in, None
+    var = [x for x in (entry.get("setups") or []) if x in setup_ids(cat)]
+    return None, (f"{entry['id']} needs its Network variant (the diagram's Network toggle): run "
+                  + " | ".join(f"install.{x}" for x in var) + (f"  (got --on {method})" if method else ""))
+
+
 def _setup_backend_kind(setup):
     """Which kind of backend a `--on <setup>` names: an external physical 'box' (reached over the LAN
-    via SSH key) vs the local 'vm' (VirtualBox on this host, or the self-contained test-VM). L3 against
-    a box must pass the box-identity gate + needs --ip/--key/--token; L3 on vm-local does not (the VM
-    is local and has no deploy stamp). Fine setup variants (lan-setup-0a..0d / usb-0a..0c) all resolve
-    to the same reach, so match by prefix."""
+    via SSH key — every cable-*/wifi-*/usb-* setup) vs the local 'vm' (VirtualBox on this host, or the
+    self-contained test-VM). L3 against a box must pass the box-identity gate + needs --ip/--key/--token;
+    L3 on the vm does not (the VM is local and has no deploy stamp). Legacy ids (lan-setup-0d, …) count
+    via their alias; the old coarse names (usb, native-ethernet) were boxes too."""
     s = (setup or "").strip()
-    if s.startswith("lan-setup-") or s.startswith("usb-") or s == "usb" or s == "native-ethernet":
-        return "box"
-    return "vm"   # vm-local, test-vm, "-", or unset
+    sid, _ = canon_setup(s)
+    if sid:
+        return "box" if (setup_entry(sid) or {}).get("backend") == "box" else "vm"
+    return "box" if s in ("usb", "native-ethernet", "lan-setup-0") else "vm"   # "-", unset, …
 
 
 def _setup_family(setup):
     """The install-METHOD family of a setup — what actually determines how the box got installed:
-    `usb` (installer USB → disk) vs `lan` (direct-cable / router netboot, nixos-anywhere) vs `vm`
-    (local VirtualBox). The fine variants (…-0a/0b/0c/0d) share ONE install and differ only in
-    post-install connectivity, so they map to the same family. Used to stop a result landing in the
-    wrong install-method column (e.g. a usb cell green against a lan-installed box)."""
+    `usb` (installer USB → disk) vs `lan` (netboot + nixos-anywhere: the diagram's LAN-cable and Wifi
+    installs) vs `vm` (local VirtualBox). The Network variants (…-0a/0b/0d/0c) share ONE install and
+    differ only in post-install connectivity, so they map to the same family. Used to stop a result
+    landing in the wrong install-method column (e.g. a usb cell green against a lan-installed box).
+    Box stamps written before the rename carry legacy ids (lan-setup-0d) — resolved via the aliases."""
     s = (setup or "").strip()
+    sid, _ = canon_setup(s)
+    if sid:
+        cat = load_catalog()
+        m = (setup_entry(sid, cat) or {}).get("method")
+        return next((x.get("family") for x in (cat.get("setup_map") or {}).get("methods", []) if x["id"] == m), "vm")
     if s.startswith("usb"):
         return "usb"
     if s.startswith("lan-setup") or s == "native-ethernet":
         return "lan"
-    return "vm"   # vm-local / test-vm / unset
+    return "vm"   # test-vm / unset
 
 
 def _ssh_base(key):
@@ -887,7 +1149,13 @@ def missing_local_cmd(cmd, run_dir):
     return None
 
 
-def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None, allow_dirty=False):
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None, allow_dirty=False, reach=None, reach_name=None):
+    # Every run — `run`, `wrap`, `here`, the VM bring-up, the inner L3 recorder — first checks the matrix still
+    # matches the setup diagram (req 183), so no result is ever filed under drifted axes.
+    _gate = alignment_gate()
+    if _gate:
+        print(f"{entry['id']}: {_gate}")
+        return None
     cmd = entry.get("cmd", "")
     nets = entry.get("networks") or []
     # --net is REQUIRED for any net-bearing test (no implicit "first net" default).
@@ -901,7 +1169,13 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             return None
 
     net_tag = net or "-"
-    method_tag = method or entry.get("method", "-")
+    # Setups are the setup diagram's views (cable-0a … usb-0c, vm); legacy ids are accepted as aliases and
+    # recorded under the canonical id, so old commands keep working and every result lands in one column.
+    _cat = load_catalog()
+    method_tag, _m_err = resolve_method(entry, method, _cat)
+    if _m_err:
+        print(f"{RED}setup{OFF}  {entry['id']} — {_m_err}")
+        return None
 
     # Fast, args-only short-circuits BEFORE any git fetch / lock reads / SSH (the slow per-entry work,
     # esp. repos_behind_upstream(fetch=True) which runs `git fetch` on every repo). A no-op (@todo /
@@ -921,8 +1195,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             print(f"{AMBER}android L3 not supported by this runner yet{OFF}  {entry['id']}")
             return None
         if method_tag in (None, "", "-"):
-            print(f"{RED}no setup{OFF}  {entry['id']} — --on is required (vm-local | lan-setup-0a..0d | "
-                  f"lan-setup-1 | lan-setup-2 | usb-0a..0c).")
+            print(f"{RED}no setup{OFF}  {entry['id']} — --on is required: {' | '.join(setup_ids(_cat))}  "
+                  f"(the setup diagram's Install+Network views; ./dash setups).")
             return None
         if _setup_backend_kind(method_tag) == "box":
             _miss = [n for n, v in (("--ip", ip or _env_get(extra_env, "IP")),
@@ -933,9 +1207,19 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                       f"required: {', '.join(_miss)} (a box's API token is per-box + secret, never defaulted).")
                 return None
             if net == "chutney":
-                print(f"{RED}N/A{OFF}  {entry['id']} — chutney is vm-local only; a box uses tor|https. "
+                print(f"{RED}N/A{OFF}  {entry['id']} — chutney is VM-only (--on vm); a box uses tor|https. "
                       f"Use --net tor|https.")
                 return None
+    # The diagram's Reach (+ Name) for this run → its matrix row. Args-only, so it also fails fast (req 114).
+    _row, _r_err = resolve_reach(entry, net, method_tag, reach, reach_name, _cat)
+    if _r_err:
+        print(f"{RED}reach{OFF}  {entry['id']} [on={method_tag} net={net_tag}] — {_r_err}")
+        return None
+    if entry.get("reach_row") and _setup_backend_kind(method_tag) == "box":
+        _miss = [n for n, v in (("--ip", ip or _env_get(extra_env, "IP")), ("--key", _env_get(extra_env, "KEY"))) if not v]
+        if _miss:
+            print(f"{RED}missing args{OFF}  {entry['id']} on {method_tag} configures the box over SSH; required: {', '.join(_miss)}.")
+            return None
 
     gs = git_state(entry.get("repo"))
     run_id = gen_run_id()
@@ -961,6 +1245,9 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "id": entry["id"], "name": entry.get("name", entry["id"]), "level": entry.get("level", ""),
         "client": entry.get("client", "-"), "transport": net_tag,
         "backend": entry.get("backend", "-"), "method": method_tag,
+        # the setup diagram's Reach + Name for this run (its matrix row) and the diagram view it belongs to
+        "reach": (_row or {}).get("reach"), "reach_name": (_row or {}).get("name"), "reach_row": (_row or {}).get("id"),
+        "diagram_view": diagram_view(method_tag, (_row or {}).get("id"), _cat),
         "records_video": bool(entry.get("records_video")),
         "config_label": config_label or ("dirty" if _dirty_repos else ""),
         "source": "automated", "behind_upstream": _behind,
@@ -1065,6 +1352,9 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                 else:
                     print(f"{RED}box-not-stamped{OFF}  {entry['id']} — root@{_bip} is reachable but has no /etc/dev-test-build.json; (re)deploy it to stamp its build identity.")
                 return None
+            # forced past the box-identity gate: the box's code identity was never checked (req 85)
+            base["box_unverified"] = ("no --ip/--key" if (not _bip or not _bkey) else
+                                      "unreachable" if not _reach else "not stamped")
         else:
             base["box_stamp"] = _stamp
             _bd = box_pin_diffs(_stamp, _pins)
@@ -1096,14 +1386,19 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
             if _box_method is None:
                 print(f"{GREY}note{OFF}  {entry['id']} — box stamp has no install `method`; "
                       f"redeploy to enable install-method verification.")
-            elif _setup_family(_box_method) != _setup_family(method_tag):
+            elif ((canon_setup(_box_method)[0] or "") in setup_ids()
+                  and canon_setup(_box_method)[0] != method_tag) or (
+                    (canon_setup(_box_method)[0] or "") not in setup_ids()
+                    and _setup_family(_box_method) != _setup_family(method_tag)):
+                # Since the matrix columns are the setup diagram's Install × Network views (req 168), the box
+                # must have been installed as exactly this setup; an old coarse stamp (lan-setup-0) can only be
+                # checked by its install family.
                 base["box_method_mismatch"] = True
-                print(f"{RED}install-method mismatch{OFF}  {entry['id']} — box was installed via "
-                      f"{_box_method} (family {_setup_family(_box_method)}), but --on {method_tag} "
-                      f"claims family {_setup_family(method_tag)}.")
-                print(f"  a {_setup_family(method_tag)} result must run against a "
-                      f"{_setup_family(method_tag)}-installed box (else it's a false positive for that "
-                      f"method). (Re)install via {_setup_family(method_tag)}, or pass --allow-dirty.")
+                print(f"{RED}install-setup mismatch{OFF}  {entry['id']} — box was installed as {_box_method}"
+                      f" ({canon_setup(_box_method)[0] or 'family ' + _setup_family(_box_method)}), but --on "
+                      f"{method_tag} claims another setup.")
+                print(f"  a {method_tag} result must run against a box installed as {method_tag} (else it's a "
+                      f"false positive for that column). (Re)install it that way, or pass --allow-dirty.")
                 if not allow_dirty:
                     return None
             # Record what the BOX actually runs (its stamp = source of truth) as the server-side
@@ -1140,12 +1435,41 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                   f"needed). The install scans that the SSID is in range before writing anything.")
             return None
 
+    def _forced_reasons():
+        """Every gate this run was pushed past with --allow-dirty (req 85: never a silent clean pass)."""
+        f = []
+        if allow_dirty:
+            if _dirty_repos:
+                f.append("dirty:" + ",".join(_dirty_repos))
+            if _drift:
+                f.append("submodule-drift")
+            if _behind:
+                f.append("behind-upstream")
+            if _pin_problems:
+                f.append("pin-mismatch")
+            if base.get("hermetic_problems"):
+                f.append("non-hermetic")
+            if base.get("box_stale"):
+                f.append("stale-box")
+            if base.get("box_method_mismatch"):
+                f.append("install-method-mismatch")
+            if base.get("box_unverified"):
+                f.append("box-unverified:" + base["box_unverified"])
+        return f
+
     if cmd == "@flutter":
         # L3 desktop flow: not a shell command. Resolve the backend target from the setup/args and
         # drive the Flutter app against it, recording the real setup as the method (so the result
         # lands in the correct matrix column). Gates above (clean-state/pin/behind/box-identity) have
-        # already run for this catalog entry; the inner recorder does not re-gate.
-        return _dispatch_l3(entry, net, method_tag, ip, extra_env, allow_dirty, base)
+        # already run for this catalog entry; the inner recorder does not re-gate — so the gates this
+        # run was FORCED past are decided here and carried onto the inner record (else an --allow-dirty
+        # L3 run would be recorded as a clean pass, req 85).
+        base["forced_reasons"] = _forced_reasons()
+        base["forced"] = bool(base["forced_reasons"])
+        if base["forced"]:
+            print(f"{AMBER}  FORCED past: {', '.join(base['forced_reasons'])} (--allow-dirty) — the run is recorded as forced{OFF}")
+        return _dispatch_l3(entry, net, method_tag, ip, extra_env, allow_dirty, base,
+                            reach=base.get("reach"), reach_name=base.get("reach_name"))
 
     repo_dir = os.path.normpath(os.path.join(ROOT, entry["repo"])) if entry.get("repo") else ROOT
     # Where the command actually runs. Defaults to the repo dir so repo-relative cmds
@@ -1189,7 +1513,17 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     log_path = os.path.join(LOGS, run_id + ".log")
     os.makedirs(LOGS, exist_ok=True)
     tags = f"{GREY}[net={net_tag} on={method_tag}]{OFF}"
-    print(f"{BOLD}▶ {entry['id']}{OFF} {tags}  {GREY}{cmd}{OFF}")
+    # Never let a box API token reach the terminal transcript or the log (logs are committed by ./dash publish):
+    # redact the token values this run knows (--token → API_TOKEN, --dart-define=API_TOKEN=…) and any 64-hex string.
+    _secret_vals = {v for v in [_env_get(extra_env, "API_TOKEN"), os.environ.get("API_TOKEN")]
+                    + re.findall(r"API_TOKEN=(\S+)", cmd) if v and len(v) >= 8}
+
+    def _redact(text):
+        for v in _secret_vals:
+            text = text.replace(v, "<redacted>")
+        return _HEX64_RE.sub("<redacted-64hex>", text)
+
+    print(f"{BOLD}▶ {entry['id']}{OFF} {tags}  {GREY}{_redact(cmd)}{OFF}")
     rec_handle = start_recording(run_id) if record else None
     # env precedence: entry "env" defaults < the caller's shell env < CLI overrides (--ip/--env)
     # < the recorder's display env. Install entries keep their per-setup default IP in "env".
@@ -1207,7 +1541,11 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         # (repos/branches/commits used + dirtiness), not just api/nixpkgs pins.
         run_env["DEV_TEST_STAMP"] = json.dumps({"repos": _repos, "pins": _pins, "state_hash": _state_hash,
                                                  "dirty": bool(_dirty_repos), "method": method_tag})
-        run_env["SP_SETUP"] = method_tag   # so the installer's next-steps suggest the matching --on
+    if entry.get("category") in ("install", "reach"):
+        run_env["SP_SETUP"] = method_tag   # so the installer / reach apply's next-steps suggest the matching --on
+    if entry.get("category") == "reach":
+        # every input is on the command line (req 172) — and a prompt could not show through the line relay
+        run_env["SP_NONINTERACTIVE"] = "1"
     shot_dir = ""
     if shots:                                    # the test grabs its own $DISPLAY into SHOT_DIR per step
         shot_dir = os.path.join(MEDIA, run_id + ".shots")
@@ -1218,12 +1556,13 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     out_lines = 0
     subst = False
     with open(log_path, "w") as log:
-        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {cmd}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
+        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {_redact(cmd)}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
         log.flush()
         try:
             proc = subprocess.Popen(cmd, shell=True, cwd=run_dir, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True, bufsize=1, env=run_env)
             for line in proc.stdout:
+                line = _redact(line)
                 sys.stdout.write(line)
                 log.write(line)
                 out_lines += 1
@@ -1257,20 +1596,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # machine, not run here. Still a valid deterministic pass, but not a local execution.
     substituted = bool(_self_contained(entry)) and code == 0 and subst and not from_cache
     # Forced: the run was pushed past a gate with --allow-dirty — must never look like a clean pass.
-    _forced = []
-    if allow_dirty:
-        if _dirty_repos:
-            _forced.append("dirty:" + ",".join(_dirty_repos))
-        if _drift:
-            _forced.append("submodule-drift")
-        if _behind:
-            _forced.append("behind-upstream")
-        if _pin_problems:
-            _forced.append("pin-mismatch")
-        if base.get("hermetic_problems"):
-            _forced.append("non-hermetic")
-        if base.get("box_stale"):
-            _forced.append("stale-box")
+    _forced = _forced_reasons()
     rec = {**base, "status": status, "duration_s": round(duration, 1), "exit_code": code,
            "error": err, "from_cache": from_cache, "substituted": substituted,
            "forced": bool(_forced), "forced_reasons": _forced,
@@ -1290,7 +1616,7 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     # After a box install, run the guided finish (reboot → online → public IP → DNS records → verify)
     # on the REAL terminal — and only AFTER the record is written, so the human's time inside it can
     # never inflate the install's recorded duration (which would mis-mark a clean install "slow").
-    # Interactive terminals only; CI/pipes skip it. vm-local has no DOMAIN/MAC → naturally excluded.
+    # Interactive terminals only; CI/pipes skip it. The vm setup has no DOMAIN/MAC → naturally excluded.
     if (entry.get("category") == "install" and status in ("pass", "slow")
             and sys.stdin.isatty() and sys.stdout.isatty()):
         _dom, _key, _mac = run_env.get("DOMAIN"), run_env.get("KEY"), run_env.get("MAC")
@@ -1358,7 +1684,7 @@ def cmd_list(args):
         c = e.get("cmd", "")
         kind = "@todo" if c == "@todo" else "@manual" if c == "@manual" else ""
         print(f"  {e['id']:<26} {e['level']:<8} {e.get('client','-'):<8} net={nets:<16} {GREY}{kind}{OFF}")
-    print(f"\n{len(es)} commands. Run: ./dash run <id> [--net tor --on vm-local --record]  |  ./dash run --all")
+    print(f"\n{len(es)} commands. Run: ./dash run <id> [--on vm --reach onion --net tor]  |  ./dash setups  |  ./dash run --all")
 
 
 def select(args):
@@ -1368,7 +1694,10 @@ def select(args):
         picked = [entry_by_id(cat, i) for i in args.ids]
         missing = [i for i, p in zip(args.ids, picked) if p is None]
         if missing:
-            sys.exit(f"unknown id(s): {', '.join(missing)}")
+            rm = cat.get("removed_setups") or {}
+            hints = [f"  {i}: {rm[i.split('.', 1)[1]]}" for i in missing
+                     if i.startswith("install.") and i.split(".", 1)[1] in rm]
+            sys.exit(f"unknown id(s): {', '.join(missing)}" + ("\n" + "\n".join(hints) if hints else ""))
         return picked
     if args.all:
         return es
@@ -1386,6 +1715,9 @@ def select(args):
 
 
 def cmd_run(args):
+    _gate = alignment_gate()   # once up front (req 183); run_entry checks again for its other callers
+    if _gate:
+        sys.exit(_gate)
     entries = select(args)
     # Fold the dedicated box args into the env channel the gates/dispatch already read (KEY for the
     # box-identity gate + server logs; API_TOKEN for the L3 app). Keeps run_entry's signature stable.
@@ -1398,29 +1730,51 @@ def cmd_run(args):
     print(f"{BOLD}Running {len(entries)} command(s){OFF}\n")
     results = [run_entry(e, args.config, net=args.net, method=args.on,
                          record=args.record, server_log=args.server_log,
-                         ip=args.ip, extra_env=args.env, allow_dirty=args.allow_dirty) for e in entries]
+                         ip=args.ip, extra_env=args.env, allow_dirty=args.allow_dirty,
+                         reach=args.reach, reach_name=args.name) for e in entries]
+    refused = sum(1 for r in results if not r)
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
-    print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass. Data → {os.path.relpath(DATA, ROOT)}")
+    print(f"\n{BOLD}Done.{OFF} {ok}/{len(results)} pass" + (f", {refused} not run" if refused else "") +
+          f". Data → {os.path.relpath(DATA, ROOT)}")
     print("View:  ./dash serve   Publish:  ./dash publish")
+    # non-zero when anything was refused or did not complete, so `./dash run a && ./dash run b` stops there
+    if refused or any(r["status"] not in ("pass", "slow") for r in results):
+        sys.exit(1)
 
 
 def cmd_wrap(args):
+    _gate = alignment_gate()
+    if _gate:
+        sys.exit(_gate)
     cat = load_catalog()
     e = entry_by_id(cat, args.id) or {"id": args.id, "name": args.id, "category": "test",
                                        "level": "adhoc", "repo": None, "budget_s": None}
     e = dict(e)
     e["cmd"] = " ".join(args.cmd)
-    run_entry(e, args.config, net=args.net, method=args.on, record=args.record, server_log=args.server_log)
+    rec = run_entry(e, args.config, net=args.net, method=args.on, record=args.record, server_log=args.server_log,
+                    reach=args.reach, reach_name=args.name)
+    sys.exit(0 if rec and rec.get("status") in ("pass", "slow") else 1)
 
 
 def cmd_report(args):
     cat = load_catalog()
+    _gate = alignment_gate(cat)   # a manual result lands in a matrix cell too (req 183)
+    if _gate:
+        sys.exit(_gate)
     e = entry_by_id(cat, args.id)
     if not e:
         sys.exit(f"unknown id: {args.id}")
     gs = git_state(e.get("repo"))
     nets = e.get("networks") or []
+    # The same explicit setup + reach a `run` takes, so a manual result lands in the same matrix cell.
+    _on, _err = resolve_method(e, args.on, cat)
+    if _err:
+        sys.exit(f"setup: {_err}")
+    _net = args.net or (nets[0] if len(nets) == 1 else None)
+    _row, _err = resolve_reach(e, _net, _on, args.reach, args.name, cat, check_wired=False)
+    if _err:
+        sys.exit(f"reach: {_err}")
     _repos = project_repo_states(entry_repos(e))
     _pins = flake_pins()
     _box = None
@@ -1441,8 +1795,10 @@ def cmd_report(args):
         "run_id": gen_run_id(), "ts": now_iso(), "env": args.env or ("ci" if is_ci() else "local"),
         "host": args.host or socket.gethostname(), "category": e.get("category", "test"),
         "id": e["id"], "name": e.get("name", e["id"]), "level": e.get("level", ""),
-        "client": e.get("client", "-"), "transport": args.net or (nets[0] if len(nets) == 1 else "-"),
-        "backend": e.get("backend", "-"), "method": args.on or e.get("method", "-"),
+        "client": e.get("client", "-"), "transport": _net or "-",
+        "backend": e.get("backend", "-"), "method": _on or "-",
+        "reach": (_row or {}).get("reach"), "reach_name": (_row or {}).get("name"), "reach_row": (_row or {}).get("id"),
+        "diagram_view": diagram_view(_on, (_row or {}).get("id"), cat),
         "records_video": bool(e.get("records_video")),
         "config_label": args.config or "", "status": args.status,
         "source": "manual",   # self-attested (click-through/video), NOT an automated+verified run
@@ -1481,7 +1837,11 @@ def cmd_l3_baseline(args):
     right after a fresh (re)install so later flows' drift is measured against a clean reference. The
     golden stores only the state sha + modules/users summary — no secrets. All args explicit (reqs 1-6);
     box setups need --ip/--key/--token (enforced by resolve_backend_target)."""
-    setup = args.on
+    setup, _err = canon_setup(args.on)
+    if not _err and setup not in setup_ids():
+        _err = f"{setup} is harness-only (the L1/L2 test VM), not a setup you pass — use one of: {' | '.join(setup_ids())}"
+    if _err:
+        sys.exit(f"--on {args.on}: {_err}")
     action = args.action or "capture"
     target = resolve_backend_target(setup, "tor", args.ip, args.key, args.token)
     if not target:
@@ -1491,6 +1851,9 @@ def cmd_l3_baseline(args):
         state_key = (stamp or {}).get("state_hash") or "unknown"
     else:
         state_key = _state_hash_of(project_repo_states(DEFAULT_REPOS["L3"]))
+    _iid = _backend_install_id(target)
+    if _iid:
+        state_key = f"{state_key}-{_iid}"     # same key the L3 runs use (per code state AND per install)
     p = _l3_baseline_path(state_key, setup)
     if action == "show":
         print(open(p).read() if os.path.exists(p)
@@ -1535,7 +1898,7 @@ def cmd_find_target(args):
     for m, i in _neigh_pairs():
         if m not in seen:
             cands.append((m, i, "on LAN")); seen.add(m)
-    # IPv6 link-local — finds a directly-cabled target that has NO IPv4/DHCP (lan-setup-0*). Added only
+    # IPv6 link-local — finds a directly-cabled target that has NO IPv4/DHCP (cable-* setups). Added only
     # for MACs the IPv4 sweep didn't already cover (so LAN devices keep their IPv4).
     for m, dev in _ipv6_ll_discover():
         if m not in seen:
@@ -1621,7 +1984,7 @@ def cmd_find_target(args):
     else:
         print("install, e.g.:")
         print(CYAN + "\n".join([
-            "./dash run install.lan-setup-0 \\", f"  --ip {ip_for_cmd} \\",
+            "./dash run install.cable-0a --on cable-0a \\", f"  --ip {ip_for_cmd} \\",
             "  --key ~/.ssh/pcname_ed25519 \\", "  --env FLAKE=<flake> \\",
             f"  --env MAC={m} \\", "  --env DOMAIN=<domain> \\",
             "  --env NETBOOT=auto \\", "  --env TRANSPORT=none"]) + OFF)
@@ -1643,6 +2006,9 @@ def cmd_app(args):
     (--domain, --token, and --apex/--no-apex): no caching, no SSH auto-resolve, no silent defaults — so
     the printed command is fully reproducible by anyone (reqs 1, 2, 4). The ONLY thing auto-found is the
     local Flutter checkout dir (a derived local path, like resolve_flake finds the deploy flake)."""
+    if not (args.token or "").strip():
+        sys.exit(f"{RED}--token is empty{OFF} — e.g. the $(ssh … secrets.json …) read failed (off the box's LAN?). "
+                 f"Pass the box's API token from your password manager.")
     appdir = _flutter_app_dir()
     if not appdir:
         print(f"{RED}SelfPrivacy Flutter app not found locally (no selfprivacy.org.app/pubspec.yaml). Clone it first.{OFF}"); return
@@ -1874,7 +2240,7 @@ def ensure_backend(install_ok):
         return o, DEV_TOKEN, ("" if o else "VM started but .onion not ready (boot slow, or Tor HS not up)")
     if not install_ok:
         return "", "", "no backend VM (omit --no-install to create one)"
-    inst = entry_by_id(load_catalog(), "install.vm-local")
+    inst = entry_by_id(load_catalog(), "install.vm")
     if inst:
         run_entry(inst)                       # download image, create VM, start Tor
     o = _get_onion(retries=25)
@@ -2040,7 +2406,7 @@ def bring_up_backend(cat):
             return o
         print(f"{GREY}existing VM didn't yield an .onion — reinstalling clean…{OFF}")
         _destroy_vm()
-    inst = entry_by_id(cat, "install.vm-local")     # SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh
+    inst = entry_by_id(cat, "install.vm")           # SP_BUILD_MODE=build SP_VM_ACTION=reinstall ./build-and-run.sh
     if inst:
         run_entry(inst)                             # build-and-run.sh hits a clean slate
     print(f"{GREY}applying stable 2D graphics (VBox 7.x VMSVGA 3D crashes the guest) and rebooting…{OFF}")
@@ -2048,6 +2414,29 @@ def bring_up_backend(cat):
     _apply_stable_graphics()
     _sh(f'VBoxManage startvm "{VM_NAME}" --type headless', timeout=120)
     return _get_onion(retries=30)
+
+
+def _lock_packages(text):
+    """{package: its pubspec.lock block} (+ '__<section>__' for the other top-level sections, e.g. sdks), with the
+    `dependency:` line left out — so two locks compare equal per package iff its source/description/version match."""
+    out, cur, sect = {}, None, None
+    for line in (text or "").splitlines(keepends=True):
+        if re.match(r"^\S", line):
+            sect, cur = line.strip().rstrip(":"), None
+            if sect != "packages":
+                out.setdefault(f"__{sect}__", "")
+                out[f"__{sect}__"] += line
+            continue
+        if sect == "packages":
+            m = re.match(r"^  ([A-Za-z0-9_]+):\s*$", line)
+            if m:
+                cur = m.group(1)
+                out[cur] = ""
+            elif cur and not line.strip().startswith("dependency:"):
+                out[cur] += line
+        elif sect:
+            out[f"__{sect}__"] += line
+    return out
 
 
 def ensure_integration_dep(app_dir):
@@ -2176,10 +2565,11 @@ def resolve_backend_target(setup, net, ip, key, token):
     resolved by the VM code path). kind=="box" → a deployed physical box reached over the LAN: requires
     --ip/--key/--token (a box's API token is per-box + secret, so it can't be defaulted — reproducibility
     reqs 1-6), and its onion / https domain are read LIVE from the box (req 89), never from stale local
-    state. chutney is vm-local only; a box exposes tor (real onion) or https (public domain)."""
+    state. chutney is VM-only (--on vm); a box exposes tor (real onion) or https (public domain)."""
+    setup = canon_setup(setup)[0] or setup
     kind = _setup_backend_kind(setup)
     if kind == "vm":
-        return {"kind": "vm", "setup": setup or "vm-local", "token": token or DEV_TOKEN,
+        return {"kind": "vm", "setup": setup or "vm", "token": token or DEV_TOKEN,
                 "socks": CHUTNEY_SOCKS if net == "chutney" else 9050}
     missing = [name for name, val in (("--ip", ip), ("--key", key), ("--token", token)) if not val]
     if missing:
@@ -2225,17 +2615,86 @@ def resolve_backend_target(setup, net, ip, key, token):
     return tgt
 
 
-def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
+SYSTEM_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+
+
+def _doh(name, rtype):
+    """Public DNS answers for `name` (A / AAAA) via DNS-over-HTTPS — never this host's /etc/hosts or a LAN
+    resolver (the private-IP mistake of 2026-09-25). [] when there are none or the lookup failed."""
+    code = {"A": 1, "AAAA": 28}[rtype]
+    r = _sh(f"curl -s --max-time 10 -H 'accept: application/dns-json' "
+            f"'https://cloudflare-dns.com/dns-query?name={name}&type={rtype}'", timeout=15)
+    try:
+        return [a["data"] for a in json.loads(r.stdout or "{}").get("Answer", []) if a.get("type") == code]
+    except Exception:
+        return []
+
+
+def verify_reach_route(target, row):
+    """(ok, evidence, why): does the box REALLY use the setup-diagram route this run claims (req 181)? Every box
+    https row dials the same api.<domain>, so without this a pass over a port-forward would land green under
+    ipv6-duckdns or cloudflare-buy. Name: duckdns ⇔ the box's domain is *.duckdns.org. Route: portfwd ⇔ public DNS
+    A of api.<domain> = the box's public IPv4 (a global address); ipv6 ⇔ public AAAA = one of the box's global
+    IPv6s; cloudflare ⇔ cloudflared-sp is active on the box and the name's public A records are global and NOT the
+    box's own public IPv4 (that would be a port-forward with cloudflared merely running)."""
+    import ipaddress
+    host = target["https_domain"]
+    domain = host[4:] if host.startswith("api.") else host
+    ev = {"host": host}
+    duck = domain.endswith(".duckdns.org")
+    if row.get("name") == "duckdns" and not duck:
+        return False, ev, f"--name duckdns, but the box's domain {domain} is not a *.duckdns.org name"
+    if row.get("name") == "buy" and duck:
+        return False, ev, f"--name buy, but the box's domain {domain} is a DuckDNS name"
+    base = _ssh_base(target["key"]) + [f"root@{target['ip']}"]
+
+    def box(cmd):
+        try:
+            return (subprocess.run(base + [cmd], capture_output=True, text=True, timeout=30).stdout or "").strip()
+        except Exception:
+            return ""
+    ev["a"], ev["aaaa"] = _doh(host, "A"), _doh(host, "AAAA")
+    # not is_global: private LAN, carrier-grade NAT (100.64/10), loopback, link-local — nothing a friend can reach
+    nonglobal = [x for x in ev["a"] if x.count(".") == 3 and not ipaddress.ip_address(x).is_global]
+    if row.get("reach") == "portfwd":
+        pub4 = box("curl -s -4 --max-time 10 https://api.ipify.org")
+        ev["box_public_ipv4"] = pub4
+        if nonglobal:
+            return False, ev, f"port-forward: public DNS A of {host} = {ev['a']} includes a non-public address {nonglobal}"
+        if not pub4 or pub4 not in ev["a"]:
+            return False, ev, f"port-forward: public DNS A of {host} = {ev['a'] or 'none'}, the box's public IPv4 = {pub4 or 'unknown'}"
+    elif row.get("reach") == "ipv6":
+        v6 = [x for x in box("ip -6 addr show scope global | awk '/inet6/{print $2}' | cut -d/ -f1").split() if x[:1] in "23"]
+        ev["box_global_ipv6"] = v6
+        if not ev["aaaa"] or not set(ev["aaaa"]) & set(v6):
+            return False, ev, f"direct IPv6: public AAAA of {host} = {ev['aaaa'] or 'none'}, the box's global IPv6 = {v6 or 'none'}"
+    elif row.get("reach") == "cloudflare":
+        ev["cloudflared"] = box("systemctl is-active cloudflared-sp")
+        if ev["cloudflared"] != "active":
+            return False, ev, f"cloudflare: cloudflared-sp is {ev['cloudflared'] or 'not running'} on the box"
+        if not ev["a"]:
+            return False, ev, f"cloudflare: {host} has no public A record"
+        if nonglobal:
+            return False, ev, f"cloudflare: public DNS A of {host} = {ev['a']} includes a non-public address {nonglobal}"
+        pub4 = box("curl -s -4 --max-time 10 https://api.ipify.org")
+        ev["box_public_ipv4"] = pub4
+        if pub4 and pub4 in ev["a"]:
+            return False, ev, (f"cloudflare: {host} resolves straight to the box's public IPv4 {pub4} — a port-forward, "
+                               f"not the tunnel (cloudflared-sp merely runs)")
+    return True, ev, ""
+
+
+def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base, reach=None, reach_name=None):
     """Dispatch an L3 `@flutter` catalog entry: resolve the backend target from the setup/args and
     drive the recorded Flutter flow against it. Called by run_entry AFTER its gates (clean-state / pin /
-    behind-upstream / box-identity) have run for this entry — the inner recorder does not re-gate.
-    Merges the box provenance the outer gate computed (stamp / live / box repos+pins) onto the run."""
+    behind-upstream / box-identity) and its --reach/--name resolution have run for this entry — the
+    inner recorder does not re-gate. Merges the box provenance the outer gate computed (stamp / live /
+    box repos+pins) onto the run."""
     if entry.get("client") == "android" or entry["id"].endswith(".android"):
         print(f"{AMBER}android L3 not supported by this runner yet{OFF}  {entry['id']}")
         return None
     if setup in (None, "", "-"):
-        print(f"{RED}no setup{OFF}  {entry['id']} — --on is required (vm-local | lan-setup-0a..0d | "
-              f"lan-setup-1 | lan-setup-2 | usb-0a..0c).")
+        print(f"{RED}no setup{OFF}  {entry['id']} — --on is required: {' | '.join(setup_ids())}.")
         return None
     flow = entry["id"].split(".")[1]        # L3.<flow>.desktop
     key = _env_get(extra_env, "KEY")
@@ -2244,6 +2703,23 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
     if not target:
         return None
     pf = {"tor": _port_open("127.0.0.1", 9050)}
+    if target["kind"] == "box" and net == "https":
+        # The route this run claims (req 181) and the TLS chain against the system CAs (req 101) — before the app runs.
+        _row = next((x for x in load_catalog().get("reach_rows", []) if x["id"] == base.get("reach_row")), {})
+        _ok, _ev, _why = verify_reach_route(target, _row)
+        base["reach_evidence"] = _ev
+        _tls = _sh(f"curl -sS -o /dev/null --max-time 20 https://{target['https_domain']}/", timeout=30)
+        if _tls.returncode in (35, 51, 58, 60, 77):
+            _ok, _why = False, (_why + "; " if _why else "") + f"TLS: {(_tls.stderr or '').strip()[:160]}"
+        if not _ok:
+            print(f"{RED}route not verified{OFF}  {entry['id']} — {_why}")
+            if not allow_dirty:
+                print(f"  the result would be filed under {base.get('reach_row')} without the box using that route; "
+                      f"fix the box/DNS or pass the matching --reach/--name (or --allow-dirty).")
+                return None
+            base["forced_reasons"] = (base.get("forced_reasons") or []) + ["reach-unverified"]
+            base["forced"] = True
+            base["reach_unverified"] = _why
     if target["kind"] == "box":
         address = target["onion"] if net != "https" else None
         socks = target["socks"]
@@ -2255,19 +2731,27 @@ def _dispatch_l3(entry, net, setup, ip, extra_env, allow_dirty, base):
     elif net == "tor":
         address, socks = _get_onion(retries=25), 9050
         if not address:
-            print(f"{RED}no VM onion{OFF} — the vm-local backend isn't up/published. "
-                  f"Deploy it first (./dash run install.vm-local …).")
+            print(f"{RED}no VM onion{OFF} — the VM backend isn't up/published. "
+                  f"Deploy it first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up")
             return None
     else:  # vm https — run_l3_flutter resolves theory7 itself
         address, socks = None, None
     retries = 1 if flow == "addremove" else None
     # Baseline key = the deployed backend's identity: a box's stamped state_hash, else this code state.
     state_key = base.get("box_state_hash") or base.get("state_hash")
+    _iid = _backend_install_id(target)
+    if _iid:
+        state_key = f"{state_key}-{_iid}"
     rec = run_l3_flutter(address, target["token"], pf, net=net, socks_port=socks, flow=flow,
-                         retries=retries, target=target, state_key=state_key)
+                         retries=retries, target=target, state_key=state_key,
+                         reach=reach, reach_name=reach_name,
+                         marks=({"forced": True, "forced_reasons": base.get("forced_reasons") or []}
+                                if base.get("forced") else None))
     if rec:
         extra = {k: base[k] for k in ("box_stamp", "box_live", "box_stale", "box_state_hash",
-                                      "box_method", "box_method_mismatch", "repos", "pins", "closure")
+                                      "box_method", "box_method_mismatch", "box_unverified", "repos", "pins", "closure",
+                                      "reach_evidence", "reach_unverified",
+                                      "forced", "forced_reasons")
                  if k in base}
         # For a box run the closure identity is the box's running-system store path (req 92).
         if base.get("closure"):
@@ -2389,6 +2873,13 @@ def _restore_backend(pre, post, target, token):
     return restored
 
 
+def _backend_install_id(target):
+    """The backend's per-install identity (/etc/machine-id, new on every fresh install). Part of the L3 baseline key:
+    a golden captured on one install must not be compared with a FRESH reinstall of the same code — its
+    userdata.json holds per-install values, so it would always read as 'drift' (a false alarm)."""
+    return (_backend_ssh_run(target, "cat /etc/machine-id", timeout=20).stdout or "").strip()[:12]
+
+
 def _l3_baseline_path(state_key, setup):
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{state_key or 'unknown'}__{setup or 'unknown'}")
     return os.path.join(ROOT, "state", "l3_baseline", safe + ".json")
@@ -2430,7 +2921,7 @@ def _l3_baseline(state_key, setup, pre):
 
 
 def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="providers", retries=None,
-                   target=None, state_key=None):
+                   target=None, state_key=None, reach=None, reach_name=None, marks=None):
     """Run an AUTOMATED L3 desktop flow test, recorded, over transport `net`
     (tor | chutney | https). `flow` selects which dashboard-owned test to run
     (flutter/<flow>_flow_test.dart — providers/connect/login/services/nextcloud/menus/addremove).
@@ -2444,7 +2935,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
     box's live onion (real Tor, SOCKS 9050) or its public https domain (system-trust LE cert, no
     tunnel/CA); server logs come over the box's SSH key. The recorded `method` is the real setup."""
     is_box = bool(target and target.get("kind") == "box")
-    setup = (target or {}).get("setup") or "vm-local"
+    setup = (target or {}).get("setup") or "vm"
     rec = None
     pre_state, base_match, base_drift = None, True, ""   # per-flow clean-state baseline (req 90)
     app = os.path.normpath(os.path.join(ROOT, FLUTTER_APP_DIR))
@@ -2463,7 +2954,11 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         address = target["https_domain"]
         dart_defines = (f"--dart-define=HTTPS_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=HTTPS_APEX=1")
-        print(f"{GREY}box https: dialing https://{address}/graphql (system-trust LE cert){OFF}")
+        # Without HTTPS_CA the app's dev HTTPS_DOMAIN mode trusts ANY certificate; the system CA bundle makes it
+        # validate the real chain (strict: withTrustedRoots=false + exactly this bundle).
+        if os.path.exists(SYSTEM_CA_BUNDLE):
+            dart_defines += f" --dart-define=HTTPS_CA={SYSTEM_CA_BUNDLE}"
+        print(f"{GREY}box https: dialing https://{address}/graphql (cert validated against {SYSTEM_CA_BUNDLE}){OFF}")
     elif net == "https":
         # VM over clearnet HTTPS: trusted real domain (theory7.weersurf.nl) via Caddy+mkcert + an SSH
         # tunnel to the VM nginx — NOT the old self-signed nip.io hack. App connects to
@@ -2475,8 +2970,9 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         if ca:
             dart_defines += f" --dart-define=HTTPS_CA={ca}"
         else:
-            print(f"{AMBER}mkcert CA not found ({MKCERT_CA}) — run setup-theory7-https.sh so the app "
-                  f"can VALIDATE the cert (falling back to trust-anything for this run).{OFF}")
+            print(f"{RED}mkcert CA not found{OFF} ({MKCERT_CA}) — the app could not VALIDATE the local https cert. "
+                  f"One-time setup: bash setup-theory7-https.sh   (refusing instead of trusting anything).")
+            return None
     else:
         # onion transports: tor (real Tor, SOCKS 9050) or chutney (private net, its client SOCKS).
         have_socks = True if net == "chutney" else pf.get("tor")
@@ -2496,22 +2992,42 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         dart_defines = (f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=SOCKS_PORT={socks_port}")
     itdir = os.path.join(app, "integration_test")
+    # Every `nix develop` leaves a ~300 MB /tmp/nix-shell.* (flutter's temp files) behind, and /tmp is a RAM
+    # tmpfs: three per flow filled it and the app then could not even start. So this run's nix develop calls get
+    # their own short TMPDIR on disk, created here and deleted when the flow is done.
+    l3_tmp = os.path.join(os.path.expanduser("~/.cache/dl3"), f"{os.getpid()}-{flow}")
+    os.makedirs(l3_tmp, exist_ok=True)
     injected = os.path.join(itdir, f"{flow}_flow_test.dart")
     backup = {f: open(os.path.join(app, f)).read() for f in ("pubspec.yaml", "pubspec.lock")
               if os.path.exists(os.path.join(app, f))}
     created_dir = not os.path.isdir(itdir)
     try:
-        print(f"{GREY}injecting automated test into the app (temporary — Manager repo restored after)…{OFF}")
-        ensure_integration_dep(app)
-        os.makedirs(itdir, exist_ok=True)
-        shutil.copy(test_src, injected)
-        # Use the app flake's PINNED flutter (flutter332 — pubspec wants >=3.32.0 <3.33.0), NOT the
-        # system flutter (which may be newer and would silently re-resolve pubspec.lock → the app
-        # under test ≠ the committed deps). --enforce-lockfile makes pub REFUSE to change the lock:
-        # with the pinned toolchain it matches and nothing drifts; if it ever can't, it fails LOUD
-        # (detection) instead of testing unknown deps. So L3 "just runs" and stays honest.
-        print(f"{GREY}flutter pub get --enforce-lockfile (pinned flutter via the app flake)…{OFF}")
-        _pg = _sh(f"cd '{app}' && nix develop -c bash -c 'export FLUTTER_SUPPRESS_ANALYTICS=true; flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get --enforce-lockfile'", timeout=1800)
+        # Use the app flake's PINNED flutter, NOT the system flutter (which may be newer and would silently
+        # re-resolve pubspec.lock → the app under test ≠ the committed deps). (1) On the CLEAN app,
+        # --enforce-lockfile makes pub REFUSE to change the lock: with the pinned toolchain the committed lock
+        # must match; if it ever can't, fail LOUD (detection) instead of testing unknown deps (req 83).
+        # The app flake's `.#linux` shell: Flutter engine, GTK, C/C++ toolchain and tools from ONE nixpkgs (its default
+        # devShell mixes two, which no longer links/runs on this host). A Linux build dir that CMake configured with
+        # another compiler (e.g. a `flutter run` with the system Flutter — CMake caches /usr/bin/clang++ forever)
+        # would silently link a hybrid host/Nix binary: a hidden build input (req 91) — so start that dir clean.
+        _shell_cxx = (_sh(f"cd '{app}' && TMPDIR='{l3_tmp}' nix develop .#linux -c bash -c 'command -v clang++'",
+                          timeout=900).stdout or "").strip().splitlines()[-1:] or [""]
+        for _cache in glob.glob(os.path.join(app, "build", "linux", "*", "*", "CMakeCache.txt")):
+            _m = re.search(r"^CMAKE_CXX_COMPILER:\w+=(.*)$", open(_cache, errors="replace").read(), re.M)
+            if not _shell_cxx[0] or (_m and _m.group(1).strip() != _shell_cxx[0]):
+                print(f"{AMBER}stale Linux build dir{OFF} — {os.path.relpath(_cache, app)} was configured with "
+                      f"{_m.group(1).strip()}, not this shell's {_shell_cxx[0]}: removing build/linux")
+                shutil.rmtree(os.path.join(app, "build", "linux"), ignore_errors=True)
+                break
+        _pub = (f"cd '{app}' && TMPDIR='{l3_tmp}' nix develop .#linux -c bash -c 'export FLUTTER_SUPPRESS_ANALYTICS=true; "
+                f"flutter config --enable-linux-desktop >/dev/null 2>&1; flutter pub get{{}}'")
+        print(f"{GREY}flutter pub get --enforce-lockfile on the committed app (pinned flutter: the app flake's .#linux shell)…{OFF}")
+        _pg = _sh(_pub.format(" --enforce-lockfile"), timeout=1800)
+        _pub_out = lambda r: ((r.stderr or "").strip()[-500:] + " | " + (r.stdout or "").strip()[-300:])
+        if _pg.returncode != 0 and "lockfile" not in ((_pg.stdout or "") + (_pg.stderr or "")).lower():
+            print(f"{RED}pub get FAILED{OFF}  L3.{flow}.desktop — not a lock mismatch: toolchain / network / "
+                  f"flake (.#linux) problem. pub: {_pub_out(_pg)}")
+            return
         if _pg.returncode != 0:
             print(f"{RED}pub get --enforce-lockfile FAILED{OFF}  L3.{flow}.desktop — the committed "
                   f"pubspec.lock does not match what the pinned flutter resolves.")
@@ -2519,7 +3035,30 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
                   f"target failure). Fix: regenerate the lock WITH the pinned toolchain")
             print(f"  (cd '{app}' && nix develop -c flutter pub get) and commit it to the app fork, "
                   f"then bump the Manager submodule pointer.")
+            print(f"{GREY}  pub: {_pub_out(_pg)}{OFF}")
             return
+        print(f"{GREY}injecting automated test into the app (temporary — Manager repo restored after)…{OFF}")
+        ensure_integration_dep(app)
+        os.makedirs(itdir, exist_ok=True)
+        shutil.copy(test_src, injected)
+        # (2) The injected test needs the SDK's integration_test package, which the app itself doesn't declare —
+        # so --enforce-lockfile can never pass here. Resolve again and let the lock GAIN only those test-only
+        # packages; ANY change to a package the committed lock already pins fails loud (the app under test must
+        # stay exactly the committed deps). The lock + pubspec are restored byte-for-byte afterwards.
+        _pg2 = _sh(_pub.format(""), timeout=1800)
+        _lock_after = os.path.join(app, "pubspec.lock")
+        _before = _lock_packages(backup.get("pubspec.lock", ""))
+        _after = _lock_packages(open(_lock_after).read()) if os.path.exists(_lock_after) else {}
+        _changed = sorted(k for k in _before if _before[k] != _after.get(k))
+        _added = sorted(set(_after) - set(_before))
+        if _pg2.returncode != 0 or _changed:
+            print(f"{RED}pub get with the injected integration_test FAILED{OFF}  L3.{flow}.desktop — "
+                  + (f"it would change committed packages: {', '.join(_changed)}" if _changed else
+                     f"pub: {_pub_out(_pg2)}"))
+            print(f"  refusing to run: the app under test must be the committed deps (not a target failure).")
+            return
+        print(f"{GREY}test-only packages added for the injected integration_test: {', '.join(_added) or 'none'} "
+              f"(every committed package unchanged){OFF}")
         # server logs come from wherever the backend runs: the box over its SSH key, else the VM.
         if is_box:
             _slog = (" ".join(_ssh_base(target["key"])) + f" root@{target['ip']} "
@@ -2534,7 +3073,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
             # re-gate (_no_gate ⇒ clean-state/pin/behind skipped; needs_box False ⇒ no box gate).
             "needs_box": False, "_no_gate": True,
             "budget_s": 600, "records_video": True, "env": {"FLUTTER_SUPPRESS_ANALYTICS": "true"},
-            "cmd": f"nix develop -c flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
+            "cmd": f"TMPDIR='{l3_tmp}' nix develop .#linux -c flutter test integration_test/{flow}_flow_test.dart -d linux " + dart_defines,
             "server_log_cmd": _slog,
         }
         # Retry on TRANSIENT Tor failures only. The app's reload() timer throws uncaught on a
@@ -2558,7 +3097,13 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
             print(f"{AMBER}l3-baseline drift{OFF}  {flow}/{setup}: pre-flow backend ≠ golden "
                   f"({base_drift}) — the result may reflect leftover state, not code.")
         for attempt in range(1, max_attempts + 1):
-            rec = run_entry(entry, net=net, method=setup, record=True, shots=True)
+            # reach/reach_name: the row the outer run resolved (or, for here/rerecord on the VM, None →
+            # derived from net: tor→onion, chutney→onion over chutney, https→local).
+            rec = run_entry(entry, net=net, method=setup, record=True, shots=True,
+                            reach=reach, reach_name=reach_name)
+            if rec and marks:                    # e.g. forced/forced_reasons from the outer gate: on EVERY
+                mark_record(rec["run_id"], **marks)   # attempt, incl. a retried (flaky) one (req 85)
+                rec.update(marks)
             if not rec or rec.get("status") == "pass":
                 break
             log_txt = ""
@@ -2582,6 +3127,7 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
         if keepwarm:
             keepwarm.set()
     finally:
+        shutil.rmtree(l3_tmp, ignore_errors=True)      # this run's own nix develop / flutter temp files
         print(f"{GREY}restoring Manager repo (removing injected test, reverting pubspec)…{OFF}")
         try:
             if os.path.exists(injected):
@@ -2761,6 +3307,30 @@ def cmd_vm_reset(args):
     _destroy_vm()
     left = _vm_uuids()
     print(f"{GREEN}clean.{OFF}" if not left else f"{AMBER}still present: {left}{OFF} (try again, or check VBox GUI)")
+    if left:
+        sys.exit(1)
+
+
+def cmd_vm_up(args):
+    """(Re)start the INSTALLED VM the way bring_up_backend() does after an install — power off, stable
+    VirtualBox settings (2D graphics + 1 vCPU: VMSVGA 3D and a 2nd vCPU crash VBox 7.2.6 on this host),
+    start headless — make sure host Tor (SOCKS 9050) is up and wait until the VM's .onion answers. Run it
+    right after `./dash run install.vm --on vm`, before the L3 flows. It never reinstalls anything."""
+    if not _vm_exists():
+        sys.exit(f"{RED}no VM{OFF} — install it first: ./dash run install.vm --on vm")
+    print(f"{BOLD}vm-up{OFF} — power off, stable 2D graphics + 1 vCPU, start headless …")
+    _power_off_hard()
+    _apply_stable_graphics()
+    _sh(f'VBoxManage startvm "{VM_NAME}" --type headless', timeout=120)
+    onion = _get_onion(retries=30)
+    if not onion:
+        sys.exit(f"{RED}the VM's .onion was not published{OFF} (slow boot, or its Tor HS is not up) — "
+                 f"check: VBoxManage showvminfo {VM_NAME} | grep State")
+    tor = _ensure_tor()
+    print(f"  host Tor SOCKS 9050: {'up' if tor else 'DOWN — install it: sudo apt install tor'}")
+    ok = tor and _onion_reachable(onion, tries=45)
+    print(f"{GREEN if ok else AMBER}VM up{OFF} — .onion published" +
+          (", answering over Tor." if ok else " but not answering over Tor yet (the L3 runner waits for it and kicks the VM's tor)."))
 
 
 def main():
@@ -2776,12 +3346,16 @@ def main():
     r.add_argument("--category")
     r.add_argument("--tag")
     r.add_argument("--config", help="label the current dirty working tree")
-    r.add_argument("--net", help="network/transport: tor|chutney|https|...")
-    r.add_argument("--on", help="install method the backend runs on: vm-local|native-ethernet|...")
+    r.add_argument("--net", help="transport the app/test speaks: tor|chutney|https (required for L2/L3)")
+    r.add_argument("--on", help="setup = a setup-diagram view (Install+Network): cable-0a|cable-0b|cable-0d|cable-0c|"
+                                "wifi-0a|wifi-0d|usb-0a|usb-0d|usb-0c|vm (old ids lan-setup-0a.., vm-local accepted); ./dash setups")
+    r.add_argument("--reach", help="the setup diagram's Reach for an L3 run (REQUIRED there): onion|tailscale|cloudflare|ipv6|portfwd, "
+                                   "or local (harness: the VM's https on this computer)")
+    r.add_argument("--name", help="the setup diagram's Name, required where the reach has one: cloudflare buy|trycf, ipv6/portfwd buy|duckdns")
     r.add_argument("--record", action="store_true", help="screen-record the client UI (local media)")
     r.add_argument("--server-log", help="shell cmd to fetch backend logs after the run (e.g. ssh ... journalctl)")
     r.add_argument("--ip", help="override the target IP for install runs (else the per-setup default; if unreachable the e2e auto-discovers the box on the LAN by MAC)")
-    r.add_argument("--key", help="ssh private key path for a box target (required for L3/install on lan-setup-*/usb-*; injected as env KEY=)")
+    r.add_argument("--key", help="ssh private key path for a box target (required for L3/install/reach on cable-*/wifi-*/usb-*; injected as env KEY=)")
     r.add_argument("--token", help="API token of the box backend (required for L3 on a box; per-box + secret, never defaulted; injected as env API_TOKEN=)")
     r.add_argument("--env", action="append", metavar="KEY=VAL",
                    help="set/override an env var for the run (repeatable): --env DOMAIN=example.com --env MAC=aa:bb:...")
@@ -2793,6 +3367,8 @@ def main():
     w.add_argument("--config")
     w.add_argument("--net")
     w.add_argument("--on")
+    w.add_argument("--reach", help="the setup diagram's Reach (as for run; required for an L3 id)")
+    w.add_argument("--name", help="the setup diagram's Name where the reach has one: buy|duckdns|trycf")
     w.add_argument("--record", action="store_true")
     w.add_argument("--server-log")
     w.add_argument("cmd", nargs=argparse.REMAINDER, help="-- then the command")
@@ -2805,7 +3381,9 @@ def main():
     rp.add_argument("--error", default="")
     rp.add_argument("--config", default="")
     rp.add_argument("--net")
-    rp.add_argument("--on")
+    rp.add_argument("--on", help="setup (as for run): cable-0a..usb-0c | vm")
+    rp.add_argument("--reach", help="the setup diagram's Reach (as for run; required for an L3 flow)")
+    rp.add_argument("--name", help="the setup diagram's Name where the reach has one: buy|duckdns|trycf")
     rp.add_argument("--env")
     rp.add_argument("--host")
     rp.add_argument("--ip", help="box IP — read its deploy stamp and record THAT as the authoritative state")
@@ -2824,7 +3402,7 @@ def main():
 
     lb = sub.add_parser("l3-baseline", help="capture/show the known-clean golden backend baseline for an L3 setup")
     lb.add_argument("action", nargs="?", choices=["capture", "show"], default="capture")
-    lb.add_argument("--on", required=True, help="setup: vm-local|lan-setup-0a..0d|lan-setup-1|lan-setup-2|usb-0a..0c")
+    lb.add_argument("--on", required=True, help="setup: cable-0a|cable-0b|cable-0d|cable-0c|wifi-0a|wifi-0d|usb-0a|usb-0d|usb-0c|vm")
     lb.add_argument("--ip", help="box IP (required for a box setup)")
     lb.add_argument("--key", help="ssh private key path (required for a box setup)")
     lb.add_argument("--token", help="box API token (required for a box setup)")
@@ -2867,7 +3445,10 @@ def main():
 
     sub.add_parser("backfill-provenance", help="add dial_domain/socks_port to old app-run records (from their logs)").set_defaults(fn=cmd_backfill_provenance)
     sub.add_parser("vm-reset", help="kill stale VBox sessions + remove all copies of the SelfPrivacy VM").set_defaults(fn=cmd_vm_reset)
-    sub.add_parser("setups", help="show the install setups (--on values) with topology diagrams").set_defaults(fn=cmd_setups)
+    sub.add_parser("vm-up", help="start the installed VM with stable VirtualBox settings + wait for its .onion (after install.vm, before L3)").set_defaults(fn=cmd_vm_up)
+    st = sub.add_parser("setups", help="show the setups (--on) + reach rows (--reach/--name) = the setup diagram's views, and check they still match it")
+    st.add_argument("--check", action="store_true", help="exit 1 if the matrix axes no longer match docs/diagrams/setup-map.json")
+    st.set_defaults(fn=cmd_setups)
     sub.add_parser("demo").set_defaults(fn=cmd_demo)
     sub.add_parser("clear-demo").set_defaults(fn=cmd_clear_demo)
 

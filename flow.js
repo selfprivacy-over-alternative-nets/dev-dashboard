@@ -1236,6 +1236,10 @@
     let h = "#" + S.id;
     for (const t of toggles()) if (S.toggle[t.id] != null) h += `;${t.id}=${S.toggle[t.id]}`;
     history.replaceState(null, "", h);
+    // FR117: the ◧ link opens the test matrix filtered to this setup-map view (its columns = Install × Network,
+    // its rows = Reach × Name — the same toggles); other diagrams link to the whole matrix.
+    const ml = $("matrixlink");
+    if (ml) ml.href = "index.html" + (S.id === "setup-map" ? h.replace(/^#setup-map;?/, "#") : "");
   }
   function parseHash() {
     const parts = (location.hash || "").replace(/^#/, "").split(";");

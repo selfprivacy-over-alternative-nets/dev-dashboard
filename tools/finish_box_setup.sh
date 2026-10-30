@@ -11,11 +11,11 @@
 #
 # Run standalone any time (e.g. to re-check DNS later):
 #   bash tools/finish_box_setup.sh --domain example.com --key ~/.ssh/pcname_ed25519 \
-#        [--ip 192.168.1.56] [--mac d8:cb:8a:7c:0a:f4] [--wifi 'Koolwitje 5'] [--setup lan-setup-0d]
+#        [--ip 192.168.1.56] [--mac d8:cb:8a:7c:0a:f4] [--wifi 'Koolwitje 5'] [--setup cable-0d]
 # --domain and --key are required; the rest are optional aids.
 set -uo pipefail
 
-DOMAIN=""; KEY=""; IP=""; MAC=""; WIFI=""; SETUP="${SP_SETUP:-lan-setup-0a}"
+DOMAIN=""; KEY=""; IP=""; MAC=""; WIFI=""; SETUP="${SP_SETUP:-cable-0a}"
 PUBLIC_METHOD="${PUBLIC_METHOD:-}"; PUBLIC_CF_NAMED="${PUBLIC_CF_NAMED:-0}"   # embedded public-access choice
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -186,8 +186,8 @@ if yesno "Did you enter all 5 records at your DNS host? [y/N]: " n; then
     if verify_dns "$PUB" "$LAN"; then
       echo "${G}✓ all 5 records resolve to $PUB — DNS is set up correctly.${X}"
       echo "${GR}Next: integration-test the stack —${X}"
-      echo "   ${B}./dash run L3.connect.desktop --net https --on ${SETUP} --ip $BIP --key ${KEY/#$HOME/\~} \\${X}"
-      echo "   ${B}  --token \$(ssh -i ${KEY/#$HOME/\~} root@$BIP 'jq -r .api.token /etc/selfprivacy/secrets.json')${X}"
+      echo "   ${B}./dash run L3.connect.desktop --on ${SETUP} $(reach_args router 0 "$DOMAIN") --ip $BIP --key ${KEY/#$HOME/\~} \\${X}"
+      echo "   ${B}  --token $(token_cmd "${KEY/#$HOME/\~}" "$BIP")${X}"
       break
     fi
     if yesno $'\nSome records aren\'t right yet. Re-check now? [y/N]: ' n; then continue; fi

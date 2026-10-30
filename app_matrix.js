@@ -7,12 +7,11 @@
 (() => {
   "use strict";
 
-  const NETWORKS = [
-    ["tor", "Tor"], ["tor+https", "Tor+https"], ["chutney", "Chutney"],
-    ["chutney+https", "Chutney+https"], ["https", "Https"], ["yggdrasil", "Yggdrasil"], ["hyphanet", "Hyphanet"],
-  ];
-  const SETUPS = ["vm-local", "lan-setup-0a", "lan-setup-0b", "lan-setup-0c", "lan-setup-0d",
-                  "lan-setup-1", "lan-setup-2", "usb-0a", "usb-0b", "usb-0c"];
+  // Columns and rows come from the catalog, which mirrors the setup diagram (flow.html#setup-map):
+  // a column = a setup (--on) = one Install × Network view; a row = a reach row (--reach [--name] + --net)
+  // = one Reach × Name view, or a harness-only row (chutney, local https) the diagram doesn't have.
+  let NETWORKS = [];   // [reach-row id, label] — filled from catalog reach_rows in load()
+  let SETUPS = [];     // diagram setup ids, in diagram order — filled from catalog setups in load()
   const HOSTS = [["local", "L"], ["ci", "C"]];
   const IS_PAGES = location.hostname.endsWith("github.io");
 
@@ -30,51 +29,137 @@
   };
   const groupOf = (r) => r.group || r.level || r.category || "misc";
   const hostOf = (r) => (r.env === "ci" ? "ci" : "local");
-  const netOf = (r) => (!r.transport || r.transport === "-" ? "" : r.transport);
 
   let MODEL = null, SEL = null, CELLS = [], CAT = {};
-  // L3 runs the Flutter app against an external deployed box (needs --ip/--key). L1/L2 are
-  // self-contained nixosTests that spin their own VM.
-  const needsBox = (e) => e.level === "L3";
-  function cmdFor(e, net, setup) {
-    if (e.category === "install" || e.level === "install")
-      return `./dash run ${e.id} --on ${setup} --ip <box-ip> --env NETBOOT=<auto|off> --env TRANSPORT=<https|onion|none> --env FLAKE=<flake> --env MAC=<mac> --env KEY=<ssh-key> --env DOMAIN=<domain>`;
-    let c = `./dash run ${e.id}`;
-    if (net) c += ` --net ${net}`;
-    // "test-vm" is a self-contained nixosTest's intrinsic method, not a setup you pass; only
-    // emit --on for real deploy setups so the hover command is the exact minimal working one.
-    if (setup && setup !== "<setup>" && setup !== "test-vm") c += ` --on ${setup}`;
-    // L3 against a box needs the box reach args; vm-local resolves the VM onion + dev token itself.
-    if (needsBox(e) && setup && setup !== "vm-local" && setup !== "test-vm")
-      c += ` --ip <box-ip> --key <ssh-key> --token <api-token>`;
-    return c;
+  const SM = () => CAT.setup_map || {};
+  const rowById = (id) => (CAT.reach_rows || []).find((r) => r.id === id);
+  const setupById = (id) => [...(CAT.setups || []), ...(CAT.harness_setups || [])].find((s) => s.id === id);
+  const kindOf = (s) => (s && s.backend === "box" ? "box" : "vm");
+  const diagUrl = () => SM().url || "flow.html#setup-map";
+  // A run's canonical setup: a diagram setup id, the harness test-vm, or a legacy alias (lan-setup-0d → cable-0d,
+  // vm-local → vm). Unknown legacy ids (lan-setup-0, native-ethernet, usb) stay as-is and land in no column.
+  function setupOf(r) {
+    const m = r.method;
+    if (!m || m === "-") return m;
+    const s = [...(CAT.setups || []), ...(CAT.harness_setups || [])].find((x) => x.id === m || (x.aliases || []).includes(m));
+    return s ? s.id : m;
+  }
+  // A run's reach row: recorded by dash since the diagram alignment; older runs are derived from the transport
+  // where that is unambiguous (tor → onion, chutney → onion over chutney, https on the VM/test-VM → local).
+  function rowOf(r) {
+    if (r.reach_row) return r.reach_row;
+    if (r.reach) {
+      const hit = (CAT.reach_rows || []).find((x) => x.reach === r.reach && (x.name || null) === (r.reach_name || null) && x.net === r.transport);
+      if (hit) return hit.id;
+    }
+    if (r.transport === "tor") return "onion";
+    if (r.transport === "chutney") return "onion-chutney";
+    if (r.transport === "tor+https") return "onion-https";               // the old matrix's placeholder networks
+    if (r.transport === "chutney+https") return "onion-chutney-https";
+    if (r.transport === "https" && kindOf(setupById(setupOf(r))) === "vm") return "local";
+    return "";
+  }
+  // The exact command for a (test, reach row, setup) cell — every arg explicit, <PLACEHOLDERS> = your values.
+  function cmdFor(e, rowId, setup) {
+    const row = rowById(rowId), s = setupById(setup);
+    if (e.cmd_template) {
+      if (!setup || setup === "<setup>") return e.cmd_template;
+      return e.cmd_template.split("{setup}").join(setup).replace("{wifi}", s && s.target_wifi ? (e.wifi_args || "") : "");
+    }
+    if (e.level === "L2") return `./dash run ${e.id}` + (row ? ` --net ${row.net}` : "");
+    if (e.level === "L3" && e.implemented === false && row && setup && setup !== "<setup>")
+      return `# not automated yet (${e.cmd}) — drive the ${e.client} app by hand, then log the result:\n` +
+        `./dash report ${e.id} --status <pass|fail> --duration <seconds> --on ${setup} --reach ${row.reach}` +
+        `${row.name ? " --name " + row.name : ""} --net ${row.net}${kindOf(s) === "box" ? " --ip <BOX_LAN_IP> --key <SSH_KEY>" : ""}`;
+    if (e.level === "L3") {
+      if (!row || !setup || setup === "<setup>")
+        return `./dash run ${e.id} --on <SETUP> --reach <REACH> [--name <NAME>] --net <tor|chutney|https>  (box: ${SM().box_args || ""})`;
+      const reach = `--reach ${row.reach}${row.name ? " --name " + row.name : ""} --net ${row.net}`;
+      if (!(row.l3_wired || []).includes(kindOf(s))) {
+        if (kindOf(s) !== "box") return `# not wired: L3 over ${row.label} on the VM has no automated test yet`;
+        return `# no automated L3 over ${row.label} yet — drive the app, then log the result:\n` +
+          `./dash app --domain <HOST> --token <API_TOKEN> --apex\n` +
+          `./dash report ${e.id} --status <pass|fail> --duration <seconds> --on ${setup} ${reach} --ip <BOX_LAN_IP> --key <SSH_KEY>`;
+      }
+      let c = `./dash run ${e.id} --on ${setup} ${reach}`;
+      if (kindOf(s) === "box") c += SM().box_args || " --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>";
+      return c;
+    }
+    return `./dash run ${e.id}`;
+  }
+  // The setup-diagram view of a (setup, row) cell — "" when there is none: the harness test-vm, a future or greyed-out
+  // row, or a harness row whose reach isn't a diagram Reach (local https); onion over chutney maps to the onion view it
+  // simulates. Mirrors dash's diagram_view and app.js.
+  function cellDiagram(setup, rowId) {
+    const s = (CAT.setups || []).find((x) => x.id === setup), row = rowById(rowId);
+    if (!s) return "";
+    const parts = [`method=${s.method}`].concat(s.net ? [`net=${s.net}`] : []);
+    if (row) {
+      if (row.future || row.greyed || !(SM().reaches || []).some((x) => x.id === row.reach)) return "";
+      parts.push(`reach=${row.reach}`); if (row.name) parts.push(`name=${row.name}`);
+    }
+    return `${diagUrl()};${parts.join(";")}`;
   }
   const isInstall = (e) => e.category === "install" || e.level === "install";
   // Which setup columns a test's grid shows:
-  //  - explicit per-entry `setups`                       → those;
-  //  - an entry with a declared `method` (installs, or   → just that method (e.g. "test-vm"
-  //    self-contained nixosTests like L2 "test-vm")         for L2, "lan-setup-0" for installs);
-  //  - L3 runs the app against a box deployed per setup  → all deploy SETUPS;
-  //  - otherwise a self-contained nixosTest (L1)         → a single "test-vm" column.
+  //  - explicit per-entry `setups` (install + reach.* entries)       → those;
+  //  - an entry with a declared `method` (self-contained L2 test-vm) → just that;
+  //  - L3 runs the app against a backend deployed per setup          → all diagram SETUPS;
+  //  - otherwise a self-contained nixosTest (L1)                     → a single "test-vm" column.
   function setupsFor(e) {
     if (Array.isArray(e.setups) && e.setups.length) return e.setups;
     if (e.method) return [e.method];
     if (e.level === "L3") return SETUPS;
     return ["test-vm"];
   }
-  // Which column a run lands in: its --on setup if it's one of the columns, else the test's
+  // Which rows a test's grid shows: L2 → its reach rows; L3 → every reach row; a reach.* entry → its own row;
+  // installs / L1 → a single network-free row.
+  function rowsFor(e) {
+    if (e.reach_row) { const r = rowById(e.reach_row); return [[r.id, r.label]]; }
+    if (Array.isArray(e.reach_rows)) return e.reach_rows.map(rowById).filter(Boolean).map((r) => [r.id, r.label]);
+    if (e.level === "L3") return NETWORKS;
+    return [["", isInstall(e) ? "(deploy)" : "(any)"]];
+  }
+  // Which column a run lands in: its (canonical) --on setup if that is one of the columns, else the test's
   // primary column (so a self-contained run recorded with method "-" still shows).
   function colOf(run, cols) {
-    const m = run.method;
-    return (m && m !== "-" && cols.includes(m)) ? m : cols[0];
+    const m = setupOf(run);
+    if (!m || m === "-" || (cols.length === 1 && cols[0] === "test-vm")) return cols[0];   // L1/L2: ran in the test VM
+    return cols.includes(m) ? m : null;   // e.g. a coarse legacy lan-setup-0 / usb run: not a diagram setup
   }
-  // A (network, setup) combo can be inapplicable even when the network is one the test supports:
-  // chutney is a laptop-local private Tor network, so it only applies to vm-local (a box is reached
-  // over tor/https). Mirrors dash's resolve_backend_target, which rejects chutney on a box.
-  function netSetupOK(nk, setup) {
-    const base = String(nk).split("+")[0];   // chutney+https → chutney
-    if (base === "chutney" && setup && setup !== "vm-local") return false;
-    return true;
+  // Why a (row, setup) cell can't run — or "" when it is applicable. Mirrors dash's resolve_reach.
+  function naReason(e, rowId, setup) {
+    const row = rowById(rowId), s = setupById(setup);
+    if (e.reach_row) {
+      if (kindOf(s) === "vm") return row && row.reach === "onion" ? "the VM's .onion is created by install.vm itself (always on)"
+        : "not wired for the VM: tools/add-cloudflare.sh drives an installed BOX over SSH";
+      return "";
+    }
+    if (!row) return "";
+    if (row.future) return `${row.label}: roadmap transport — not wired yet.`;
+    if (row.greyed) return `${row.label}: ${row.greyed}.`;
+    if (row.setups && !row.setups.includes(setup)) return `${row.label} is harness-only (${row.setups.join(" / ")}): ${row.desc}`;
+    if (!(e.networks || []).includes(row.net)) return `${e.id} doesn't run over ${row.net} (its networks: ${(e.networks || []).join(", ") || "none"}).`;
+    if (e.level === "L3" && e.implemented !== false && !(row.l3_wired || []).includes(kindOf(s)))
+      return `not wired into dash yet — ${row.desc}`;
+    return "";
+  }
+  // The "run group" popover: commands that run as written — one per entry where each needs its own setup/args.
+  function groupCmd(g, ents) {
+    const ids = ents.map((e) => e.id).join(" ");
+    if (g === "L1") return `./dash run ${ids}`;
+    if (g === "L2") return ["tor", "https"].map((n) => `./dash run ${ids} --net ${n}`).join("\n");
+    if (g === "L3") {
+      const desk = ents.filter((e) => e.client === "desktop" && e.cmd === "@flutter").map((e) => e.id).join(" ");
+      return `# the desktop flows (android: not automated yet), on the VM:\n./dash run ${desk} --on vm --reach onion --net tor\n` +
+        `# on a box (pick its setup + reach):\n./dash run ${desk} --on <SETUP> --reach <REACH> [--name <NAME>] --net <tor|https>${SM().box_args || ""}`;
+    }
+    return ents.map((e) => {
+      if (!e.cmd_template) return `./dash run ${e.id}`;
+      const wifiSetups = (e.setups || []).filter((x) => (setupById(x) || {}).target_wifi);
+      return e.cmd_template.split("{setup}").join("<SETUP>").replace("{wifi}", "") +
+        (wifiSetups.length && e.wifi_args ? `\n  # ${wifiSetups.join(" / ")} leave the server on wifi — add:${e.wifi_args}` : "");
+    }).join("\n");
   }
   // Hover text: what a group (= level) tests, straight from the catalog `levels`.
   function groupDesc(g) {
@@ -82,19 +167,6 @@
       (g === "install"
         ? "Install — provision a real backend onto a device/VM via a setup method, then verify it is reachable and correct."
         : "");
-  }
-  // Hover text for a ⚪ N/A cell: why this network isn't exercised here. Roadmap transports
-  // (catalog `future_networks`, e.g. Yggdrasil/Hyphanet) aren't implemented yet; otherwise the
-  // transport works but this particular test doesn't cover it.
-  function naReason(e, nk, nlabel, setup) {
-    const future = new Set(CAT.future_networks || []);
-    const base = String(nk).split("+")[0];
-    if (future.has(nk) || future.has(base))
-      return `${nlabel} transport isn't implemented yet — on the roadmap (catalog future_networks).`;
-    const supported = new Set(e.networks || []);
-    if (base === "chutney" && setup && setup !== "vm-local" && supported.has(nk))
-      return `${nlabel} is a laptop-local private Tor network (vm-local only); ${setup} is a box, reached over tor/https.`;
-    return `N/A — ${e.id} doesn't exercise ${nlabel} (its networks: ${(e.networks || []).join(", ") || "none"}).`;
   }
 
   async function fetchFirst(paths) {
@@ -105,12 +177,18 @@
   }
 
   async function load() {
-    const [catTxt, resTxt] = await Promise.all([
+    const [catTxt, trTxt, dataTxt] = await Promise.all([
       fetchFirst(["catalog.json"]),
-      fetchFirst(["testresults/results.jsonl", "data/results.jsonl"]),
+      fetchFirst(["testresults/results.jsonl"]),   // where dash writes (the separate testresults repo)
+      fetchFirst(["data/results.jsonl"]),          // the older history (all the Pages build has)
     ]);
     try { CAT = JSON.parse(catTxt || "{}"); } catch (e) { CAT = {}; }
-    const recs = resTxt.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
+    NETWORKS = (CAT.reach_rows || []).map((r) => [r.id, r.label]);
+    SETUPS = (CAT.setups || []).map((s) => s.id);
+    const seen = new Set();
+    const recs = (trTxt + "\n" + dataTxt).split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean)
+      .filter((r) => !r.demo)   // DEMO records (./dash demo) are illustrative only — index.html shows them behind its "demo" toggle
+      .filter((r) => { const k = r.run_id || JSON.stringify(r); if (seen.has(k)) return false; seen.add(k); return true; });
     MODEL = build(recs);
     renderStates();
     // Always show the catalog overview (every test as TODO). A selected state overlays its results.
@@ -279,12 +357,19 @@
   const closureShort = (c) => String(c).replace("/nix/store/", "");
 
   // Results for the SELECTED state, grouped by test id. Empty when no state selected.
+  function entryIdOf(r) {
+    if (!String(r.id || "").startsWith("install.")) return r.id;
+    const s = (CAT.setups || []).find((x) => x.id === setupOf(r));
+    const m = s && (SM().methods || []).find((x) => x.id === s.method);
+    return (m && m.install) || r.id;
+  }
   function resultsByTest() {
     const idx = new Map();
     if (!SEL) return idx;
     for (const r of (MODEL.byState.get(SEL.key) || [])) {
-      if (!idx.has(r.id)) idx.set(r.id, []);
-      idx.get(r.id).push(r);
+      const id = entryIdOf(r);
+      if (!idx.has(id)) idx.set(id, []);
+      idx.get(id).push(r);
     }
     return idx;
   }
@@ -296,7 +381,7 @@
   function renderMatrix() {
     CELLS = [];
     const RES = resultsByTest();
-    const entries = [...(CAT.tests || []), ...(CAT.installs || [])];
+    const entries = [...(CAT.tests || []), ...(CAT.installs || []), ...(CAT.reaches || [])];
     const groups = new Map();
     for (const e of entries) {
       const g = e.group || e.level || e.category || "misc";
@@ -310,13 +395,13 @@
       const gd = document.createElement("details"); gd.className = "group"; gd.open = true;
       const gsum = document.createElement("summary");
       gsum.innerHTML = `<span class="caret">▶</span><span title="${esc(groupDesc(g))}">${esc(g)}</span><span class="count">${ents.length}</span>`;
-      const gcmd = mkCmdBtn("run group"); attachCmd(gcmd, `./dash run ${ents.map((e) => e.id).join(" ")}`); gsum.appendChild(gcmd);
+      const gcmd = mkCmdBtn("run group"); attachCmd(gcmd, groupCmd(g, ents)); gsum.appendChild(gcmd);
       gd.appendChild(gsum);
       for (const e of ents) {
         const td = document.createElement("details"); td.className = "test";
         const tsum = document.createElement("summary");
         tsum.innerHTML = `<span class="caret">▶</span><span class="tname" title="${esc(e.desc || "")}">${esc(e.id)}</span>`;
-        const tcmd = mkCmdBtn("run"); attachCmd(tcmd, cmdFor(e, (e.networks || [])[0] || "", "<setup>")); tsum.appendChild(tcmd);
+        const tcmd = mkCmdBtn("run"); attachCmd(tcmd, e.run || cmdFor(e, "", "<setup>")); tsum.appendChild(tcmd);
         const built = buildGrid(e, RES.get(e.id) || []);
         const roll = document.createElement("span"); roll.className = "roll"; roll.innerHTML = built.counts; tsum.appendChild(roll);
         td.appendChild(tsum);
@@ -329,37 +414,47 @@
   }
 
   function buildGrid(e, runs) {
-    const supported = new Set(e.networks || []);
-    const hasNet = supported.size > 0;
     const cols = setupsFor(e);
-    // bucket this test's runs into the grid by net|column|host (newest first). colOf maps a
-    // setup-less run (method "-", e.g. a self-contained L1/L2 nixosTest) to the primary column,
-    // so a recorded pass always lands in a cell instead of being orphaned.
+    const rows = rowsFor(e);
+    const single = rows.length === 1 && rows[0][0] === "";
+    // bucket this test's runs into the grid by row|column|host (newest first). A network-free entry (install,
+    // L1) has one row ""; a reach.* entry's runs all sit in its own row. colOf maps a setup-less run
+    // (method "-", e.g. a self-contained L1/L2 nixosTest) to the primary column, so a recorded pass always
+    // lands in a cell instead of being orphaned.
     const buckets = new Map();
     for (const r of runs) {
-      const k = netOf(r) + "|" + colOf(r, cols) + "|" + hostOf(r);
+      const rk = single ? "" : (e.reach_row || rowOf(r));
+      const col = colOf(r, cols);
+      if (col === null) continue;
+      const k = rk + "|" + col + "|" + hostOf(r);
       if (!buckets.has(k)) buckets.set(k, []);
       buckets.get(k).push(r);
     }
     for (const a of buckets.values()) a.sort((x, y) => (y.ts || "").localeCompare(x.ts || ""));
-    const rows = hasNet ? NETWORKS : [["", isInstall(e) ? "(deploy)" : "(any)"]];
     let p = 0, f = 0, s = 0, todo = 0;
     const tbl = document.createElement("table"); tbl.className = "grid";
     let head = '<thead><tr><th class="net"></th>';
-    for (const col of cols) head += `<th>${esc(col)}</th>`;
+    for (const col of cols) {
+      const st = setupById(col);
+      head += `<th title="${esc(st ? st.desc || st.label : col)}">${esc(col)}` +
+        (st && st.diagram ? ` <a class="dl" href="${esc(st.diagram)}" target="_blank" title="open this setup's view in the setup diagram">▦</a>` : "") + `</th>`;
+    }
     // sub-header: each setup column holds two dots (local, then CI) — label the split.
     head += '</tr><tr><th class="net"></th>';
     for (const col of cols) head += `<th class="sub">local · ci</th>`;
     head += "</tr></thead>";
     let body = "<tbody>";
     for (const [nk, nlabel] of rows) {
-      body += `<tr><th class="net">${esc(nlabel)}</th>`;
+      const rdef = rowById(nk);
+      const rlink = rdef && rdef.diagram && !rdef.harness && !rdef.future && !rdef.greyed
+        ? ` <a class="dl" href="${esc(rdef.diagram)}" target="_blank" title="open this Reach view of the setup diagram">▦</a>` : "";
+      body += `<tr${rdef && rdef.greyed ? ' class="greyed"' : ""}><th class="net" title="${esc(rdef ? rdef.desc + (rdef.greyed ? "\n\ngreyed out: " + rdef.greyed : "") : "")}">${esc(nlabel)}${rlink}</th>`;
       for (const col of cols) {
         body += '<td><span class="cell">';
         for (const [hk, hl] of HOSTS) {
           const rr = buckets.get(nk + "|" + col + "|" + hk) || [];
           if (rr.length) {
-            const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: rr, cmd: cmdFor(e, nk, col) }) - 1;
+            const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: rr, cmd: cmdFor(e, nk, col), diag: cellDiagram(col, nk) }) - 1;
             const st = statusClass(rr[0].status);   // headline = latest run → the rollup counts
             if (st === "pass") p++; else if (st === "fail") f++; else if (st === "slow") s++;
             // ONE circle PER RUN, newest first (top). Collapsed (CSS) shows only the first; the ▾
@@ -376,13 +471,13 @@
             const xp = rr.length > 1 ? `<button class="xpand" title="${rr.length} runs — expand history (newest on top)">▾</button>` : "";
             body += `<span class="runstack">${stack}${xp}</span>`;
           } else {
-            const applicable = (!hasNet || supported.has(nk)) && netSetupOK(nk, col);
-            if (applicable) {
+            const why = naReason(e, nk, col);
+            if (!why) {
               todo++;
-              const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col) }) - 1;
+              const idx = CELLS.push({ id: e.id, net: nk, setup: col, host: hk, runs: [], cmd: cmdFor(e, nk, col), diag: cellDiagram(col, nk) }) - 1;
               body += `<span class="runstack"><span class="dot todo" data-cell="${idx}" title="${esc(hl)}: todo — hover for the command"></span></span>`;
             } else {
-              body += `<span class="runstack"><span class="dot na" title="${esc(naReason(e, nk, nlabel, col))}"></span></span>`;
+              body += `<span class="runstack"><span class="dot na" title="${esc(why)}"></span></span>`;
             }
           }
         }
@@ -434,9 +529,10 @@
     const c = CELLS[idx]; if (!c) return;
     const netLabel = (NETWORKS.find((n) => n[0] === c.net) || [c.net, c.net || "(no network)"])[1];
     $("#dtitle").textContent = `${c.id} · ${netLabel} · ${c.setup} · ${c.host.toUpperCase()}`;
-    const cmd = `./dash run ${c.id}` + (c.net ? ` --net ${c.net}` : "") + ` --on ${c.setup}`;
+    const cmd = c.cmd || `./dash run ${c.id}`;
     let h = `<div style="position:relative;margin-bottom:10px"><button class="copy" style="position:absolute;top:0;right:0" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">copy</button><pre style="white-space:pre-wrap;margin:0;padding-right:48px">${esc(cmd)}</pre></div>`;
-    h += `<p class="muted">${c.runs.length} run(s) on ${esc(SEL.repo)}@${esc(SEL.commit)}, newest first:</p>`;
+    if (c.diag) h += `<p class="muted">▦ <a href="${esc(c.diag)}" target="_blank">this cell's view in the setup diagram</a></p>`;
+    h += `<p class="muted">${c.runs.length} run(s) on ${esc((SEL.repos || []).map((x) => x.name + ":" + x.commit).join(" "))}, newest first:</p>`;
     // Closure-divergence: same code state (sidebar key = repo commits) but >1 distinct build closure
     // means a transitive input changed between runs — the collision req 92 guards against, surfaced.
     const _cls = [...new Set(c.runs.map(closureOf).filter(Boolean))];

@@ -19,22 +19,24 @@
 14. Keep `N/A` for entries/combinations that are not available.
 
 ## Networks
-15. Supported networks: Tor, Tor+https, Chutney, Chutney+https, Https, Yggdrasil, Hyphanet.
+15. Supported networks (the transport the app speaks, `--net`): Tor, Chutney (harness: private Tor test network), Https; roadmap: Yggdrasil, Hyphanet. Since the setup-diagram alignment (req 168) the matrix rows are **reach rows** — the diagram's Reach × Name views + the harness-only rows — each tied to one of these transports. The former Tor+https / Chutney+https placeholder rows (no test, no diagram view) are kept as **greyed-out**
+    rows (req 184).
 16. Per test, record which network SelfPrivacy uses.
 17. Per network, record in which network setup the test was run.
 18. Per network setup, record whether it was run Locally or on CI.
 
 ## Network setups
-19. `vm-local`: VirtualBox VM on the host (build-and-run.sh), no external wiring.
-20. `lan-setup-0a`: direct cable, router out of path, netboot install; cable later replugged into the router for its IP; no wifi config.
-21. `lan-setup-0b`: as 0a, plus a wifi config for the same router R.
-22. `lan-setup-0c`: as 0a, plus a wifi config for a different router B.
-23. `lan-setup-0d`: direct-cable install; cable later removed; target runs wifi-only (wifi reaching the internet).
-24. `lan-setup-1`: laptop on router R's wifi, target wired to R (requires R configured for netboot).
-25. `lan-setup-2`: laptop and target both on router R's wifi (requires R configured for netboot).
+*(Setup ids = the setup diagram's Install × Network views, `<method>-<net>` — renamed 2026-10-30, req 168. The old ids in brackets are still accepted as aliases.)*
+19. `vm` (was `vm-local`): VirtualBox VM on the host (build-and-run.sh), no external wiring. The diagram's VM view has no Network toggle.
+20. `cable-0a` (was `lan-setup-0a`): direct cable, router out of path, netboot install; cable later replugged into router R for its IP; no wifi config.
+21. `cable-0b` (was `lan-setup-0b`): as cable-0a, plus a wifi config for the same router R.
+22. `cable-0c` (was `lan-setup-0c`): as cable-0a, plus a wifi config for a different router (the diagram's Y).
+23. `cable-0d` (was `lan-setup-0d`): direct-cable install; cable later removed; target runs wifi-only (wifi reaching the internet).
+24. `wifi-0a` (was `lan-setup-1`): laptop on router R's wifi, target wired to R (requires R configured for netboot).
+25. `wifi-0d` (was `lan-setup-2`): laptop and target both on router R's wifi (requires R configured for netboot).
 26. `usb-0a`: installer USB → target internal disk (manual boot); target wired to router R for internet.
-27. `usb-0b`: as usb-0a, plus a wifi config for the same router R.
-28. `usb-0c`: as usb-0a, plus a wifi config for a different router B.
+27. `usb-0d` (new; replaces `usb-0b`, which the diagram has no view for): as usb-0a, but the cable is removed — target runs wifi-only.
+28. `usb-0c`: as usb-0a, plus a wifi config for a different router (the diagram's Y).
 29. Use one diagram per setup family (direct-cable family, usb family) to avoid duplication, without altering any option.
 
 ## Stamping & deployment identity
@@ -128,10 +130,10 @@
 97. A run carrying trust qualifiers (forced/manual/cached/substituted/behind) is marked per-run (e.g. a ring), distinct from a clean run.
 
 ## Integrity — L3 backend targeting (Track 2, item 1a)
-98. L3 desktop flows run against the backend named by the test args (`--on <setup>`): `vm-local` → the local VirtualBox VM; `lan-setup-0a..0d` / `lan-setup-1` / `lan-setup-2` / `usb-0a..0c` → a deployed physical box reached over the LAN. The backend is never hardcoded to the VM.
+98. L3 desktop flows run against the backend named by the test args (`--on <setup>`): `vm` → the local VirtualBox VM; `cable-0a/0b/0d/0c` / `wifi-0a/0d` / `usb-0a/0d/0c` → a deployed physical box reached over the LAN. The backend is never hardcoded to the VM.
 99. Running an L3 flow against a box requires `--ip`, `--key`, and `--token`; the box's API token is per-box and secret, so it is never defaulted (reproducibility reqs 1–6). Missing args fail fast, naming what to set.
 100. For a box the dialed address is read LIVE from the box (req 89), never from stale local state: the onion from `/var/lib/tor/hidden_service/hostname`, the https host as `api.<domain>` where `domain` comes from the box's `/etc/nixos/userdata.json`.
-101. `chutney` is a laptop-local private Tor network, valid for `vm-local` only; a box is reached over `tor` (real onion) or `https` (public domain, system-trust LE cert — no tunnel/mkcert CA). An unsupported network×setup combination is rejected fast.
+101. `chutney` is a laptop-local private Tor network, valid for `vm` only; a box is reached over `tor` (real onion) or `https` (public domain, system-trust LE cert — no tunnel/mkcert CA). An unsupported network×setup combination is rejected fast.
 102. An L3 run records the real setup as its `method` so the result lands in the correct matrix column; for a box, the deployment provenance the box-identity gate computed (stamp, measured running-system, box repos+pins) is recorded on the run.
 103. The clean-state, pin, and behind-upstream gates apply to every gated run — a test (identified by its `level`) as well as an install — not only installs. The L3 inner recorder does not re-gate a run whose outer run_entry already gated it.
 
@@ -165,7 +167,7 @@
 
 ## Install UX — adapt to the target hardware
 118. Installing to a DIFFERENT physical device adapts automatically: before writing anything, the install checks whether the deploy flake's disks (by stable id) exist on the target and, on a mismatch, retargets the disk layout (+ netboot MAC pin) from the target's real hardware — asking ONCE, up front, which disk to WIPE. A disko pinned to one machine's serials isn't portable; the install adapts instead of failing with a cryptic disko error.
-119. The fine install setups are runnable ids: `install.lan-setup-0a..0d` / `install.usb-0a..0c` resolve to the coarse installer while recording the fine setup as the method. A setup that leaves the target on wifi (…-0b/0c/0d) requires a wifi spec (`--env WIFI_SSID=…`), verified in range by a non-disruptive scan (reqs 72–73) before anything is written.
+119. The fine install setups are runnable ids: `install.cable-0a..0c` / `install.wifi-0a|0d` / `install.usb-0a|0d|0c` resolve to their Install method's installer (`install.cable` / `install.wifi` / `install.usb`) while recording the fine setup as the method; `install.vm` is the VM. A setup that leaves the target on wifi (cable-0b/0d/0c, wifi-0d, usb-0d/0c) requires a wifi spec (`--env WIFI_SSID=…`), verified in range by a non-disruptive scan (reqs 72–73) before anything is written.
 
 ## End-to-end flow (install a box → test it) + where secrets live
 *(Visualised in the README: `docs/deployer.svg` = what the installer is made of + what you provide;
@@ -178,7 +180,7 @@
      `MAC 80:e8:2c:15:81:8b   IP 192.168.100.29`.
    - **2. Install** — paste the MAC + IP from step 1:
      ```
-     ./dash run install.lan-setup-0d \
+     ./dash run install.cable-0d --on cable-0d \
        --ip <IP-from-step-1> --key ~/.ssh/<your-key> \
        --env FLAKE=<path to selfprivacy-altnet-deployer> \
        --env MAC=<MAC-from-step-1> --env DOMAIN=<your-web-address e.g. selfprivacy.example.com> \
@@ -189,7 +191,7 @@
      this device; see reqs 116/118).
    - **3. Test the running box** —
      ```
-     ./dash run L3.connect.desktop --net https --on lan-setup-0d \
+     ./dash run L3.connect.desktop --on cable-0d --reach portfwd --name buy --net https \
        --ip <box-IP> --key ~/.ssh/<your-key> --token <box-api-token>
      ```
      → `pass` (green) = it works; `fail` (red) → the log says why.
@@ -200,13 +202,14 @@
    encrypted `state.age` (symmetric = post-quantum-adequate) that can go in a private repo.
 
 ## Install UX — fill in the flake automatically
-122. After `dash find-target` confirms a target, it resolves the last two blanks of the install command for you (via `tools/resolve_flake.sh`): the deploy FLAKE is auto-found (the sibling folder whose `flake.nix` declares `nixosConfigurations.box` — i.e. `selfprivacy-altnet-deployer`; a list to pick from, or a prompt, if there are zero or several), and the DOMAIN is suggested from that flake. It then asks which network setup to use (lan-setup-0a/0b/0c/0d — how the box gets online after install), prompting for the wifi SSID + password (entered hidden) only when the chosen setup needs wifi, and prints the fully-filled command (wifi password masked) and offers to run it.
+122. After `dash find-target` confirms a target, it resolves the last two blanks of the install command for you (via `tools/resolve_flake.sh`): the deploy FLAKE is auto-found (the sibling folder whose `flake.nix` declares `nixosConfigurations.box` — i.e. `selfprivacy-altnet-deployer`; a list to pick from, or a prompt, if there are zero or several), and the DOMAIN is suggested from that flake. It then asks which network setup to use (cable-0a/0b/0d/0c — how the box gets online after install), prompting for the wifi SSID + password (entered hidden) only when the chosen setup needs wifi, and prints the fully-filled command (wifi password masked) and offers to run it.
 
 ## Install UX — the flow ends with the next steps spelled out
 123. When an install finishes, the installer prints a **NEXT STEPS** block so the operator never has to
    reconstruct them: (a) the exact **L3 integration-test command** that drives the app against this
-   backend (`./dash run L3.connect.desktop --net … --on <the setup just installed> --ip … --key … --token …`,
-   with the box's real API token filled in — read from `secrets.json`); (b) the **5 DNS A-records** to add
+   backend (`./dash run L3.connect.desktop --on <the setup just installed> --reach <reach> [--name <name>] --net …
+   --ip … --key … --token "$(ssh … secrets.json …)"` — the reach of the chosen public method, and the token as a
+   command that READS it, never its value: reqs 171, 176); (b) the **5 DNS A-records** to add
    (`api`/`cloud`/`git`/`matrix`/`meet`.<domain>) pointing at the box's LAN IP (home access) or the
    router's public IP (public access + forward :443); (c) a **concise on-box command**
    (`ping -c1 1.1.1.1 && hostname -I`) to find the box's IP + confirm internet, for when the host can't
@@ -259,8 +262,13 @@
    `finish_box_setup.sh`.
 130. Whatever the transport, the tunnel runs as a **persistent systemd unit** on the box (cloudflared/ngrok
    installed into root's nix profile = gc-rooted, survives reboot), and the script ends by printing the
-   app `--dart-define=HTTPS_DOMAIN=…` command and the `./dash run L3.connect.desktop --net https` line with
-   the box's real API token filled in.
+   `./dash app` / `--dart-define=HTTPS_DOMAIN=…` command and the matching `./dash run L3.connect.desktop --on …
+   --reach … --net …` line (or, over a one-hostname tunnel, the `./dash report` line), with the token as a
+   command that reads it over SSH — never its value (reqs 171, 176). A route that did not come up (no tunnel
+   URL, service not active, not publicly reachable, a human step needed under `SP_NONINTERACTIVE`) makes it
+   exit non-zero, so a `reach.*` run is never recorded as a pass: under `SP_NONINTERACTIVE` every route must
+   answer `https://<host>/api/version` from the public internet (the install verifier's check) — onion: tor
+   active with a published hostname — and a missing value (`need`) aborts instead of continuing empty.
 131. All CLI args explicit; `--key`/`--ip` required; a non-interactive run must pass every choice
    (`--method`, `--domain-kind`, …) or fail fast — the same command reproduces the same setup for anyone.
    Preflight refuses to run unless the box is reachable **and** is the installed system (`secrets.json`
@@ -321,7 +329,7 @@
    + the `funnel` node attribute) are printed if Funnel isn't live. It's ONE hostname → the app connects
    at the apex (`HTTPS_APEX`); the full api./cloud./… suite still needs a real domain + CF tunnel/forward.
 140. **IPv6 autodetect runs on the box's FINAL network, not the install path.** IPv6 is a property of the
-   network the box ends up on — which for `lan-setup-0c/0d` / usb variants can be a different wifi/router
+   network the box ends up on — which for `cable-0c/0d` / usb variants can be a different wifi/router
    than the install cable or the laptop — so a pre-install check is meaningless. `tools/net_lib.sh`
    `box_global_ipv6` probes the box (post-reboot, in `finish_box_setup` step 4b) for a global-unicast
    (`2000::/3`) address with working v6 egress on ANY interface, and says to re-run if the box later moves.
@@ -635,7 +643,7 @@
 ## IPv6 must be verified on the TARGET, not assumed from the host
 167. **An IPv6-requiring method must be verified against the target's ACTUAL network — up-front AND
    post-boot — never assumed from the host's IPv6.** The `[0b]` host-IPv6 detection is only a HINT: the host
-   may be on a different network than the box's final one (`lan-setup-0c` = other wifi, `0d` = wifi-only).
+   may be on a different network than the box's final one (`cable-0c` = other wifi, `0d` = wifi-only).
    (a) **Up-front:** if an IPv6-only method (direct-IPv6 / DuckDNS+IPv6) is chosen AND `[Q2]` places the
    target on a DIFFERENT network than this host, PROMPT **"ARE YOU SURE THE TARGET WILL ALSO HAVE IPV6?"**
    before installing. (b) **Post-boot (regardless of that answer):** after the box reboots onto its final
@@ -644,3 +652,95 @@
    not a silent failure and not a generic "unreachable". Extends req 137 (the `ipv6` method already
    fails-fast when the box lacks v6) with the explicit host≠target warning + the named NO-IPV6 post-boot
    error. (Script wiring of the prompt + the named error is a follow-up; the detection already exists.)
+
+## Test matrix ↔ setup diagram (2026-10-30)
+168. **The test matrix's axes ARE the setup diagram's toggles** (`flow.html#setup-map`, data
+   `docs/diagrams/setup-map.json`): a **setup** (`--on`, a matrix column) = one Install × Network view, named
+   `<method>-<net>` (`cable-0a` `cable-0b` `cable-0d` `cable-0c` `wifi-0a` `wifi-0d` `usb-0a` `usb-0d` `usb-0c`,
+   and `vm`), in the diagram's order; a **reach row** (`--reach` [`--name`], a matrix row group) = one Reach ×
+   Name view (`onion`, `tailscale`, `cloudflare` buy|trycf, `ipv6` buy|duckdns, `portfwd` buy|duckdns), tied to
+   the transport the app speaks (`--net`). Rows the diagram doesn't have are explicitly **harness-only**
+   (`onion` over `chutney`, `local` https — VM only) or **future** (Yggdrasil, Hyphanet); the L1/L2 `test-vm` is
+   harness-only too. `catalog.json` (`setup_map`, `setups`, `reach_rows`), `networks.md` and `test_matrix.md`
+   say the same thing.
+169. **The alignment is checked, not assumed:** `./dash setups` compares the catalog with the diagram's
+   toggles (option values + labels, the Network values each Install offers, the Names each Reach offers, and
+   every diagram view has a matrix setup / reach row, every matrix row is a diagram view, every setup's net
+   matches its id) and `./dash setups --check` exits 1 on a mismatch; the dashboard runs the same checks for its
+   banner.
+170. **Every matrix setup and reach row links to its diagram view** (▦ on the column/row headers, and per cell
+   `flow.html#setup-map;method=…;net=…;reach=…;name=…`); every run records its `diagram_view`.
+171. **`--reach` is required for every L3 run** (+ `--name` exactly when the diagram offers names for that
+   reach) and is validated args-only before any I/O: it must fit `--net` (onion → tor|chutney, the rest →
+   https), harness-only rows are VM-only, and it must be wired for that backend (one-hostname tunnels —
+   tailscale, cloudflare trycf — and the VM over a public route have no automated L3 yet: ○ in the matrix).
+   L2 derives its row from `--net` (tor → onion, https → local). Runs record `reach`, `reach_name`, `reach_row`.
+172. **Each diagram route's apply step is a matrix row**: `reach.<row>` runs `tools/add-cloudflare.sh` against
+   an installed box over SSH with every input explicit (`--on <box setup> --ip --key` + the route's
+   `--env` values); it is box-only (the VM's reach is fixed by the harness).
+173. **Old setup ids keep working as aliases** (`lan-setup-0a..0d` → `cable-0a..0d`, `lan-setup-1/2` →
+   `wifi-0a/0d`, `vm-local` → `vm`; `install.<old>` → `install.<new>`) and old records land in the new columns;
+   ids with no diagram view are refused with the reason (`usb-0b`; the coarse `lan-setup-0` / `usb` /
+   `native-ethernet` need their Network variant).
+174. **A run forced past a gate with `--allow-dirty` is recorded as forced for L3 too** (req 85): the outer
+   gate's forced reasons are carried onto the inner flutter record — on every attempt, incl. a retried (flaky)
+   one (before, an `--allow-dirty` L3 run was recorded as a clean pass). Bypassing the box-identity gate (box
+   unreachable / not stamped / no `--ip --key`) is a forced reason too: `box-unverified:<why>`.
+175. **`install.vm` builds the VM image from source** (`SP_BUILD_MODE=build`, the committed backend flake) — a
+   downloaded release image would not be the code under test (req 77) — and `./dash vm-up` starts the
+   installed VM with the harness's stable VirtualBox settings and waits for its .onion, so the VM procedure
+   in `test_matrix.md` is complete with no hidden step.
+176. **A run log never contains the box API token.** `dash` redacts the token values a run knows (`--token` /
+   `API_TOKEN`, `--dart-define=API_TOKEN=…`) and any 64-hex string from the echoed command, the log header and
+   every streamed line; the installer/apply scripts print a command that READS the token over SSH
+   (`tools/net_lib.sh token_cmd`), never its value (logs are committed by `./dash publish`; round0 R1).
+177. **`reach.*` applies never wait on a hidden prompt:** under `./dash run reach.<row>` every input is on the
+   command line (req 172), so `dash` sets `SP_NONINTERACTIVE=1` and `add-cloudflare.sh` fails fast on a missing
+   value instead of prompting (a prompt could not show through dash's line-by-line output relay).
+178. **The VM install gets enough RAM.** `install.vm` runs `build-and-run.sh` with `SP_VM_MEMORY=4096`: the
+   installer builds the whole system INSIDE the live ISO (RAM-backed root), and on 2026-10-30 a 2048 MiB guest
+   livelocked for 55 min (both vCPUs pegged, sshd unresponsive, no disk writes — recorded as a failed
+   `install.vm`); with 4096 MiB the same install peaked at 2469 MiB of guest RAM in use (more than the old VM
+   had in total) and completed in 15 min (over the 900 s budget → recorded `slow`).
+179. **The L3 lock check matches what L3 actually does.** The committed app is resolved with
+   `flutter pub get --enforce-lockfile` (pinned toolchain; req 83) BEFORE anything is injected. The harness's
+   injected test needs the SDK's `integration_test`, which the app doesn't declare, so the second resolve (after
+   injection) may only ADD packages to the lock (observed: integration_test, flutter_driver,
+   fuchsia_remote_debug_protocol, process, sync_http, webdriver); any change to a package the committed lock pins
+   fails loud. (Before, `--enforce-lockfile` ran after the injection and could never pass — no L3 run succeeded
+   since it was introduced.)
+180. **L3 builds the app with ONE consistent toolchain:** the app flake's `.#linux` shell (Flutter engine, GTK, C/C++
+   toolchain, Mesa EGL and every tool from the same nixpkgs as its Flutter). The default devShell mixes two nixpkgs:
+   its GTK no longer links against the Flutter 3.44 engine, and a build that fell back to the host compiler (a stale
+   gitignored `build/linux` CMake cache pointing at `/usr/bin/clang++`) crashed on the host's newer glibc. A Linux
+   build dir configured with any other compiler than that shell's is discarded before the build (a hidden build
+   input, req 91). Each L3 run's `nix develop` temp files go to its own on-disk TMPDIR, deleted afterwards (they
+   filled the RAM-backed /tmp).
+181. **A box https result is filed under a reach row only if the box really uses that route**, checked live
+   before the app runs (`dash verify_reach_route`): Name — duckdns ⇔ the box's domain is `*.duckdns.org`;
+   Reach — port-forward ⇔ the public DNS A of `api.<domain>` (DNS-over-HTTPS, never `/etc/hosts`) is the box's
+   public IPv4 and none is non-public (private, carrier-grade NAT, loopback, link-local); direct IPv6 ⇔ its public
+   AAAA is one of the box's global IPv6s; Cloudflare ⇔ `cloudflared-sp` is active on the box and the name's public A
+   records are global and NOT the box's own public IPv4 (that is a port-forward with cloudflared merely running). The TLS chain is checked against the
+   system CAs (`curl` without `-k`) and the app gets `HTTPS_CA=/etc/ssl/certs/ca-certificates.crt`, so it validates
+   the real certificate (without `HTTPS_CA` the app's dev mode trusts any certificate). A mismatch refuses the run
+   (`--allow-dirty` → forced `reach-unverified`); the evidence is recorded (`reach_evidence`). The box-identity gate
+   compares the box's stamped setup with `--on` exactly (req 168), not just the install family.
+   Tested without a box by `python3 tools/test_reach_route.py ./dash`: live DNS-over-HTTPS + TLS against public
+   hosts (badssl.com for broken certificates), every route decision with canned box answers, and the refuse /
+   `--allow-dirty` wiring.
+182. **The L3 golden baseline is per install, not just per code state:** its key adds the backend's
+   `/etc/machine-id` (new on every fresh install), so every fresh VM/box gets its own golden from its first flow
+   (or `./dash l3-baseline capture`). Before, a fresh reinstall of the same code was compared with the previous
+   install's golden and always reported "drift outside modules/users" (its userdata.json holds per-install values).
+183. **Every run checks the matrix still matches the setup diagram first** — the same check as
+   `./dash setups --check`, run by `run`, `wrap` and `report` before anything else, and again inside every single
+   test run (so `here`, the VM bring-up and the L3 recorder are covered too). On any mismatch nothing runs and
+   nothing is recorded; there is no override (not even `--allow-dirty`), because a result filed under drifted axes
+   lands in a matrix cell that no longer means what it says.
+184. **Rows without a diagram view or a test stay in the matrix, greyed out**, instead of being dropped: Tor + https
+   (`onion-https`, `--net tor+https`) and Chutney + https (`onion-chutney-https`, VM only) — the old matrix's
+   placeholders — and the ngrok / Pinggy / LocalTunnel relays (`add-cloudflare.sh --method …` sets them up, but
+   the setup diagram has no option for them). Each carries its reason (catalog `reach_rows[].greyed`), shown on
+   hover; `dash` refuses to run or report them, they get no diagram link, and the alignment check (req 183)
+   ignores them. Giving one a diagram option and a test turns it into a normal row.

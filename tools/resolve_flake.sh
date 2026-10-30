@@ -10,7 +10,7 @@ set -euo pipefail
 MAC=${MAC:?internal: target MAC (set by find-target)}
 IP=${IP:?internal: target IP (set by find-target)}
 KEY=${KEY:-$HOME/.ssh/pcname_ed25519}
-SETUP=${SETUP:-install.lan-setup-0}
+SETUP=${SETUP:-install.cable-0a}
 
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)   # dev-dashboard/tools
 DASH_DIR=$(cd "$SELF_DIR/.." && pwd)                      # dev-dashboard
@@ -97,18 +97,18 @@ DOMAIN=${DOMAIN:-${DOM_DEFAULT:-selfprivacy.box}}   # a single-hostname tunnel (
 #    the choice only decides post-install connectivity + whether wifi credentials are needed. ──
 echo
 echo "${B}Which network setup?${X}  (how the box connects to the internet after it's installed)"
-echo "  ${B}1${X}  lan-setup-0a — you plug the cable into your router afterwards  ${GR}(no wifi)${X}"
-echo "  ${B}2${X}  lan-setup-0b — the box joins your home wifi"
-echo "  ${B}3${X}  lan-setup-0c — the box joins a different wifi"
-echo "  ${B}4${X}  lan-setup-0d — wifi only (you remove the cable afterwards)"
+echo "  ${B}1${X}  cable-0a — you plug the cable into your router afterwards  ${GR}(no wifi)${X}"
+echo "  ${B}2${X}  cable-0b — the box joins your home wifi (cable + wifi to the same router)"
+echo "  ${B}3${X}  cable-0c — the box joins a different wifi (another router)"
+echo "  ${B}4${X}  cable-0d — wifi only (you remove the cable afterwards)"
 # rule: one of 1-4 (or the labels 0a/0b/0c/0d). empty = 1. anything else → re-ask (never silently default).
 while :; do
   sel=$(ask "pick a number 1-4 [1]: ")
   case "${sel,,}" in
-    ""|1|0a|a) SETUP=install.lan-setup-0a; WIFI=0; break ;;
-    2|0b|b)    SETUP=install.lan-setup-0b; WIFI=1; break ;;
-    3|0c|c)    SETUP=install.lan-setup-0c; WIFI=1; break ;;
-    4|0d|d)    SETUP=install.lan-setup-0d; WIFI=1; break ;;
+    ""|1|0a|a) SETUP=install.cable-0a; WIFI=0; break ;;
+    2|0b|b)    SETUP=install.cable-0b; WIFI=1; break ;;
+    3|0c|c)    SETUP=install.cable-0c; WIFI=1; break ;;
+    4|0d|d)    SETUP=install.cable-0d; WIFI=1; break ;;
     *) echo "${Y}  please choose 1-4 (or 0a/0b/0c/0d)${X}" ;;
   esac
 done

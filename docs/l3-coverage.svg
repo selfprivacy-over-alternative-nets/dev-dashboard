@@ -5,9 +5,9 @@
 <rect x="244" y="64" width="472" height="22" rx="6" ry="6" fill="#FBF2EC" stroke="#E2CDBB" stroke-width="1.2"/>
 <text x="480.0" y="79" font-size="11.5" text-anchor="middle" font-weight="bold" fill="#7a5230">BACKEND MACHINE — runs SelfPrivacy</text>
 <text x="362.0" y="108" font-size="13" text-anchor="middle" font-weight="bold" fill="#222">VirtualBox VM</text>
-<text x="362.0" y="124" font-size="11" text-anchor="middle" font-weight="normal" fill="#666" font-style="italic">vm-local</text>
+<text x="362.0" y="124" font-size="11" text-anchor="middle" font-weight="normal" fill="#666" font-style="italic">vm</text>
 <text x="598.0" y="108" font-size="13" text-anchor="middle" font-weight="bold" fill="#222">Physical box</text>
-<text x="598.0" y="124" font-size="11" text-anchor="middle" font-weight="normal" fill="#666" font-style="italic">lan-setup-* / usb-*</text>
+<text x="598.0" y="124" font-size="11" text-anchor="middle" font-weight="normal" fill="#666" font-style="italic">cable-* / wifi-* / usb-*</text>
 <rect x="20" y="132" width="26" height="208" rx="6" ry="6" fill="#EEF3FB" stroke="#CBD8EC" stroke-width="1.2"/>
 <text x="37.0" y="236.0" font-size="11.5" text-anchor="middle" font-weight="bold" fill="#2b4a7a" transform="rotate(-90 37.0 236.0)">FRONTEND DEVICE — runs the app</text>
 <rect x="52" y="138" width="184" height="92" rx="8" ry="8" fill="#F7F8FA" stroke="#DDE2E8" stroke-width="1.2"/>
@@ -32,7 +32,7 @@
 <text x="598.0" y="270" font-size="13.5" text-anchor="middle" font-weight="bold" fill="#1f2d1f">☐ roadmap</text>
 <text x="598.0" y="290" font-size="11" text-anchor="middle" font-weight="normal" fill="#3a4a3a">app runner TODO</text>
 <text x="598.0" y="312" font-size="10.5" text-anchor="middle" font-weight="normal" fill="#48603f">tor · https</text>
-<text x="20" y="368" font-size="11" text-anchor="start" font-weight="normal" fill="#555">transports:  tor = .onion over SOCKS · https = clearnet (system/LE-trusted cert) · chutney = private Tor net (vm-local only).</text>
+<text x="20" y="368" font-size="11" text-anchor="start" font-weight="normal" fill="#555">transports:  tor = .onion over SOCKS · https = clearnet (system/LE-trusted cert) · chutney = private Tor net (vm only).</text>
 <text x="20" y="388" font-size="11" text-anchor="start" font-weight="normal" fill="#555">Live per-flow × network pass/fail is in the matrix dashboard — its setup columns are the backend machine; .desktop/.android tests are the frontend.</text>
 <text x="20" y="408" font-size="11" text-anchor="start" font-weight="normal" fill="#777">L1/L2 are backend-only (a throwaway test-VM, no frontend); only L3 pairs a frontend device with a persistent backend machine.</text>
 </svg>

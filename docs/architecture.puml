@@ -91,8 +91,8 @@ rectangle "FRONTEND DEVICE — runs the app" as FE #EEF3FB {
   node "Android device / emulator\n<i>Flutter app (roadmap)</i>" as feandroid #F0F0F0
 }
 rectangle "BACKEND MACHINE — runs SelfPrivacy" as BE #FBF2EC {
-  node "VirtualBox VM\n<i>vm-local</i>" as vm #FFFFFF
-  node "physical box\n<i>LAN · lan-setup-* / usb-*</i>" as box #FFFFFF
+  node "VirtualBox VM\n<i>vm</i>" as vm #FFFFFF
+  node "physical box\n<i>cable-* / wifi-* / usb-*</i>" as box #FFFFFF
 }
 
 app ..> fedesk    : built & run (L3 desktop)

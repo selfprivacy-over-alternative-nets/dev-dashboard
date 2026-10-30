@@ -242,7 +242,7 @@ cat <<EOF
      ${RESTART_NETBOOT:+}${RESTART_NETBOOT:-sudo pkill -x dnsmasq; sudo bash $NETBOOT_SCRIPT}
   2) Reboot the target into UEFI network boot again — it now leases the pinned $PIN_IP.
   3) Install (box token/cert are seeded from the flake's state/extra):
-     ./dash run install.lan-setup-0 --ip $PIN_IP --key $KEY \\
+     ./dash run install.cable-0a --on cable-0a --ip $PIN_IP --key $KEY \\
        --env FLAKE=\$(cd "$(dirname "$DISKO")" && pwd) --env MAC=$MAC \\
        --env DOMAIN=example.com --env NETBOOT=auto --env TRANSPORT=none
 EOF

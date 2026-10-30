@@ -1,62 +1,104 @@
-# Network setups (`--on`)
+# Setups (`--on`) and reach rows (`--reach` / `--name`) — the setup diagram's views
 
-States how the installation is done w.r.t. the network setup.
+The test matrix uses the **same axes as the setup diagram** — [`flow.html#setup-map`](flow.html#setup-map), data
+`docs/diagrams/setup-map.json`, toggles **Install · Network · Reach · Name** (one diagram view = one combination):
 
+- a **setup** — `./dash run … --on <setup>` — is one **Install × Network** view → a matrix **column**;
+- a **reach row** — `--reach <reach> [--name <name>]` plus the transport the app speaks, `--net` — is one
+  **Reach × Name** view → a matrix **row group**.
 
-## vm-local
-VirtualBox VM on this host (`build-and-run.sh`). No external wiring.
+`./dash setups` lists both and checks they still match the diagram (`./dash setups --check` exits 1 when they
+don't; the dashboard shows the same check as a banner). Every matrix column/row header has a ▦ link to its diagram
+view. Old setup ids still work as aliases and are recorded under the new id.
 
----
+## Install × Network → setups (`--on`)
 
-## lan-setup-0* — direct cabl to target, no router, netboot install
+| setup (`--on`) | Install | Network (how the server reaches the router after install) | old id | diagram view |
+|---|---|---|---|---|
+| `cable-0a` | LAN cable | cable→R — its LAN cable goes into your router R | `lan-setup-0a` | [method=cable;net=0a](flow.html#setup-map;method=cable;net=0a) |
+| `cable-0b` | LAN cable | cable+wifi→R — cable into R + wifi for the **same** router R | `lan-setup-0b` | [method=cable;net=0b](flow.html#setup-map;method=cable;net=0b) |
+| `cable-0d` | LAN cable | wifi-only — cable removed, the server runs on wifi | `lan-setup-0d` | [method=cable;net=0d](flow.html#setup-map;method=cable;net=0d) |
+| `cable-0c` | LAN cable | cable→R, wifi→Y — cable into R + wifi for **another** router Y | `lan-setup-0c` | [method=cable;net=0c](flow.html#setup-map;method=cable;net=0c) |
+| `wifi-0a` | Wifi | cable→R | `lan-setup-1` | [method=wifi;net=0a](flow.html#setup-map;method=wifi;net=0a) |
+| `wifi-0d` | Wifi | wifi-only | `lan-setup-2` | [method=wifi;net=0d](flow.html#setup-map;method=wifi;net=0d) |
+| `usb-0a` | USB stick | cable→R | `usb-0a` | [method=usb;net=0a](flow.html#setup-map;method=usb;net=0a) |
+| `usb-0d` | USB stick | wifi-only | — (new) | [method=usb;net=0d](flow.html#setup-map;method=usb;net=0d) |
+| `usb-0c` | USB stick | cable→R, wifi→Y | `usb-0c` | [method=usb;net=0c](flow.html#setup-map;method=usb;net=0c) |
+| `vm` | VM | — (the diagram's VM view has no Network toggle) | `vm-local` | [method=vm](flow.html#setup-map;method=vm) |
+
+Order = the diagram's order. Setups whose server ends up on wifi need a wifi spec on their install, checked in
+range by a scan before anything is written: `cable-0b/0d/0c` and `wifi-0d` take `--env WIFI_SSID=<SSID> --env
+WIFI_PSK=<PASSWORD>` (the installer writes the wifi config); `usb-0d/0c` take only `--env WIFI_SSID=<SSID>` — the
+USB chain writes no wifi config, so set the server's wifi up by hand during the USB install. **Removed** to match the diagram: `usb-0b` (the USB-stick install has no cable+wifi→R view); the
+coarse `lan-setup-0` / `usb` / `native-ethernet` ids now need their Network variant. **Harness-only:** `test-vm`
+— the throwaway VM the L1/L2 nixosTests start by themselves (not a `--on` value, not a diagram view).
+
+### The four Install methods (`install.<setup>` runs the method's installer for that Network variant)
 ```
-+--------+  ethernet   +--------+
-| laptop |------------>| target |   target: 192.168.100.x
-+--------+             +--------+
-```
-Install is identical over the cable. Variants differ only in the target's **post-install**
-connectivity:
+LAN cable  (install.cable-0a … -0c)  netboot over a DIRECT cable, router out of the path (192.168.100.x)
+  +----------+  LAN cable  +--------+
+  | computer |------------>| server |      then: Network variant (below)
+  +----------+             +--------+
 
-| id | after install, the cable is… | wifi config |
-|----|------------------------------|-------------|
-| lan-setup-0a | replugged into router R → target gets its IP from R | none |
-| lan-setup-0b | replugged into router R → target gets its IP from R | + wifi for **the same router R** |
-| lan-setup-0c | replugged into router R → target gets its IP from R | + wifi for **a different router B** |
-| lan-setup-0d | **removed** → target runs **wifi only** | wifi that reaches the internet |
+Wifi       (install.wifi-0a / -0d)   your computer on router R's wifi; the server netboots THROUGH R
+  +----------+  wifi  +----------+       +--------+      NOT runnable yet: needs R configured for network
+  | computer |------->| router R |------>| server |      boot; the preflight always refuses (with the setup)
+  +----------+        +----------+       +--------+
 
----
+USB stick  (install.usb-0a / -0d / -0c)  installer USB -> the server's internal disk, no link to your computer
+  +-----------+       +--------+
+  | USB stick |------>| server |
+  +-----------+       +--------+
 
-## lan-setup-1 — laptop on R's wifi, target wired to R
-*(needs R set up for netboot)*
-```
-+--------+ wifi  +----------+ ethernet +--------+
-| laptop |------>| router R |--------->| target |
-+--------+       +----------+          +--------+
+VM         (install.vm)              VirtualBox VM on THIS computer (build-and-run.sh, built from source)
 ```
 
-## lan-setup-2 — laptop + target both on R's wifi
-*(needs R set up for netboot)*
-```
-+--------+ wifi  +----------+  wifi  +--------+
-| laptop |------>| router R |------->| target |
-+--------+       +----------+        +--------+
-```
+### The Network variants (after install)
+| net | the server … | wifi config |
+|---|---|---|
+| `0a` cable→R | has its LAN cable in your router R (internet via the cable) | none |
+| `0b` cable+wifi→R | has its cable in R | + wifi for the **same** router R |
+| `0d` wifi-only | has **no** cable — runs on wifi only | wifi that reaches the internet |
+| `0c` cable→R, wifi→Y | has its cable in R | + wifi for **another** router Y |
 
----
+## Reach × Name → reach rows (`--reach` / `--name` / `--net`)
 
-## usb-0* — installer USB → target internal disk (manual boot), no laptop link
-```
-+-----+   +--------+
-| USB |-->| target |   target: cabled into router R
-+-----+   +--------+
-```
-All boot the same from USB. Variants differ only in connectivity:
+How friends reach the box. The installer applies one route at the end (`reach.<id>` = `tools/add-cloudflare.sh`
+over SSH); the L3 flows then drive the app over it.
 
-| id | wired | wifi config |
-|----|-------|-------------|
-| usb-0a | LAN cable into R (internet via cable) | none |
-| usb-0b | LAN cable into R (internet via cable) | + wifi for **the same router R** |
-| usb-0c | LAN cable into R (internet via cable) | + wifi for **a different router B** |
+| reach row | `--reach` | `--name` | `--net` (app) | make it reachable (box) | L3 automated on | diagram view |
+|---|---|---|---|---|---|---|
+| `onion` | `onion` | – | `tor` | `reach.onion` (nothing to add — every install has its .onion) | box, vm | [reach=onion](flow.html#setup-map;reach=onion) |
+| `tailscale` | `tailscale` | – | `https` | `reach.tailscale` | — not yet (one hostname: drive the app, then `./dash report`, below) | [reach=tailscale](flow.html#setup-map;reach=tailscale) |
+| `cloudflare-buy` | `cloudflare` | `buy` | `https` | `reach.cloudflare-buy` | box | [reach=cloudflare;name=buy](flow.html#setup-map;reach=cloudflare;name=buy) |
+| `cloudflare-trycf` | `cloudflare` | `trycf` | `https` | `reach.cloudflare-trycf` | — not yet (one hostname: drive the app, then `./dash report`, below) | [reach=cloudflare;name=trycf](flow.html#setup-map;reach=cloudflare;name=trycf) |
+| `ipv6-buy` | `ipv6` | `buy` | `https` | `reach.ipv6-buy` | box | [reach=ipv6;name=buy](flow.html#setup-map;reach=ipv6;name=buy) |
+| `ipv6-duckdns` | `ipv6` | `duckdns` | `https` | `reach.ipv6-duckdns` | box | [reach=ipv6;name=duckdns](flow.html#setup-map;reach=ipv6;name=duckdns) |
+| `portfwd-buy` | `portfwd` | `buy` | `https` | `reach.portfwd-buy` | box | [reach=portfwd;name=buy](flow.html#setup-map;reach=portfwd;name=buy) |
+| `portfwd-duckdns` | `portfwd` | `duckdns` | `https` | `reach.portfwd-duckdns` | box | [reach=portfwd;name=duckdns](flow.html#setup-map;reach=portfwd;name=duckdns) |
+| `onion-chutney` *(harness)* | `onion` | – | `chutney` | — | vm only | (simulates [reach=onion](flow.html#setup-map;method=vm;reach=onion)) |
+| `local` *(harness)* | `local` | – | `https` | — | vm only (+ L2's test-vm) | none — https on this computer only |
+| `onion-https`, `onion-chutney-https` *(greyed out)* | `onion` | – | `tor+https`, `chutney+https` | — | can't run | none — placeholders from the old matrix, no test |
+| `ngrok`, `pinggy`, `localtunnel` *(greyed out)* | same as the id | – | `https` | — (`add-cloudflare.sh --method …` exists) | can't run | none — no diagram option |
+| `yggdrasil`, `hyphanet` | — | – | (future) | — | roadmap | none yet |
+
+- **Harness-only rows** exist for testing, not as a way to reach a box: `onion-chutney` = the onion route on a
+  private Tor test network on this computer (SOCKS 9009); `local` = https to the VM through a trusted local name
+  (theory7 in `/etc/hosts` + Caddy + mkcert CA + SSH tunnel), and L2's self-signed https inside its test VM.
+- **One-hostname tunnels** (tailscale, cloudflare trycf) serve the API at the apex only, so there is no automated L3
+  over them yet. Drive the app by hand and log the result in that row:
+  `./dash app --domain <HOST> --token <API_TOKEN> --apex`, then
+  `./dash report L3.connect.desktop --status <pass|fail> --duration <seconds> --on <SETUP> --reach tailscale --net https --ip <BOX_LAN_IP> --key <SSH_KEY>`
+  (for trycf: `--reach cloudflare --name trycf`).
+- **VM × a public route** (tailscale / cloudflare / ipv6 / portfwd) is a real diagram view but not wired into the
+  harness yet (○ in the matrix); `reach.*` apply steps drive a box over SSH.
+- **Greyed-out rows** stay in the matrix for reference but can't run (`dash` refuses them, the matrix shows them
+  greyed): Tor + https and chutney + https (`onion-https`, `onion-chutney-https`) were placeholders in the old
+  matrix with no test and no diagram view; ngrok / pinggy / localtunnel are supported by
+  `add-cloudflare.sh --method …` but have no diagram option, so a result would have no view to be filed under.
+  Giving one a diagram option (and a test) is what turns it into a normal row.
+
+Fully explicit commands per setup family: [`test_matrix.md`](test_matrix.md); the exact command of any single cell: click it in the matrix (`index.html`).
 
 
 # Tunneling
@@ -76,6 +118,8 @@ reboots+IP-changes / **C** free / **D** non-centralised / **E** human-readable n
 | **direct IPv6 + dynamic DNS** | + | ++ AAAA auto-updates | + | ++ just DNS, no relay | + | **+ if ISP gives IPv6** |
 | port-forward IPv4 + dynamic DNS | + | + A auto-updates | + | + | + | -- router admin; CGNAT-dead |
 | onion (tor) | ++ | ++ | + | ++ | -- 56-char | ~ Tor-only |
+
+Matrix reach rows for these routes: Cloudflare tunnel + custom domain = `cloudflare-buy`; quick tunnel = `cloudflare-trycf` (ngrok / pinggy / localtunnel: greyed-out rows, no diagram view); direct IPv6 = `ipv6-buy` / `ipv6-duckdns`; port-forward = `portfwd-buy` / `portfwd-duckdns`; onion = `onion`; Tailscale Funnel (below) = `tailscale`.
 
 **No single route wins A–E, is grandma-proof, AND reaches every visitor.** Decentralised + reliable
 + no-port-forward is only physically possible **over IPv6** (no NAT to cross). So:

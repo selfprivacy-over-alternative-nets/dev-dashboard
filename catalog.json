@@ -6,7 +6,14 @@
     "tests": "../selfprivacy-tor-tests"
   },
   "pins_lock": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend/flake.lock",
-  "guard_paths": ["users.nix", ".env", ".envrc", "flake.local.nix", "local.nix", "secrets.nix"],
+  "guard_paths": [
+    "users.nix",
+    ".env",
+    ".envrc",
+    "flake.local.nix",
+    "local.nix",
+    "secrets.nix"
+  ],
   "networks": [
     "tor",
     "chutney",
@@ -21,55 +28,480 @@
   "levels": {
     "L1": "Unit — pure Python logic in the API (e.g. onion/URL routing). No VM, no network, no app. Runs in milliseconds.",
     "L2": "Integration — a real NixOS backend boots in a VM and its routing is checked over a transport. No app involved.",
-    "L3": "App usage — the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded."
+    "L3": "App usage — the SelfPrivacy app is driven like a user (open, navigate tabs, add a service, ...) against a running backend, and screen-recorded.",
+    "install": "Install — provision a backend onto a device/VM via one setup (diagram Install + Network), then verify it landed. Network-independent.",
+    "reach": "Reach — make an installed box reachable for friends via one route of the setup diagram (Reach + Name): the route's apply step, run on the box over SSH."
   },
-  "install_methods": [
+  "setup_map": {
+    "diagram": "setup-map",
+    "url": "flow.html#setup-map",
+    "doc": "The matrix axes ARE the setup diagram's toggles (docs/diagrams/setup-map.json meta.toggles): setup (--on) = Install+Network, reach row (--reach/--name) = Reach+Name. `./dash setups` checks they still match the diagram.",
+    "methods": [
+      {
+        "id": "cable",
+        "label": "LAN cable",
+        "family": "lan",
+        "install": "install.cable",
+        "desc": "Netboot the server over a direct LAN cable from your computer (router out of the path), then install with nixos-anywhere."
+      },
+      {
+        "id": "wifi",
+        "label": "Wifi",
+        "family": "lan",
+        "install": "install.wifi",
+        "desc": "Your computer is on router R's wifi; the server netboots THROUGH R (needs R configured for network boot)."
+      },
+      {
+        "id": "usb",
+        "label": "USB stick",
+        "family": "usb",
+        "install": "install.usb",
+        "desc": "Boot the server from an installer USB stick and install to its internal disk (no link to your computer)."
+      },
+      {
+        "id": "vm",
+        "label": "VM",
+        "family": "vm",
+        "install": "install.vm",
+        "desc": "The server is a VirtualBox VM on your own computer (build-and-run.sh). No cable, no router."
+      }
+    ],
+    "nets": [
+      {
+        "id": "0a",
+        "label": "cable→R",
+        "desc": "the server's LAN cable goes into your router R (internet via the cable); no wifi"
+      },
+      {
+        "id": "0b",
+        "label": "cable+wifi→R",
+        "desc": "cable into R, plus a wifi config for the SAME router R"
+      },
+      {
+        "id": "0d",
+        "label": "wifi-only",
+        "desc": "no cable: the server runs on wifi only (wifi that reaches the internet)"
+      },
+      {
+        "id": "0c",
+        "label": "cable→R, wifi→Y",
+        "desc": "cable into R, plus a wifi config for ANOTHER router Y"
+      }
+    ],
+    "reaches": [
+      {
+        "id": "tailscale",
+        "label": "Tailscale",
+        "net": "https",
+        "names": [],
+        "desc": "Tailscale Funnel: the box dials OUT to Tailscale (a company); free https://selfprivacy.<tailnet>.ts.net, one hostname, CGNAT-proof."
+      },
+      {
+        "id": "cloudflare",
+        "label": "Cloudflare",
+        "net": "https",
+        "names": [
+          "buy",
+          "trycf"
+        ],
+        "desc": "Cloudflare Tunnel: the box dials OUT to Cloudflare (a company); a bought domain (named tunnel, all 5 subdomains) or a free random *.trycloudflare.com (one hostname)."
+      },
+      {
+        "id": "ipv6",
+        "label": "Direct IPv6",
+        "net": "https",
+        "names": [
+          "buy",
+          "duckdns"
+        ],
+        "desc": "Direct IPv6: friends connect straight to the box's public IPv6 (AAAA record) — no relay, no port-forward; IPv4-only friends can't reach it."
+      },
+      {
+        "id": "portfwd",
+        "label": "Port-forward",
+        "net": "https",
+        "names": [
+          "buy",
+          "duckdns"
+        ],
+        "desc": "Port-forward: open TCP 443 on your router to the box by hand + A records to your public IPv4 (needs router admin; dead behind CGNAT)."
+      },
+      {
+        "id": "onion",
+        "label": ".onion",
+        "net": "tor",
+        "names": [],
+        "desc": "Tor onion service: always on, no company, no domain; friends need a Tor-capable client."
+      }
+    ],
+    "names": [
+      {
+        "id": "buy",
+        "label": "Buy a domain",
+        "desc": "a domain you buy at a registrar (€/yr); full api./cloud./git./matrix./meet. stack"
+      },
+      {
+        "id": "duckdns",
+        "label": "DuckDNS (free)",
+        "desc": "a free <name>.duckdns.org name (volunteer-run, token-updated A/AAAA)"
+      },
+      {
+        "id": "trycf",
+        "label": "Free *.trycloudflare.com",
+        "desc": "a free random *.trycloudflare.com name from a Cloudflare quick tunnel (testing only, changes on restart)"
+      }
+    ],
+    "box_args": " --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+  },
+  "setups": [
+    {
+      "id": "cable-0a",
+      "method": "cable",
+      "net": "0a",
+      "backend": "box",
+      "label": "LAN cable · cable→R",
+      "target_wifi": false,
+      "aliases": [
+        "lan-setup-0a"
+      ],
+      "diagram": "flow.html#setup-map;method=cable;net=0a",
+      "desc": "Netboot the server over a direct LAN cable from your computer (router out of the path), then install with nixos-anywhere. After install: the server's LAN cable goes into your router R (internet via the cable); no wifi.",
+      "topology": "install: direct LAN cable, router OUT of the path (netboot, 192.168.100.x)\n  +----------+  LAN cable  +--------+\n  | computer |------------>| server |\n  +----------+             +--------+\nafter: the server's cable into router R\n  +--------+  cable  +----------+\n  | server |-------->| router R |---> internet\n  +--------+         +----------+"
+    },
+    {
+      "id": "cable-0b",
+      "method": "cable",
+      "net": "0b",
+      "backend": "box",
+      "label": "LAN cable · cable+wifi→R",
+      "target_wifi": true,
+      "aliases": [
+        "lan-setup-0b"
+      ],
+      "diagram": "flow.html#setup-map;method=cable;net=0b",
+      "desc": "Netboot the server over a direct LAN cable from your computer (router out of the path), then install with nixos-anywhere. After install: cable into R, plus a wifi config for the SAME router R.",
+      "topology": "install: direct LAN cable, router OUT of the path (netboot, 192.168.100.x)\n  +----------+  LAN cable  +--------+\n  | computer |------------>| server |\n  +----------+             +--------+\nafter: cable into router R + wifi config for the same R\n  +--------+  cable + wifi  +----------+\n  | server |=============>| router R |---> internet\n  +--------+               +----------+"
+    },
+    {
+      "id": "cable-0d",
+      "method": "cable",
+      "net": "0d",
+      "backend": "box",
+      "label": "LAN cable · wifi-only",
+      "target_wifi": true,
+      "aliases": [
+        "lan-setup-0d"
+      ],
+      "diagram": "flow.html#setup-map;method=cable;net=0d",
+      "desc": "Netboot the server over a direct LAN cable from your computer (router out of the path), then install with nixos-anywhere. After install: no cable: the server runs on wifi only (wifi that reaches the internet).",
+      "topology": "install: direct LAN cable, router OUT of the path (netboot, 192.168.100.x)\n  +----------+  LAN cable  +--------+\n  | computer |------------>| server |\n  +----------+             +--------+\nafter: NO cable, the server is on wifi only\n  +--------+  wifi  +----------+\n  | server |------->| router R |---> internet\n  +--------+        +----------+"
+    },
+    {
+      "id": "cable-0c",
+      "method": "cable",
+      "net": "0c",
+      "backend": "box",
+      "label": "LAN cable · cable→R, wifi→Y",
+      "target_wifi": true,
+      "aliases": [
+        "lan-setup-0c"
+      ],
+      "diagram": "flow.html#setup-map;method=cable;net=0c",
+      "desc": "Netboot the server over a direct LAN cable from your computer (router out of the path), then install with nixos-anywhere. After install: cable into R, plus a wifi config for ANOTHER router Y.",
+      "topology": "install: direct LAN cable, router OUT of the path (netboot, 192.168.100.x)\n  +----------+  LAN cable  +--------+\n  | computer |------------>| server |\n  +----------+             +--------+\nafter: cable into router R + wifi config for another router Y\n  +--------+  cable  +----------+\n  | server |-------->| router R |---> internet\n  +--------+  wifi   +----------+\n           \\------->| router Y |"
+    },
+    {
+      "id": "wifi-0a",
+      "method": "wifi",
+      "net": "0a",
+      "backend": "box",
+      "label": "Wifi · cable→R",
+      "target_wifi": false,
+      "aliases": [
+        "lan-setup-1"
+      ],
+      "diagram": "flow.html#setup-map;method=wifi;net=0a",
+      "desc": "Your computer is on router R's wifi; the server netboots THROUGH R (needs R configured for network boot). After install: the server's LAN cable goes into your router R (internet via the cable); no wifi.",
+      "topology": "install: your computer on router R's wifi, the server netboots through R\n  +----------+  wifi  +----------+  ...  +--------+\n  | computer |------->| router R |------>| server |\n  +----------+        +----------+       +--------+\nafter: the server's cable into router R\n  +--------+  cable  +----------+\n  | server |-------->| router R |---> internet\n  +--------+         +----------+"
+    },
+    {
+      "id": "wifi-0d",
+      "method": "wifi",
+      "net": "0d",
+      "backend": "box",
+      "label": "Wifi · wifi-only",
+      "target_wifi": true,
+      "aliases": [
+        "lan-setup-2"
+      ],
+      "diagram": "flow.html#setup-map;method=wifi;net=0d",
+      "desc": "Your computer is on router R's wifi; the server netboots THROUGH R (needs R configured for network boot). After install: no cable: the server runs on wifi only (wifi that reaches the internet).",
+      "topology": "install: your computer on router R's wifi, the server netboots through R\n  +----------+  wifi  +----------+  ...  +--------+\n  | computer |------->| router R |------>| server |\n  +----------+        +----------+       +--------+\nafter: NO cable, the server is on wifi only\n  +--------+  wifi  +----------+\n  | server |------->| router R |---> internet\n  +--------+        +----------+"
+    },
+    {
+      "id": "usb-0a",
+      "method": "usb",
+      "net": "0a",
+      "backend": "box",
+      "label": "USB stick · cable→R",
+      "target_wifi": false,
+      "aliases": [],
+      "diagram": "flow.html#setup-map;method=usb;net=0a",
+      "desc": "Boot the server from an installer USB stick and install to its internal disk (no link to your computer). After install: the server's LAN cable goes into your router R (internet via the cable); no wifi.",
+      "topology": "install: installer USB stick -> the server's internal disk (no link to your computer)\n  +-----------+       +--------+\n  | USB stick |------>| server |\n  +-----------+       +--------+\nafter: the server's cable into router R\n  +--------+  cable  +----------+\n  | server |-------->| router R |---> internet\n  +--------+         +----------+"
+    },
+    {
+      "id": "usb-0d",
+      "method": "usb",
+      "net": "0d",
+      "backend": "box",
+      "label": "USB stick · wifi-only",
+      "target_wifi": true,
+      "aliases": [],
+      "diagram": "flow.html#setup-map;method=usb;net=0d",
+      "desc": "Boot the server from an installer USB stick and install to its internal disk (no link to your computer). After install: no cable: the server runs on wifi only (wifi that reaches the internet).",
+      "topology": "install: installer USB stick -> the server's internal disk (no link to your computer)\n  +-----------+       +--------+\n  | USB stick |------>| server |\n  +-----------+       +--------+\nafter: NO cable, the server is on wifi only\n  +--------+  wifi  +----------+\n  | server |------->| router R |---> internet\n  +--------+        +----------+"
+    },
+    {
+      "id": "usb-0c",
+      "method": "usb",
+      "net": "0c",
+      "backend": "box",
+      "label": "USB stick · cable→R, wifi→Y",
+      "target_wifi": true,
+      "aliases": [],
+      "diagram": "flow.html#setup-map;method=usb;net=0c",
+      "desc": "Boot the server from an installer USB stick and install to its internal disk (no link to your computer). After install: cable into R, plus a wifi config for ANOTHER router Y.",
+      "topology": "install: installer USB stick -> the server's internal disk (no link to your computer)\n  +-----------+       +--------+\n  | USB stick |------>| server |\n  +-----------+       +--------+\nafter: cable into router R + wifi config for another router Y\n  +--------+  cable  +----------+\n  | server |-------->| router R |---> internet\n  +--------+  wifi   +----------+\n           \\------->| router Y |"
+    },
+    {
+      "id": "vm",
+      "method": "vm",
+      "net": null,
+      "backend": "vm",
+      "label": "VM",
+      "target_wifi": false,
+      "aliases": [
+        "vm-local"
+      ],
+      "diagram": "flow.html#setup-map;method=vm",
+      "desc": "NixOS backend in VirtualBox on THIS computer (build-and-run.sh). The diagram's VM view has no Network toggle.",
+      "topology": "this computer\n  +---------------------------------+\n  |  computer -- VirtualBox VM       |   (build-and-run.sh)\n  +---------------------------------+"
+    }
+  ],
+  "harness_setups": [
     {
       "id": "test-vm",
       "label": "auto test-VM",
       "backend": "vm",
-      "group": "automated",
-      "desc": "The self-contained NixOS test VM the L2 nixosTests spin up. Not a manual install."
+      "desc": "The throwaway NixOS VM the L1/L2 nixosTests spin up by themselves. Harness-only: not a setup-diagram view, not a --on value you pass."
+    }
+  ],
+  "removed_setups": {
+    "usb-0b": "usb-0b was removed to match the setup diagram: the USB-stick install has no 'cable+wifi→R' (0b) view. Use usb-0a, usb-0d or usb-0c.",
+    "lan-setup-0": "the coarse lan-setup-0 needs its network now: use cable-0a, cable-0b, cable-0d or cable-0c (the diagram's Network toggle).",
+    "usb": "the coarse usb setup needs its network now: use usb-0a, usb-0d or usb-0c.",
+    "native-ethernet": "native-ethernet is the old name of the direct-cable install: use cable-0a, cable-0b, cable-0d or cable-0c."
+  },
+  "reach_rows": [
+    {
+      "id": "onion",
+      "reach": "onion",
+      "name": null,
+      "net": "tor",
+      "label": ".onion · app over Tor",
+      "diagram": "flow.html#setup-map;reach=onion",
+      "l3_wired": [
+        "box",
+        "vm"
+      ],
+      "desc": "The box's Tor onion service, reached by the app over the real Tor network (SOCKS 9050)."
     },
     {
-      "id": "vm-local",
-      "label": "VM · same device",
-      "backend": "vm",
-      "group": "VM on Ubuntu",
-      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
-      "topology": "this laptop (Ubuntu)\n  +----------------------------+\n  |  laptop -- VirtualBox VM   |   (build-and-run.sh)\n  +----------------------------+"
+      "id": "onion-chutney",
+      "reach": "onion",
+      "name": null,
+      "net": "chutney",
+      "harness": true,
+      "setups": [
+        "vm"
+      ],
+      "label": ".onion · app over chutney (harness)",
+      "diagram": "flow.html#setup-map;method=vm;reach=onion",
+      "l3_wired": [
+        "vm"
+      ],
+      "desc": "Harness-only: the same onion route, but on chutney — a private Tor test network on this computer (SOCKS 9009). VM only; not a separate diagram view."
     },
     {
-      "id": "lan-setup-0",
-      "label": "LAN · direct cable",
-      "backend": "native",
-      "group": "NixOS native (LAN)",
-      "desc": "Target netbooted over a direct ethernet cable (router out of path), installed via nixos-anywhere.",
-      "topology": "direct cable, router OUT of path -- netboot install\n  +--------+  ethernet   +--------+\n  | laptop |------------>| target |   (192.168.100.x)\n  +--------+             +--------+"
+      "id": "onion-https",
+      "reach": "onion",
+      "name": null,
+      "net": "tor+https",
+      "greyed": "a placeholder from the old matrix: no test drives it and the setup diagram has no view for it (the diagram's .onion is plain Tor)",
+      "label": ".onion · app over Tor + https (greyed out)",
+      "l3_wired": [],
+      "desc": "The box's onion service with https on top (TLS inside Tor), reached by the app over the real Tor network."
     },
     {
-      "id": "lan-setup-1",
-      "label": "LAN · via router R (target wired)",
-      "backend": "native",
-      "group": "NixOS native (LAN)",
-      "desc": "Laptop on R's wifi, target wired to R. Needs R configured for netboot (preflight will tell you how).",
-      "topology": "laptop on R's wifi, target wired to R\n  +--------+ wifi  +----------+ ethernet +--------+\n  | laptop |------>| router R |--------->| target |\n  +--------+       +----------+          +--------+"
+      "id": "onion-chutney-https",
+      "reach": "onion",
+      "name": null,
+      "net": "chutney+https",
+      "harness": true,
+      "setups": [
+        "vm"
+      ],
+      "greyed": "a placeholder from the old matrix: no test drives it and the setup diagram has no view for it",
+      "label": ".onion · app over chutney + https (harness, greyed out)",
+      "l3_wired": [],
+      "desc": "Harness-only: the onion route with https on top, on chutney (the private Tor test network on this computer). VM only."
     },
     {
-      "id": "lan-setup-2",
-      "label": "LAN · via router R (target wifi)",
-      "backend": "native",
-      "group": "NixOS native (LAN)",
-      "desc": "Laptop and target both on R's wifi. Needs R configured for netboot (preflight will tell you how).",
-      "topology": "laptop + target both on R's wifi\n  +--------+ wifi  +----------+ wifi  +--------+\n  | laptop |------>| router R |------>| target |\n  +--------+       +----------+       +--------+"
+      "id": "tailscale",
+      "reach": "tailscale",
+      "name": null,
+      "net": "https",
+      "label": "Tailscale · https",
+      "diagram": "flow.html#setup-map;reach=tailscale",
+      "l3_wired": [],
+      "desc": "Tailscale Funnel (one hostname, app at the apex). L3 over it is not wired into dash yet: drive the app with ./dash app --domain <name>.<tailnet>.ts.net --token <API_TOKEN> --apex and log the result with ./dash report."
     },
     {
-      "id": "usb",
-      "label": "native · installer USB",
-      "backend": "native",
-      "group": "NixOS native (USB)",
-      "desc": "Target installed from a bootable USB installer to its internal disk (manual boot).",
-      "topology": "installer USB -> target internal disk (no laptop link)\n  +-----+   +--------+\n  | USB |-->| target |\n  +-----+   +--------+"
+      "id": "cloudflare-buy",
+      "reach": "cloudflare",
+      "name": "buy",
+      "net": "https",
+      "label": "Cloudflare + bought domain · https",
+      "diagram": "flow.html#setup-map;reach=cloudflare;name=buy",
+      "l3_wired": [
+        "box"
+      ],
+      "desc": "Cloudflare named tunnel on a domain you bought; the app dials https://api.<domain> (read live from the box)."
+    },
+    {
+      "id": "cloudflare-trycf",
+      "reach": "cloudflare",
+      "name": "trycf",
+      "net": "https",
+      "label": "Cloudflare + *.trycloudflare.com · https",
+      "diagram": "flow.html#setup-map;reach=cloudflare;name=trycf",
+      "l3_wired": [],
+      "desc": "Cloudflare quick tunnel with a random *.trycloudflare.com name (one hostname, app at the apex). L3 over it is not wired into dash yet: use ./dash app --domain <random>.trycloudflare.com --token <API_TOKEN> --apex + ./dash report."
+    },
+    {
+      "id": "ipv6-buy",
+      "reach": "ipv6",
+      "name": "buy",
+      "net": "https",
+      "label": "Direct IPv6 + bought domain · https",
+      "diagram": "flow.html#setup-map;reach=ipv6;name=buy",
+      "l3_wired": [
+        "box"
+      ],
+      "desc": "AAAA record of a bought domain → the box's public IPv6; the app dials https://api.<domain> (this computer needs IPv6 too)."
+    },
+    {
+      "id": "ipv6-duckdns",
+      "reach": "ipv6",
+      "name": "duckdns",
+      "net": "https",
+      "label": "Direct IPv6 + DuckDNS · https",
+      "diagram": "flow.html#setup-map;reach=ipv6;name=duckdns",
+      "l3_wired": [
+        "box"
+      ],
+      "desc": "<name>.duckdns.org AAAA → the box's public IPv6; the app dials https://api.<name>.duckdns.org."
+    },
+    {
+      "id": "portfwd-buy",
+      "reach": "portfwd",
+      "name": "buy",
+      "net": "https",
+      "label": "Port-forward + bought domain · https",
+      "diagram": "flow.html#setup-map;reach=portfwd;name=buy",
+      "l3_wired": [
+        "box"
+      ],
+      "desc": "Router forwards TCP 443 to the box; A records of a bought domain → your public IPv4; the app dials https://api.<domain>."
+    },
+    {
+      "id": "portfwd-duckdns",
+      "reach": "portfwd",
+      "name": "duckdns",
+      "net": "https",
+      "label": "Port-forward + DuckDNS · https",
+      "diagram": "flow.html#setup-map;reach=portfwd;name=duckdns",
+      "l3_wired": [
+        "box"
+      ],
+      "desc": "Router forwards TCP 443 to the box; <name>.duckdns.org → your public IPv4; the app dials https://api.<name>.duckdns.org."
+    },
+    {
+      "id": "local",
+      "reach": "local",
+      "name": null,
+      "net": "https",
+      "harness": true,
+      "setups": [
+        "vm",
+        "test-vm"
+      ],
+      "label": "local https (harness)",
+      "l3_wired": [
+        "vm"
+      ],
+      "desc": "Harness-only, no diagram view: https on THIS computer only (VM: theory7 name in /etc/hosts + Caddy + mkcert CA + SSH tunnel; L2: self-signed cert inside the test VM). A friend cannot use it."
+    },
+    {
+      "id": "ngrok",
+      "reach": "ngrok",
+      "name": null,
+      "net": "https",
+      "greyed": "tools/add-cloudflare.sh --method ngrok sets it up on a box, but the setup diagram has no ngrok option, so the matrix has no view to file a result under; no automated L3 either",
+      "label": "ngrok · https (greyed out)",
+      "l3_wired": [],
+      "desc": "ngrok tunnel: the box dials OUT to ngrok (a company); free random *.ngrok-free.app, one hostname (a custom domain is paid)."
+    },
+    {
+      "id": "pinggy",
+      "reach": "pinggy",
+      "name": null,
+      "net": "https",
+      "greyed": "tools/add-cloudflare.sh --method pinggy sets it up on a box, but the setup diagram has no pinggy option, so the matrix has no view to file a result under; no automated L3 either",
+      "label": "Pinggy · https (greyed out)",
+      "l3_wired": [],
+      "desc": "Pinggy tunnel: the box dials OUT over SSH (ssh -R to a.pinggy.io, nothing to install); free random *.pinggy.link with ~60-min sessions."
+    },
+    {
+      "id": "localtunnel",
+      "reach": "localtunnel",
+      "name": null,
+      "net": "https",
+      "greyed": "tools/add-cloudflare.sh --method localtunnel sets it up on a box, but the setup diagram has no localtunnel option, so the matrix has no view to file a result under; no automated L3 either",
+      "label": "LocalTunnel · https (greyed out)",
+      "l3_wired": [],
+      "desc": "LocalTunnel: the box runs lt (nodePackages.localtunnel) → https://<prefix>.loca.lt; free, one hostname."
+    },
+    {
+      "id": "yggdrasil",
+      "reach": "yggdrasil",
+      "name": null,
+      "net": "yggdrasil",
+      "future": true,
+      "label": "Yggdrasil (future)",
+      "l3_wired": [],
+      "desc": "Roadmap transport — not wired yet, no diagram view yet."
+    },
+    {
+      "id": "hyphanet",
+      "reach": "hyphanet",
+      "name": null,
+      "net": "hyphanet",
+      "future": true,
+      "label": "Hyphanet (future)",
+      "l3_wired": [],
+      "desc": "Roadmap transport — not wired yet, no diagram view yet."
     }
   ],
   "flows": [
@@ -93,7 +525,7 @@
       "budget_s": 180,
       "desc": "Unit-tests the API logic that rewrites service URLs for .onion path-routing (T1.1–T1.17).",
       "cmd": "nix run .#pytest-vm -- tests/test_onion_routing.py -q",
-      "run": "# Pure unit test — no VM, no network, no target.\ncd selfprivacy-api && nix run .#pytest-vm -- tests/test_onion_routing.py -q"
+      "run": "# Pure unit test — no setup, no reach, no network, no box.\n./dash run L1.onion-routing\n# raw: cd selfprivacy-api && nix run .#pytest-vm -- tests/test_onion_routing.py -q"
     },
     {
       "id": "L2.backend",
@@ -113,7 +545,11 @@
         "https": "nix build .#checks.x86_64-linux.https-integration --no-link -L"
       },
       "server_log_cmd": "",
-      "run": "# L2 integration: boots a NixOS backend in a throwaway test-VM and checks API + nginx path\n# routing over the transport. No app, no real target.\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && nix build .#checks.x86_64-linux.<L2-test>"
+      "run": "# L2 integration: boots a throwaway NixOS backend test-VM (harness setup test-vm) and checks API + nginx\n# routing over the transport. No app, no box. tor = the onion route; https = local https (self-signed, in the VM).\n./dash run L2.backend --net tor\n./dash run L2.backend --net https\n# raw: cd selfprivacy-tor-tests && nix build .#checks.x86_64-linux.tor-integration --no-link -L\n#      cd selfprivacy-tor-tests && nix build .#checks.x86_64-linux.https-integration --no-link -L",
+      "reach_rows": [
+        "onion",
+        "local"
+      ]
     },
     {
       "id": "L3.connect.desktop",
@@ -131,7 +567,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.connect.desktop --on vm --reach onion --net tor\n./dash run L3.connect.desktop --on vm --reach onion --net chutney\n./dash run L3.connect.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.connect.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.connect.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.connect.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.connect.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.login.desktop",
@@ -149,7 +585,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.login.desktop --on vm --reach onion --net tor\n./dash run L3.login.desktop --on vm --reach onion --net chutney\n./dash run L3.login.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.login.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.login.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.login.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.login.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.services.desktop",
@@ -167,7 +603,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.services.desktop --on vm --reach onion --net tor\n./dash run L3.services.desktop --on vm --reach onion --net chutney\n./dash run L3.services.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.services.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.services.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.services.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.services.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.providers.desktop",
@@ -185,7 +621,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.providers.desktop --on vm --reach onion --net tor\n./dash run L3.providers.desktop --on vm --reach onion --net chutney\n./dash run L3.providers.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.providers.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.providers.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.providers.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.providers.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.nextcloud.desktop",
@@ -203,7 +639,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.nextcloud.desktop --on vm --reach onion --net tor\n./dash run L3.nextcloud.desktop --on vm --reach onion --net chutney\n./dash run L3.nextcloud.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.nextcloud.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.nextcloud.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.nextcloud.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.nextcloud.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.users.desktop",
@@ -221,7 +657,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.users.desktop --on vm --reach onion --net tor\n./dash run L3.users.desktop --on vm --reach onion --net chutney\n./dash run L3.users.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.users.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.users.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.users.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.users.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.menus.desktop",
@@ -239,7 +675,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.menus.desktop --on vm --reach onion --net tor\n./dash run L3.menus.desktop --on vm --reach onion --net chutney\n./dash run L3.menus.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.menus.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.menus.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.menus.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.menus.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.addremove.desktop",
@@ -257,7 +693,7 @@
       "implemented": true,
       "cmd": "@flutter",
       "records_video": true,
-      "run": "# L3 app-drive against a RUNNING backend over the chosen transport.\n# https: cd dev-dashboard && DOMAIN=<YOUR_DOMAIN> SP_TOKEN=<API_TOKEN> python3 tools/ci_l3_https.py\n# (needs the Flutter app fork + a backend reachable at <YOUR_DOMAIN> / its .onion)"
+      "run": "# Drive the app against a RUNNING backend. Every arg is required: --on (setup = diagram Install+Network),\n# --reach [--name] (diagram Reach+Name) and --net (what the app speaks: tor | chutney | https).\n# VM on this computer (fresh VM first: ./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up):\n./dash run L3.addremove.desktop --on vm --reach onion --net tor\n./dash run L3.addremove.desktop --on vm --reach onion --net chutney\n./dash run L3.addremove.desktop --on vm --reach local --net https\n# a box (cable-0a cable-0b cable-0d cable-0c wifi-0a wifi-0d usb-0a usb-0d usb-0c), installed + reach applied first:\n./dash run L3.addremove.desktop --on <SETUP> --reach onion --net tor --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.addremove.desktop --on <SETUP> --reach cloudflare --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.addremove.desktop --on <SETUP> --reach ipv6 --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n./dash run L3.addremove.desktop --on <SETUP> --reach portfwd --name <buy|duckdns> --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>\n# (tailscale / cloudflare trycf: one-hostname tunnels, L3 not wired yet — ./dash app --domain <host> --token <API_TOKEN> --apex)"
     },
     {
       "id": "L3.connect.android",
@@ -398,83 +834,390 @@
   ],
   "installs": [
     {
-      "id": "install.vm-local",
-      "name": "VM · same device",
+      "id": "install.cable",
+      "name": "LAN cable (netboot over a direct cable)",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
-      "method": "vm-local",
-      "backend": "vm",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
-      "budget_s": 900,
-      "desc": "NixOS backend in VirtualBox on this Ubuntu host (build-and-run.sh).",
-      "cmd": "SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh",
-      "run": "# NixOS backend in VirtualBox on THIS Ubuntu host (local only).\ncd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && SP_BUILD_MODE=download SP_VM_ACTION=reinstall ./build-and-run.sh"
-    },
-    {
-      "id": "install.lan-setup-0",
-      "name": "LAN · direct cable",
-      "level": "install",
-      "category": "install",
-      "client": "-",
-      "networks": [],
-      "method": "lan-setup-0",
+      "method": "cable",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c"
+      ],
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "ONE command: auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, wipes+installs via nixos-anywhere (no reboot — network-boot-first would loop back into the installer), then verifies the install ON DISK. A live service verify (https/.onion) needs the box on an internet network, so it hands off: move the box to router R (or set disk-boot), power-cycle, then run the verifier. Installer IP 192.168.100.50.",
+      "desc": "ONE command per network variant (run install.cable-0a / -0b / -0d / -0c): auto-starts the direct-cable netboot server (one sudo prompt), waits for you to power the target into IPv4 PXE, wipes+installs via nixos-anywhere (no reboot — network-boot-first would loop back into the installer), then verifies the install ON DISK. A live service verify needs the box on its final network: move it to router R (and wifi for 0b/0c/0d), power-cycle, then run the verifier. Installer IP 192.168.100.50.",
       "cwd": ".",
       "cmd": "tools/e2e_install_native_ethernet.sh",
-      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
+      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify. Pick the network variant in the id.\n# dash runs a PREFLIGHT for the setup first and refuses with instructions if it isn't ready.\n./dash run install.cable-0a --on cable-0a --ip 192.168.100.50 --key <SSH_KEY> \\\n  --env NETBOOT=auto --env TRANSPORT=<none|https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> \\\n  --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>\n# cable-0b / cable-0d / cable-0c leave the server on wifi: add --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>\n./dash run install.cable-0d --on cable-0d --ip 192.168.100.50 --key <SSH_KEY> \\\n  --env NETBOOT=auto --env TRANSPORT=<none|https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> \\\n  --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+      "cmd_template": "./dash run install.{setup} --on {setup} --ip 192.168.100.50 --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=<none|https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>{wifi}",
+      "wifi_args": " --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
     },
     {
-      "id": "install.lan-setup-1",
-      "name": "LAN · via router R (target wired)",
+      "id": "install.wifi",
+      "name": "Wifi (netboot through router R)",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
-      "method": "lan-setup-1",
+      "method": "wifi",
+      "setups": [
+        "wifi-0a",
+        "wifi-0d"
+      ],
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "Laptop on R's wifi, target wired to R. Requires R configured for netboot (preflight blocks otherwise).",
+      "desc": "Your computer on R's wifi, the server netboots through router R (run install.wifi-0a = server cabled to R, install.wifi-0d = server on R's wifi). NOT runnable yet: it needs R configured for network boot and dash has no check for that, so the preflight always refuses (with the setup instructions).",
       "cwd": ".",
       "cmd": "tools/e2e_install_native_ethernet.sh",
-      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
-    },
-    {
-      "id": "install.lan-setup-2",
-      "name": "LAN · via router R (target wifi)",
-      "level": "install",
-      "category": "install",
-      "client": "-",
-      "networks": [],
-      "method": "lan-setup-2",
-      "backend": "native",
-      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
-      "budget_s": 900,
-      "desc": "Laptop + target both on R's wifi. Requires R configured for netboot (preflight blocks otherwise).",
-      "cwd": ".",
-      "cmd": "tools/e2e_install_native_ethernet.sh",
-      "run": "# FULL end-to-end: wipe target disks -> install SelfPrivacy (NixOS) -> verify.\n# dash runs a PREFLIGHT for this --on first and refuses with instructions if the setup isn't ready.\n# Override IP:  ./dash run <id> --ip <addr>   (or IP=<addr>); if the box isn't at that IP the e2e auto-discovers it on the LAN by MAC.\nIP=<TARGET_LAN_IP> MAC=<TARGET_NIC_MAC> KEY=~/.ssh/<DEPLOY_KEY> DOMAIN=<YOUR_DOMAIN> TRANSPORT=https \\\n  FLAKE=<PATH_TO_DEPLOY_FLAKE> EXTRA=$FLAKE/state/extra dev-dashboard/tools/e2e_install_native_ethernet.sh"
+      "run": "# Needs router R configured for network boot (preflight refuses with instructions otherwise).\n./dash run install.wifi-0a --on wifi-0a --ip <TARGET_IP_ON_R> --key <SSH_KEY> \\\n  --env NETBOOT=off --env TRANSPORT=<https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> \\\n  --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>\n./dash run install.wifi-0d --on wifi-0d --ip <TARGET_IP_ON_R> --key <SSH_KEY> \\\n  --env NETBOOT=off --env TRANSPORT=<https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> \\\n  --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+      "cmd_template": "./dash run install.{setup} --on {setup} --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env NETBOOT=off --env TRANSPORT=<https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>{wifi}",
+      "wifi_args": " --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
     },
     {
       "id": "install.usb",
-      "name": "native · installer USB",
+      "name": "USB stick (installer USB → internal disk)",
       "level": "install",
       "category": "install",
       "client": "-",
       "networks": [],
       "method": "usb",
+      "setups": [
+        "usb-0a",
+        "usb-0d",
+        "usb-0c"
+      ],
       "backend": "native",
       "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
       "budget_s": 900,
-      "desc": "ONE chain: prepare a bootable installer USB on this device -> you boot+install it on the target -> stamp + verify. Prompts guide the manual steps.",
+      "desc": "ONE chain per network variant (run install.usb-0a / -0d / -0c): prepare a bootable installer USB on this computer -> you boot+install it on the target -> stamp + verify. Prompts guide the manual steps.",
       "cwd": ".",
       "cmd": "tools/e2e_install_usb.sh",
-      "run": "# ONE-CHAIN usb install+verify (prompts for inserting/writing the USB and confirming the target install):\nUSB_DEV=/dev/sdX IP=192.168.1.167 MAC=d8:cb:8a:7c:0a:f4 KEY=~/.ssh/pcname_ed25519 DOMAIN=weersurf.nl TRANSPORT=https \\\n  FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer dev-dashboard/tools/e2e_install_usb.sh"
+      "run": "# ONE-CHAIN usb install+verify (prompts for writing the USB and confirming the target install):\n./dash run install.usb-0a --on usb-0a --ip <TARGET_IP_ON_R> --key <SSH_KEY> \\\n  --env USB_DEV=<USB_DEVICE_eg_/dev/sdX> --env TRANSPORT=<none|https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> \\\n  --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>\n# usb-0d / usb-0c leave the server on wifi: add --env WIFI_SSID=<SSID> (checked in range). The USB chain\n# writes no wifi config: set the server's wifi up by hand during the USB install.",
+      "cmd_template": "./dash run install.{setup} --on {setup} --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env USB_DEV=<USB_DEVICE> --env TRANSPORT=<none|https|onion> --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --env DOMAIN=<YOUR_DOMAIN>{wifi}",
+      "wifi_args": " --env WIFI_SSID=<SSID>"
+    },
+    {
+      "id": "install.vm",
+      "name": "VM (VirtualBox on this computer)",
+      "level": "install",
+      "category": "install",
+      "client": "-",
+      "networks": [],
+      "method": "vm",
+      "setups": [
+        "vm"
+      ],
+      "backend": "vm",
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 900,
+      "desc": "NixOS backend in VirtualBox on THIS computer: destroys any old VM and builds the image FROM SOURCE (the committed backend flake), so the VM runs the code under test. 4096 MiB RAM: the in-VM nixos-install livelocked a 2048 MiB guest. Then ./dash vm-up restarts it with the stable VirtualBox settings.",
+      "cmd": "SP_BUILD_MODE=build SP_VM_ACTION=reinstall SP_VM_MEMORY=4096 ./build-and-run.sh",
+      "run": "# Fresh VM from source on THIS computer (destroys the old VM), then start it with the stable VirtualBox\n# settings and wait for its .onion. VirtualBox must not share VT-x with a running L1/L2.\n./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up\n# raw: cd Manager-Ubuntu-SelfPrivacy-Over-Tor/backend && SP_BUILD_MODE=build SP_VM_ACTION=reinstall SP_VM_MEMORY=4096 ./build-and-run.sh",
+      "cmd_template": "./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up"
+    }
+  ],
+  "reaches": [
+    {
+      "id": "reach.onion",
+      "name": "make reachable: .onion",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "onion",
+      "reach_name": null,
+      "reach_row": "onion",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=onion",
+      "desc": "Onion only: no public tunnel — confirms the installed box and leaves it on its LAN + .onion (the onion service is part of every install). Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method none --domain-kind none",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.onion --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY>",
+      "cmd_template": "./dash run reach.onion --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY>"
+    },
+    {
+      "id": "reach.tailscale",
+      "name": "make reachable: Tailscale",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "tailscale",
+      "reach_name": null,
+      "reach_row": "tailscale",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=tailscale",
+      "desc": "Joins the box to your tailnet with a single-use auth key and turns on Tailscale Funnel (https://selfprivacy.<tailnet>.ts.net); waits until it is live from the internet. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method tailscale --tailscale-authkey \"${TAILSCALE_AUTHKEY:?--env TAILSCALE_AUTHKEY=tskey-auth-... is required (single-use)}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.tailscale --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env TAILSCALE_AUTHKEY=<tskey-auth-...>",
+      "cmd_template": "./dash run reach.tailscale --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env TAILSCALE_AUTHKEY=<tskey-auth-...>"
+    },
+    {
+      "id": "reach.cloudflare-buy",
+      "name": "make reachable: Cloudflare + Buy a domain",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "cloudflare",
+      "reach_name": "buy",
+      "reach_row": "cloudflare-buy",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=cloudflare;name=buy",
+      "desc": "Runs a headless Cloudflare named tunnel (connector token from the Zero Trust dashboard) for the domain you bought (zone on Cloudflare); add the 5 public hostnames in the dashboard. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method cloudflare --cf-named --domain-kind paid --domain \"${DOMAIN:?--env DOMAIN=<YOUR_DOMAIN> is required}\" --cf-tunnel-token \"${CF_TUNNEL_TOKEN:?--env CF_TUNNEL_TOKEN=<tunnel connector token> is required}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.cloudflare-buy --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN> --env CF_TUNNEL_TOKEN=<CONNECTOR_TOKEN>",
+      "cmd_template": "./dash run reach.cloudflare-buy --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN> --env CF_TUNNEL_TOKEN=<CONNECTOR_TOKEN>"
+    },
+    {
+      "id": "reach.cloudflare-trycf",
+      "name": "make reachable: Cloudflare + Free *.trycloudflare.com",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "cloudflare",
+      "reach_name": "trycf",
+      "reach_row": "cloudflare-trycf",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=cloudflare;name=trycf",
+      "desc": "Runs a Cloudflare quick tunnel: a free random https://<random>.trycloudflare.com for the API (testing only; the name changes on restart). Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method cloudflare --cf-quick",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.cloudflare-trycf --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY>",
+      "cmd_template": "./dash run reach.cloudflare-trycf --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY>"
+    },
+    {
+      "id": "reach.ipv6-buy",
+      "name": "make reachable: Direct IPv6 + Buy a domain",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "ipv6",
+      "reach_name": "buy",
+      "reach_row": "ipv6-buy",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=ipv6;name=buy",
+      "desc": "Checks the box has a public IPv6 on its final network and prints the AAAA record to set at your registrar. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method ipv6 --domain-kind paid --domain \"${DOMAIN:?--env DOMAIN=<YOUR_DOMAIN> is required}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.ipv6-buy --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+      "cmd_template": "./dash run reach.ipv6-buy --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>"
+    },
+    {
+      "id": "reach.ipv6-duckdns",
+      "name": "make reachable: Direct IPv6 + DuckDNS (free)",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "ipv6",
+      "reach_name": "duckdns",
+      "reach_row": "ipv6-duckdns",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=ipv6;name=duckdns",
+      "desc": "Checks the box has a public IPv6 and installs a timer on the box that keeps <name>.duckdns.org's AAAA pointed at it. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method ipv6 --domain-kind free --domain-source duckdns --domain \"${DOMAIN:?--env DOMAIN=<NAME>.duckdns.org is required}\" --duckdns-token \"${DUCKDNS_TOKEN:?--env DUCKDNS_TOKEN=<DuckDNS token> is required}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.ipv6-duckdns --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org --env DUCKDNS_TOKEN=<DUCKDNS_TOKEN>",
+      "cmd_template": "./dash run reach.ipv6-duckdns --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org --env DUCKDNS_TOKEN=<DUCKDNS_TOKEN>"
+    },
+    {
+      "id": "reach.portfwd-buy",
+      "name": "make reachable: Port-forward + Buy a domain",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "portfwd",
+      "reach_name": "buy",
+      "reach_row": "portfwd-buy",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=portfwd;name=buy",
+      "desc": "Prints the router port-forward (TCP 443 → the box) and the 5 A records (→ your public IPv4) to set by hand. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method router --domain-kind paid --domain \"${DOMAIN:?--env DOMAIN=<YOUR_DOMAIN> is required}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.portfwd-buy --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+      "cmd_template": "./dash run reach.portfwd-buy --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>"
+    },
+    {
+      "id": "reach.portfwd-duckdns",
+      "name": "make reachable: Port-forward + DuckDNS (free)",
+      "level": "reach",
+      "category": "reach",
+      "client": "-",
+      "networks": [],
+      "reach": "portfwd",
+      "reach_name": "duckdns",
+      "reach_row": "portfwd-duckdns",
+      "setups": [
+        "cable-0a",
+        "cable-0b",
+        "cable-0d",
+        "cable-0c",
+        "wifi-0a",
+        "wifi-0d",
+        "usb-0a",
+        "usb-0d",
+        "usb-0c",
+        "vm"
+      ],
+      "backend": "native",
+      "needs_box": true,
+      "repos": [
+        "manager",
+        "api"
+      ],
+      "repo": "../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend",
+      "budget_s": 1200,
+      "cwd": ".",
+      "diagram": "flow.html#setup-map;reach=portfwd;name=duckdns",
+      "desc": "Prints the router port-forward (TCP 443 → the box) and how to keep <name>.duckdns.org pointed at your public IPv4. Runs tools/add-cloudflare.sh against an installed box over SSH (the VM's reach is fixed by the harness, so the VM column is not wired).",
+      "cmd": "bash tools/add-cloudflare.sh --key \"${KEY:?--key <SSH_KEY> is required}\" --ip \"${IP:?--ip <BOX_LAN_IP> is required}\" --setup \"${SP_SETUP:?dash sets SP_SETUP from --on}\" --method router --domain-kind free --domain-source duckdns --domain \"${DOMAIN:?--env DOMAIN=<NAME>.duckdns.org is required}\"",
+      "run": "# After installing the box (any box setup), make it reachable this way:\n./dash run reach.portfwd-duckdns --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+      "cmd_template": "./dash run reach.portfwd-duckdns --on {setup} --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org"
     }
   ]
 }
