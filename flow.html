@@ -111,7 +111,10 @@
     #edgepanel input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--border);
                                    background: var(--panel); border-radius: 4px; cursor: pointer; }
     .usb-trip { pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) { .gh-anim { display: none; } }   /* FR118: the gatehouse's moving lights */
     @media (prefers-reduced-motion: reduce) { .usb-trip { display: none; } }   /* NT10 */
+    .pb-still { display: none; }   /* FR121: the phonebook's still cover, only when motion is reduced */
+    @media (prefers-reduced-motion: reduce) { .pb-anim { display: none; } .pb-still { display: inline; } }
     #edgepanel .ep-nest .val { width: 30px; }
     #edgepanel .val { color: var(--dim); font-size: 11px; width: 22px; display: inline-block; text-align: right; }
     #edgepanel #ep-id { color: var(--fg); font-size: 12px; background: var(--panel); border: 1px solid var(--border);
@@ -180,6 +183,7 @@
         </marker>
       </defs>
       <g id="viewport">
+        <g id="under"></g>
         <g id="edges"></g>
         <g id="nodes"></g>
       </g>

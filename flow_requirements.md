@@ -972,6 +972,82 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   on `setup-map;method=cable;net=0a;reach=tailscale` it opens `index.html#method=cable;net=0a;reach=tailscale` (the
   matrix filtered to that view); on other diagrams it opens the whole matrix. The matrix links back with ▦ per column,
   row group and cell.
+- **FR118. The home router is a gatehouse with two gates: a fire wall and port 443.** (User: *for the router I should not
+  only have the port open icon, but also a firewall icon that is opened or not … more space for those 2 icons to act as
+  2 gates on the tunnels going through … the firewall and gate open icons go open and close (moving animations) showing a
+  white light going through (or being blocked).* Then, choosing the classic-box router from the proposal: *visualise the
+  tailscale tunnel going around the port and/or gate to illustrate that users don't have to open it … add small flame
+  icons on the bricks so people think "fire wall" … make a bit of room above to let the tunnel(s) run over the gates
+  instead of through.*) `ic-router` is the classic box (two antennas, four LEDs). A tunnel with **`gate: "<router id>"`**
+  (one of its `via` boxes) crosses that router as a gatehouse; **`open`** lists the gates it opens: port-forward
+  `["firewall", "port"]`, direct IPv6 `["firewall"]`; no `open` = an outbound tunnel (Tailscale, Cloudflare, Tor) that
+  runs in the **lane above the gates** with both gates shut. Geometry, as fractions of the router's anchor box: lane at
+  0.159 h, gate row at 0.611 h, side margins at 0.083 w / 0.917 w, two windows centred at 0.30 w / 0.694 w (0.278 w wide,
+  0.333 h → 0.889 h); the **fire wall** is the window nearer the exit side, **port 443** the other one — left out when no
+  route opens a port and none uses the lane (IPv6 then shows the fire wall only, plus *"no receptionist"* where the
+  port would be). The pipe enters, runs to the row (or lane), crosses and leaves level with it unless a leg's start
+  offset was dragged; FR95 leg dragging outside the router still works, the run across it stays put. The fire wall is
+  a brick wall with three flickering flames that slides down to open; the port is a striped barrier that lifts.
+  Labels *🔥 fire wall* / *🚧 port 443* above the windows. The router body and windows are drawn **under** the pipes,
+  the gates and lights **over** them. Animation (8 s loop, SMIL, the same in the editor and the published SVG; hidden
+  under `prefers-reduced-motion`): row routes — the wall slides down, the barrier lifts, a friend's white light passes
+  both open gates to the server; later the gates shut and a stranger's light bounces red off the fire wall with a ✕.
+  Lane routes — the server's light goes out along the lane over the shut gates and back; a stranger bounces off the
+  shut fire wall. An arrow can end ON a window: `toOn: "<route>:firewall"` / `"<route>:gate"` (e.g. *open the fire
+  wall* from the IPv6 note, *open port 443* from the port-forward note). **Replaces FR100 / FR102's movable,
+  resizable gate badge** (`gx` / `gy` / `gr` retired, the line panel's gate-size row hidden). A through-route's label
+  sits on its longest **level** stretch, never across an upright pipe (tunnel labels now sit in the lane band over the
+  gates). Data: `e_pf_b`, `e_v6`, `e_ts_up`, `e_cf_up`, `e_tor_up` gated; their router-side leg offsets (made for the
+  old icon, they looped inside the new body) cleared; `e_scable` / `e_swifi` `nestB` → 0 (the plug covered the fire
+  wall label); "Another router (Y)" moved above-right of the router (it sat on the lane exit in every `0c` view) and its
+  four lines' offsets reset. Verified: every line, gate window and route label identical in the editor and the SVG
+  (8 views); 91 views open without errors (gatehouse in all 72 box views, none in VM where the router is hidden); the
+  Shift overlay finds no overlapping boxes in any of the 80 states; frames checked at several times of the loop.
+- **FR119. The DNS name is a phonebook: a book, coloured by cost, slow or fast.** (User: *the dns and registrar should
+  be visualised like a phonebook … a dns host with an api is too complicated, use the phonebook analogy, and indicate
+  ipv6 can work with a fast phonebook (with API) and that most registrars don't have that.* And: *just make it a book
+  icon — the colours already say cost / intermediary; "you edit this by hand" as action input vs "your server updates
+  its own entry"; a snail for the slow (most registrars) one; https://yourdomain.org and "your ip like: …".*)
+  **`nodeType: "phonebook"`** draws a book, no box: cover in the node's colour (red = a domain you buy, orange =
+  DuckDNS), spine, *PHONEBOOK* title, an entry card from **`entry`** (monospace, e.g. `https://yourdomain.org` /
+  `→ your ip, like: 123.45.67.89` — a valid example address), **`badge`** 🐌 `snail` (slow: most registrars, changed by
+  hand) or ⚡ `bolt` (fast: an API, the server updates its own entry); the label goes under the book, the drill-down
+  link on the cover. Port-forward + IPv6 views: `pbook` (*Buy a domain*, red, snail, opens the registrar diagram)
+  with *you edit this by hand* (action) and `duck` (*DuckDNS*, orange, bolt) with *your server updates its own entry*
+  (info); both with *your friend looks up your ip* to the friend's phone. The Cloudflare view keeps its "Buy a
+  domain" box (there the name points at Cloudflare's tunnel, not at your address). (The book is drawn as FR121's animated
+  DNS book since.)
+- **FR120. Direct IPv6 is for a server at home: you open the router's fire wall.** (User: *it should be clear that ipv6
+  is only for a server at home where you can open the firewall on the router — not for a laptop moving from Whole Foods
+  to some café.*) IPv6 views get the red note `v6warn`: *Direct IPv6 = only for a server AT HOME · Open the fire wall
+  for your server by hand in your router settings (ports 443 + 80) · Not for a laptop on the move (café, office…): a
+  new address at each place, and their router won't let friends in*, with an action line from *Your computer* and a
+  thick action arrow onto the router's **fire wall** window (FR118). VM views (no router drawn) get their own copy
+  `v6warnVM` below the VM's IPv6 pipe; there the *Not everyone has IPv6* note is the friend-side copy (`v6block12`
+  buy, new `v6block13` DuckDNS) and the base `v6block` shows in the box views only. `tools/add-cloudflare.sh` no longer
+  says nothing needs opening for IPv6: it tells you to allow incoming TCP 443 (+ 80 for a Let's Encrypt HTTP-01
+  certificate) to the box's IPv6 address in the router's IPv6 firewall (most block incoming IPv6 by default), and that
+  this is for a server at home; the port-forward path also mentions TCP 80 for HTTP-01; a failed reachability check
+  says what to look at.
+- **FR121. The phonebook is animated: one DNS lookup per loop (the router-gates demo).** (User: *replace the existing
+  phonebooks with the new animation in "The DNS phonebook as an icon (demo): one lookup" — use the colouring orange /
+  red / green for centralised, costly and free. Also add the "server updates its own entry" line.*) A phonebook node is
+  the demo's book: closed, a cover with **DNS PHONEBOOK** in the node's colour = its cost (red = a domain you buy,
+  orange = a company you depend on, the new palette colour **green** = free & in your own hands), the 🐌 / ⚡ badge on
+  its outer top corner, *⊕ open* on the cover, the label below. It is drawn in the demo's units (a page = 110 × 78),
+  scaled so the OPEN book is as wide as the node — resize the node for a bigger book. The node's **`lights`** names
+  the lines the lights ride: **`ask`** — your friend's white light (the https address from `entry`) comes in on it and
+  slides under the book; the cover opens **toward** that line (a spine-right book when it leaves on the right) and
+  the pages flip A → H → P → Y; the entry lights up under the caption *✓ https://… matches ip …*; the ip is packed into a
+  gray light that travels along **`answer`** to its far end, which glows (the demo's "sends it on to your server");
+  **`update`** — the loop starts with your server's ip coming in on that line (*your server updates its own entry*).
+  One lookup = 9 s (+1.6 s with an update), SMIL in the editor and the published SVG; under `prefers-reduced-motion`
+  a still, shut book without lights. A line named in `lights` that is hidden, gone or not attached to the book is
+  skipped. Data: `pbook` — ask `e_pb_friend`, answer `e_pb_srv`; `duck` — ask `e_duck`, answer + update
+  `e_duck_srv`. The entry page takes the domain and the ip from `entry` (`123.45.67.89`; the demo's `…67.69` was a
+  slip). Verified: editor = SVG for the book's place, every light's path + timing and the glow in 6 views (LAN / wifi /
+  USB / VM × buy / DuckDNS × port-forward / IPv6); line parity, overlap scan and all views open without errors; frames
+  checked in both; reduced motion checked in both.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

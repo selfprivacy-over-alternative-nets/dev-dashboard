@@ -127,11 +127,11 @@ run_wizard(){
       method)   # rule: one of 1-8 / a transport name. empty or anything else → re-ask.
         msg "  ${B}1) cloudflare${X}   Cloudflare Tunnel — FREE, outbound, works behind CGNAT (centralised)"
         msg "  ${B}2) tailscale${X}    Tailscale Funnel — FREE stable https://<name>.ts.net, valid cert, no port-forward, CGNAT-proof (recommended)"
-        msg "  ${B}3) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay/port-forward (needs ISP IPv6)"
+        msg "  ${B}3) ipv6${X}         Direct IPv6 — DECENTRALISED, free, no relay (needs ISP IPv6; server AT HOME: you open the router's IPv6 firewall)"
         msg "  ${B}4) ngrok${X}        ngrok — free tier = 1 static *.ngrok-free.app (browser interstitial)"
         msg "  ${B}5) pinggy${X}       Pinggy — SSH-based, nothing to install; free random *.pinggy.link (~60 min)"
         msg "  ${B}6) localtunnel${X}  LocalTunnel — free *.loca.lt with a custom prefix"
-        msg "  ${B}7) router${X}       forward :443 on your own router (needs router admin)"
+        msg "  ${B}7) router${X}       forward :443 on your own router, + :80 for an HTTP-01 certificate (needs router admin)"
         msg "  ${B}8) none${X}         LAN / .onion only — just set my domain"
         a=$(askb "    choose 1-8 (or name): ")
         [ "$a" = "$BACK" ] && { msg "${GR}  (already at the first question)${X}"; continue; }
@@ -204,7 +204,8 @@ recommend_method(){
   msg "    ${GR}no port-forward, no router admin, no paid domain; reachable from anywhere (CGNAT-proof).${X}"
   if curl -6 -s --max-time 4 https://api6.ipify.org >/dev/null 2>&1; then
     msg "    ${GR}(This machine has IPv6 — a decentralised ${X}${B}ipv6 + DuckDNS${X}${GR} path is also proven, IF the box${X}"
-    msg "    ${GR} also gets public IPv6 on its final network. Choose it with ${X}${B}--expert-mode${X}${GR}.)${X}"
+    msg "    ${GR} also gets public IPv6 on its final network AND you can open your router's IPv6 firewall for it.${X}"
+    msg "    ${GR} Choose it with ${X}${B}--expert-mode${X}${GR}.)${X}"
   fi
   msg "    ${GR}Want a different method? Re-run with ${X}${B}--expert-mode${X}${GR} for the full list.${X}"
   msg ""
@@ -401,8 +402,8 @@ wait_reachable(){ local host="$1" path="${2:-/}" t0=$SECONDS ceil=$(( SECONDS + 
 # Under `./dash run reach.<row>` (non-interactive) a route only counts once the API answers from the public
 # internet on the same endpoint the install verifier checks — printed instructions or a started service are not proof
 # (req 130). Interactive runs keep their guided flow.
-prove_public(){ [ "$INTERACTIVE" = 1 ] && return 0
-  wait_reachable "$1" /api/version || fail_later "https://$1/api/version not reachable from the internet"; }
+prove_public(){ [ "$INTERACTIVE" = 1 ] && return 0   # $2 (optional) = what to check when it isn't reachable
+  wait_reachable "$1" /api/version || fail_later "https://$1/api/version not reachable from the internet${2:+ — $2}"; }
 
 say "3/4  configuring: $METHOD"
 case "$METHOD" in
@@ -617,12 +618,19 @@ case "$METHOD" in
     fi
     msg "${GR}NOTE: Funnel is ONE hostname → the app connects at the apex (HTTPS_APEX, below). The full api./cloud./… suite needs a real domain + Cloudflare named tunnel or port-forward.${X}" ;;
   ipv6)
-    # DECENTRALISED: reach B directly over its public IPv6 — no relay, no NAT, no port-forward. The box
-    # firewall already allows :443 (NixOS opens it for v4+v6); we just publish/track an AAAA record.
+    # DECENTRALISED: reach B directly over its public IPv6 — no relay, no NAT, no port-forward. The box's own
+    # firewall already allows :443 (NixOS opens it for v4+v6), but a home router's IPv6 firewall blocks
+    # INBOUND by default: the user opens it for B (TCP 443, + 80 for an HTTP-01 cert). So: a server AT HOME
+    # only — on someone else's network (café, office) you can't open their router and the address changes.
+    # We publish/track the AAAA record.
     DOMAIN=$(need "$DOMAIN" --domain "domain to point at the box (e.g. grandma-1.duckdns.org): ") || exit 2
     V6=$(box_global_ipv6 "$IP" "$KEY")   # autodetect on the box's CURRENT (final) network
     [ -n "$V6" ] || { msg "${R}no routable public IPv6 on the box's current network (IPv4-only / CGNAT). Use --method cloudflare instead.${X}"; exit 1; }
-    msg "${G}box has a public IPv6:${X} ${B}$V6${X} — no NAT; :443 already open in the NixOS firewall."
+    msg "${G}box has a public IPv6:${X} ${B}$V6${X} — no NAT; :443 already open in the box's own (NixOS) firewall."
+    msg "${Y}Your ROUTER's IPv6 firewall still blocks visitors${X} (most home routers block incoming IPv6 by default)."
+    msg "  On your router (admin page ▸ firewall / IPv6 / 'permit access'), allow incoming ${B}TCP 443${X} to ${B}$V6${X}"
+    msg "  (+ ${B}TCP 80${X} if the certificate comes via Let's Encrypt HTTP-01; not needed for DNS-01)."
+    msg "${GR}  Server at home only: on someone else's network (café, office) you can't open their router, and the address changes per network.${X}"
     if printf '%s' "$DOMAIN" | grep -q '\.duckdns\.org$' && [ -z "$DUCKDNS_TOKEN" ] && [ "$INTERACTIVE" = 1 ]; then
       DUCKDNS_TOKEN=$(ask "DuckDNS token (auto-update the AAAA; blank = I'll set it manually): ")
     fi
@@ -643,13 +651,13 @@ EOF
     else
       msg "Set an ${B}AAAA${X} record ${B}$DOMAIN → $V6${X} at your DNS host (DuckDNS: pass --duckdns-token to auto-update)."
     fi
-    msg "${GR}Cert: the box runs Let's Encrypt for $DOMAIN itself (HTTP-01 over the now-reachable :80, or DNS-01). Visitors need IPv6 too.${X}"
-    prove_public "api.$DOMAIN"
+    msg "${GR}Cert: the box runs Let's Encrypt for $DOMAIN itself (HTTP-01 over :80 opened in the router as above, or DNS-01). Visitors need IPv6 too.${X}"
+    prove_public "api.$DOMAIN" "is the router's IPv6 firewall open for $V6 on TCP 443?"
     print_app_cmd "api.$DOMAIN" ;;
   router)
     PUB=$(box "curl -s --max-time 10 https://api.ipify.org"); LAN=$(box 'hostname -I' | awk '{print $1}')
     msg "${B}Router port-forward${X} (free, but needs admin on every NAT hop):"
-    msg "  1. On your router, forward ${B}TCP 443 → $LAN:443${X}."
+    msg "  1. On your router, forward ${B}TCP 443 → $LAN:443${X} (+ ${B}TCP 80 → $LAN:80${X} if the certificate comes via Let's Encrypt HTTP-01)."
     msg "  2. Add these A-records at your DNS host, pointing at your PUBLIC IP ${B}${PUB:-<router-public-ip>}${X}:"
     for s in "${SUBS[@]}"; do msg "       A   $s.${DOMAIN:-$BOX_DOMAIN}   ${PUB:-<public-ip>}"; done
     msg "  3. Verify: ${B}bash tools/finish_box_setup.sh --domain ${DOMAIN:-$BOX_DOMAIN} --key ${KEY/#$HOME/\~} --ip $IP --setup $SETUP${X}"
@@ -657,9 +665,9 @@ EOF
       sub="${DOMAIN%.duckdns.org}"
       msg "  ${GR}DuckDNS: keep ${DOMAIN:-<sub>.duckdns.org} pointed at your public IP with a timer on the box:${X}"
       msg "     ${C}*/5 * * * * curl -s 'https://www.duckdns.org/update?domains=${sub:-<sub>}&token=<your-token>&ip='${X}"
-      msg "  ${Y}(DuckDNS is dynamic-DNS to YOUR IP — still needs :443 forwarded; it canNOT host a Cloudflare tunnel.)${X}"
+      msg "  ${Y}(DuckDNS is dynamic-DNS to YOUR IP — still needs :443 (+ :80 for HTTP-01) forwarded; it canNOT host a Cloudflare tunnel.)${X}"
     fi
-    prove_public "api.${DOMAIN:-$BOX_DOMAIN}"
+    prove_public "api.${DOMAIN:-$BOX_DOMAIN}" "is TCP 443 forwarded to $LAN on the router, and does the A record point at ${PUB:-your public IP}?"
     print_app_cmd "api.${DOMAIN:-$BOX_DOMAIN}" ;;
   none)
     msg "${GR}No public tunnel chosen — the box is reachable on the LAN and over its .onion only.${X}"

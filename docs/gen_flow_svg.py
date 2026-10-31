@@ -22,6 +22,7 @@ PALETTE = {  # must match flow.js PALETTE / requirements.md req 165
     "target": ("#2a1d10", "#e3882d"), "created": ("#10231a", "#3fb950"),
     "input": ("#2a2410", "#d6a015"), "note": ("#14181f", "#6e7681"),
     "red": ("#2a1113", "#e5484d"), "orange": ("#2a1a0c", "#f97316"),   # FR108
+    "green": ("#10231a", "#3fb950"),   # FR121: free & in your own hands (e.g. a free phonebook)
 }
 FG, DIM = "#c9d1d9", "#6e7681"
 EDGE_ICON = {"cable": "ethernet", "lan": "ethernet", "wifi": "wifi", "usb": "usb", "tunnel": "relay", "tor": "tor"}
@@ -55,19 +56,92 @@ def side_of(p, R):
     return "w" if abs(p[0] - R[0]) < 0.5 else "e" if abs(p[0] - R[0] - R[2]) < 0.5 else "n" if abs(p[1] - R[1]) < 0.5 else "s"
 
 
+GH = {}   # FR118: edge id → the crossing of a gated route through its gatehouse router (cleared per render) — mirrors flow.js GH
+
+
+def gate_mode(e):   # FR118: a route that opens gates runs along the gate row, one that opens none (a tunnel) over them
+    return "row" if isinstance(e.get("open"), list) and e["open"] else "lane"
+
+
+def gate_geo(R):   # FR118: the gatehouse as fractions of the router body — mirrors flow.js gateGeo
+    x, y, w, h = R
+    return {"mL": x + 0.083 * w, "mR": x + 0.917 * w, "laneY": y + 0.159 * h, "rowY": y + 0.611 * h, "botY": y + 0.95 * h,
+            "xs": (x + 0.30 * w, x + 0.694 * w), "ww": 0.278 * w, "wy0": y + 0.333 * h, "wy1": y + 0.889 * h}
+
+
+def gate_cross(p, q, R, mode):   # FR118: p (entry) → the gate row or the lane → q (exit) — mirrors flow.js gateCross
+    G = gate_geo(R)
+    Y = G["laneY"] if mode == "lane" else G["rowY"]
+    sp, sq = side_of(p, R), side_of(q, R)
+    pref = lambda pt, sd: G["mL"] if sd == "w" else G["mR"] if sd == "e" else (G["mL"] if pt[0] < R[0] + R[2] / 2 else G["mR"])
+    mq, mp = pref(q, sq), pref(p, sp)
+    if mp == mq:   # the exit side chooses first
+        mp = G["mR"] if mq == G["mL"] else G["mL"]
+
+    def to_y(pt, sd, m):
+        if sd in ("w", "e"):
+            return [pt, (m, pt[1]), (m, Y)]
+        if sd == "n":
+            return [pt, (pt[0], Y)] if mode == "lane" else [pt, (pt[0], G["laneY"]), (m, G["laneY"]), (m, Y)]
+        return [pt, (pt[0], G["botY"]), (m, G["botY"]), (m, Y)]
+    return _dedupe(to_y(p, sp, mp) + list(reversed(to_y(q, sq, mq)))), mp, mq
+
+
+def gate_wins(gh):   # FR118: the fire wall on the exit (internet) side, the port barrier on the server side — mirrors flow.js gateWins
+    G = gate_geo(gh["R"])
+    fire_x = G["xs"][1] if gh["mq"] > gh["mp"] else G["xs"][0]
+    port_x = G["xs"][0] if fire_x == G["xs"][1] else G["xs"][1]
+    win = lambda cx: {"x": cx - G["ww"] / 2, "y": G["wy0"], "w": G["ww"], "h": G["wy1"] - G["wy0"], "cx": cx, "cy": G["rowY"]}
+    return win(fire_x), win(port_x), G
+
+
+PB = {"W": 110, "H": 78, "T": 9, "U": 1.6}   # FR121: page size (book units) · one lookup (s) · the server's update before it (s)
+
+
+def book_geom(n, b):   # FR119 / FR121: the CLOSED book, centred above its label (lines attach to it) — mirrors flow.js bookGeom
+    lh = len([l for l in str(n.get("label", "")).split("\n") if l]) * 15
+    h = max(30, b[3] - lh - (6 if lh else 0))
+    s = min(h / (PB["H"] + 7), b[2] / (2 * (PB["W"] + 5)))
+    w, bh = (PB["W"] + 5) * s, (PB["H"] + 7) * s
+    return {"x": b[0] + (b[2] - w) / 2, "y": b[1] + (h - bh) / 2, "w": w, "h": bh, "s": s, "ty": b[1] + h + 16}
+
+
+def book_lights(n, B, epoly, edges):   # FR121: the lines n.lights names, oriented far end → book (in) / book → far end (out) — mirrors flow.js bookLights
+    L = n.get("lights") or {}
+    by = {e["id"]: e for e in edges}
+
+    def ride(eid, inward):
+        e = by.get(eid) if eid else None
+        p = epoly.get(eid) if e else None
+        if not p or len(p) < 2 or n["id"] not in (e.get("from"), e.get("to")):   # gone, hidden, or not at this book
+            return None
+        return {"poly": list(p) if (e.get("to") == n["id"]) == inward else list(reversed(p)), "far": e["to"] if e.get("from") == n["id"] else e["from"]}
+    ask, answer, update = ride(L.get("ask"), True), ride(L.get("answer"), False), ride(L.get("update"), True)
+    d = 1   # 1 = spine left, opens to the left; -1 = spine right — the cover opens toward the line the question comes in on
+    if ask:
+        sd = side_of(ask["poly"][-1], (B["x"], B["y"], B["w"], B["h"]))
+        d = -1 if sd == "e" else 1 if sd == "w" else (-1 if ask["poly"][0][0] > B["x"] + B["w"] / 2 else 1)
+    return {"ask": ask, "answer": answer, "update": update, "dir": d}
+
+
 def through_box(p, q, R, c=None):   # FR93: orthogonal p (on R's outline) → c (R's centre / its gate, FR100) → q — mirrors flow.js throughBox
     c = c or center(R)
     into = lambda z: (c[0], z[1]) if (abs(z[0] - R[0]) < 0.5 or abs(z[0] - R[0] - R[2]) < 0.5) else (z[0], c[1])
     return [p, into(p), c, into(q), q]
 
 
-def longest_mid(poly):   # FR93: a through-route's label sits on its longest straight stretch
-    best = None
+def longest_mid(poly):   # FR93: a through-route's label sits on its longest LEVEL stretch (FR118: never across an upright
+    best = lvl = None    # pipe); with none level, on its longest stretch — beside the pipe when that one is upright (v)
     for i in range(1, len(poly)):
-        L = ((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5
+        (ax, ay), (bx, by) = poly[i - 1][:2], poly[i][:2]
+        L = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+        m = (L, (ax + bx) / 2.0, (ay + by) / 2.0, abs(bx - ax) < 0.5)
         if best is None or L > best[0]:
-            best = (L, (poly[i][0] + poly[i - 1][0]) / 2.0, (poly[i][1] + poly[i - 1][1]) / 2.0)
-    return (best[1], best[2]) if best else poly[0]
+            best = m
+        if L and abs(by - ay) < 0.5 and (lvl is None or L > lvl[0]):
+            lvl = m
+    s = lvl or best
+    return s[1:] if s else (poly[0][0], poly[0][1], False)
 
 
 GATE_GAP = 20
@@ -189,6 +263,9 @@ ICON_BOX = icon_boxes()
 
 
 def anchor_box(n, b, vis, vis_ids, state):   # FR92: lines attach to a pictogram's DRAWN icon (mirrors flow.js anchorBox)
+    if n and b and n.get("nodeType") == "phonebook":   # FR119: the book
+        B = book_geom(n, b)
+        return (B["x"], B["y"], B["w"], B["h"])
     if not n or not b or not (n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state)):
         return b
     s_, ix, iy, _ = picto_geom(b, str(n.get("label", "")).split("\n"))
@@ -370,13 +447,14 @@ def pipe_spot_box(spec, edges, box, state, anc=None, vbs=None):   # FR80/81 an e
     a, b = (anc(pe["from"]), anc(pe["to"])) if anc else (box.get(pe["from"]), box.get(pe["to"]))   # FR92: as drawn
     if not a or not b:
         return None
-    if key == "gate":   # FR100: the arrow ends on the open gate's badge
-        g = pe.get("gate")
-        gb = next((x[1] for x in (vbs(pe) if vbs else []) if x[0] == g), None)
-        if not gb:
+    if key in ("gate", "firewall"):   # FR118: the arrow ends on that gate's window
+        pipe_poly(a, b, pe, vbs(pe) if vbs else None)
+        gh = GH.get(pe["id"]) if pe.get("gate") else None
+        if not gh:
             return None
-        p, r = gate_point(pe, gb), gate_r(pe) + 1
-        return (p[0] - r, p[1] - r, 2 * r, 2 * r)
+        fire, port, _ = gate_wins(gh)
+        w = fire if key == "firewall" or not (gate_mode(pe) == "lane" or "port" in (pe.get("open") or [])) else port
+        return (w["x"], w["y"], w["w"], w["h"])
     poly = _dedupe(pipe_poly(a, b, pe, vbs(pe) if vbs else None))
     m = re.match(r"^s(\d+)@([\d.]+)$", key)
     if m and int(m.group(1)) < len(poly) - 1:
@@ -421,14 +499,291 @@ def pipe_legs(a, b, e, vb=None):   # (pts, [(from, to, first, last) per leg]) �
     pts, legs = [], []
     for i in range(last + 1):
         o = leg_offsets(e, ids, i)
+        oo = o
         leg = zroute(boxes[i], boxes[i + 1], o)
         if i > 0 and side_of(pts[-1], boxes[i]) == side_of(leg[0], boxes[i]):   # dead end → leave on the other axis
-            leg = zroute(boxes[i], boxes[i + 1], dict(o, _H=not route_axis(boxes[i], boxes[i + 1], o)))
-        c = gate_point(e, boxes[i]) if i > 0 and ids[i] == e.get("gate") else None   # FR100: the pipe crosses at the gate
-        s0 = 0 if i == 0 else len(pts) + 3
-        pts = leg if i == 0 else pts[:-1] + through_box(pts[-1], leg[0], boxes[i], c) + leg[1:]
+            oo = dict(o, _H=not route_axis(boxes[i], boxes[i + 1], o))
+            leg = zroute(boxes[i], boxes[i + 1], oo)
+        if i > 0 and ids[i] == e.get("gate") and route_axis(boxes[i], boxes[i + 1], oo) and "so" not in o:
+            G = gate_geo(boxes[i])   # FR118: leave the gatehouse level with its row / lane (unless dragged)
+            Y = G["laneY"] if gate_mode(e) == "lane" else G["rowY"]
+            leg = zroute(boxes[i], boxes[i + 1], dict(oo, _H=True, so=Y - (boxes[i][1] + boxes[i][3] / 2)))
+        if i == 0:
+            s0, pts = 0, leg
+        else:
+            if ids[i] == e.get("gate"):   # FR118: through the gatehouse — along the gate row, or over the gates in the lane
+                cross, mp, mq = gate_cross(pts[-1], leg[0], boxes[i], gate_mode(e))
+                GH[e["id"]] = {"R": boxes[i], "mode": gate_mode(e), "mp": mp, "mq": mq}
+            else:
+                cross = through_box(pts[-1], leg[0], boxes[i])
+            s0 = len(pts) - 1 + len(cross) - 1
+            pts = pts[:-1] + cross + leg[1:]
         legs.append((ids[i], ids[i + 1], s0, len(pts) - 1))
     return pts, legs
+
+
+GH_T = 8   # FR118: one loop — your friend gets in through the gates you opened, then a request bounces off a shut fire wall
+
+
+def _smil(tag, **a):
+    a = {k.replace("_", "-") if k not in ("keyPoints", "keyTimes", "calcMode", "attributeName", "repeatCount") else k: v for k, v in a.items()}
+    return f'<{tag} dur="{GH_T}s" repeatCount="indefinite" ' + " ".join(f'{k}="{v}"' for k, v in a.items()) + "/>"
+
+
+def _poly_len(poly):
+    return sum(((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5 for i in range(1, len(poly)))
+
+
+def _poly_at(poly, dist):   # the point at a distance along a polyline — mirrors flow.js polyAt
+    for i in range(1, len(poly)):
+        L = ((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5
+        if dist <= L or i == len(poly) - 1:
+            t = max(0, min(1, dist / L)) if L else 0
+            return (poly[i - 1][0] + (poly[i][0] - poly[i - 1][0]) * t, poly[i - 1][1] + (poly[i][1] - poly[i - 1][1]) * t)
+        dist -= L
+    return poly[-1]
+
+
+def _dist_to(poly, pt):   # distance along the polyline to its point nearest pt — mirrors flow.js distTo (projPoly)
+    best = None
+    for i in range(1, len(poly)):
+        (ax, ay), (bx, by) = poly[i - 1], poly[i]
+        dx, dy = bx - ax, by - ay
+        L2 = dx * dx + dy * dy
+        t = max(0, min(1, ((pt[0] - ax) * dx + (pt[1] - ay) * dy) / L2)) if L2 else 0
+        d = ((pt[0] - ax - dx * t) ** 2 + (pt[1] - ay - dy * t) ** 2) ** 0.5
+        if best is None or d < best[0]:
+            best = (d, i - 1, t)
+    _, k, t = best
+    return _poly_len(poly[:k + 1]) + t * _poly_len(poly[k:k + 2])
+
+
+def gatehouse_under_svg(lst, R_w):   # FR118: dark windows (+ for tunnels the faint unused front door) under the pipes — mirrors gatehouseUnder
+    e = lst[0][0]
+    gh = GH[e["id"]]
+    fire, port, G = gate_wins(gh)
+    sw = max(1.5, gh["R"][2] * 0.008)
+    ports = any(gate_mode(x) == "lane" or "port" in (x.get("open") or []) for x, _ in lst)
+    o = [f'<rect x="{w["x"]:.1f}" y="{w["y"]:.1f}" width="{w["w"]:.1f}" height="{w["h"]:.1f}" rx="{w["w"] * 0.1:.1f}" fill="#0b0e14" stroke="#6e7681" stroke-width="{sw:g}"/>'
+         for w in ([fire, port] if ports else [fire])]
+    if all(gate_mode(x) == "lane" for x, _ in lst):
+        o.append(f'<line x1="{gh["mp"]:.1f}" y1="{G["rowY"]:.1f}" x2="{gh["mq"]:.1f}" y2="{G["rowY"]:.1f}" stroke="#3a414b" stroke-width="{max(3, (e.get("pw") or 22) * 0.25):g}"/>')
+    fs = max(9, min(15, gh["R"][2] * 0.042))
+    lbl = lambda w, t: f'<text x="{w["cx"]:.1f}" y="{w["y"] - fs * 0.6:.1f}" text-anchor="middle" font-size="{fs:.1f}" fill="#c9d1d9">{t}</text>'
+    o.append(lbl(fire, "🔥 fire wall"))
+    if ports:
+        o.append(lbl(port, "🚧 port 443"))
+    else:
+        for i, t in enumerate(("no", "receptionist")):
+            o.append(f'<text x="{port["cx"]:.1f}" y="{G["rowY"] + (e.get("pw") or 22) / 2 + 6 + fs * (1 + i * 1.15):.1f}" text-anchor="middle" font-size="{fs * 0.9:.1f}" fill="#8b949e">{t}</text>')
+    return "".join(o)
+
+
+def flame_svg(x, y, s, begin):   # FR118: a small flickering flame on the bricks — mirrors flow.js flame
+    return (f'<g transform="translate({x:.1f} {y:.1f}) scale({s:.3f})"><g>'
+            '<path d="M0 0 C-4 0 -5 -3 -4 -6 C-3 -8 -1 -9 0 -12 C1 -9 4 -8 4 -5 C5 -2 3 0 0 0 Z" fill="#f97316" stroke="#7c2d12" stroke-width="0.6"/>'
+            '<path d="M0 0 C-2 0 -2.5 -2 -2 -3.5 C-1.5 -4.5 -0.5 -5 0 -7 C0.5 -5 2 -4.5 2 -3 C2.5 -1.5 1.5 0 0 0 Z" fill="#fde047"/>'
+            f'<animateTransform attributeName="transform" type="scale" values="1 1;1.12 0.88;0.92 1.12;1 1" dur="0.8s" begin="{begin}s" repeatCount="indefinite"/>'
+            '</g></g>')
+
+
+def gatehouse_gates_svg(rid, lst):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
+    e, poly = lst[0]
+    gh = GH[e["id"]]
+    F, Pw, G = gate_wins(gh)
+    ports = any(gate_mode(x) == "lane" or "port" in (x.get("open") or []) for x, _ in lst)
+    row = gate_mode(e) == "row"
+    o = [f'<g class="gatehouse"><style>@media (prefers-reduced-motion: reduce){{.gh-anim{{display:none}}}}</style><clipPath id="ghc-{rid}"><rect x="{F["x"] + 1:.1f}" y="{F["y"] + 1:.1f}" width="{F["w"] - 2:.1f}" height="{F["h"] - 2:.1f}"/></clipPath>',
+         f'<g clip-path="url(#ghc-{rid})"><g>']
+    wall_start = len(o) - 1
+    bw, bh = F["w"] - 4, F["h"] - 4
+    rh = bh / 6
+    o.append(f'<rect x="{F["x"] + 2:.1f}" y="{F["y"] + 2:.1f}" width="{bw:.1f}" height="{bh:.1f}" fill="#8a3b2a" stroke="#0a140a" stroke-width="1.2"/>')
+    for r in range(6):
+        y = F["y"] + 2 + r * rh
+        o.append(f'<line x1="{F["x"] + 2:.1f}" y1="{y:.1f}" x2="{F["x"] + 2 + bw:.1f}" y2="{y:.1f}" stroke="#5a2418" stroke-width="1.2"/>')
+        for f in ((1 / 6, 1 / 2, 5 / 6) if r % 2 else (1 / 3, 2 / 3)):
+            o.append(f'<line x1="{F["x"] + 2 + f * bw:.1f}" y1="{y:.1f}" x2="{F["x"] + 2 + f * bw:.1f}" y2="{y + rh:.1f}" stroke="#5a2418" stroke-width="1.2"/>')
+    fsc = F["w"] / 36
+    o += [flame_svg(F["x"] + F["w"] * 0.27, F["y"] + F["h"] * 0.25, fsc, 0), flame_svg(F["x"] + F["w"] * 0.73, F["y"] + F["h"] * 0.38, fsc, 0.3),
+          flame_svg(F["x"] + F["w"] * 0.45, F["y"] + F["h"] * 0.9, fsc, 0.55)]
+    if row:   # the fire wall slides down for your friend, then shuts again
+        o.append(_smil("animateTransform", attributeName="transform", type="translate", values=f'0 0;0 0;0 {F["h"]:.1f};0 {F["h"]:.1f};0 0;0 0', keyTimes="0;0.1;0.15;0.33;0.38;1"))
+    o.append("</g></g>")
+    hx, hy = Pw["x"] + Pw["w"] * 0.125, G["rowY"]
+    opens_port = "port" in (e.get("open") or [])
+    if ports:
+        o.append(f'<rect x="{Pw["x"] + Pw["w"] * 0.03:.1f}" y="{hy + Pw["w"] * 0.15:.1f}" width="{Pw["w"] * 0.17:.1f}" height="{max(4, Pw["y"] + Pw["h"] - 2 - (hy + Pw["w"] * 0.15)):.1f}" rx="2" fill="#c9d1d9"/>')
+        o.append("<g>" + f'<rect x="{Pw["x"] + Pw["w"] * 0.075:.1f}" y="{hy - Pw["w"] * 0.1:.1f}" width="{Pw["w"] * 0.85:.1f}" height="{Pw["w"] * 0.2:.1f}" rx="{Pw["w"] * 0.07:.1f}" fill="#a3c55a" stroke="#0a140a" stroke-width="1"/>'
+                 + "".join(f'<rect x="{Pw["x"] + Pw["w"] * f:.1f}" y="{hy - Pw["w"] * 0.1:.1f}" width="{Pw["w"] * 0.1:.1f}" height="{Pw["w"] * 0.2:.1f}" fill="#0b0e14"/>' for f in (0.32, 0.55, 0.78))
+                 + (_smil("animateTransform", attributeName="transform", type="rotate", values=";".join(f"{v} {hx:.1f} {hy:.1f}" for v in (0, 0, -80, -80, 0, 0)), keyTimes="0;0.21;0.26;0.38;0.43;1") if row and opens_port else "")
+                 + "</g>")
+        o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="{Pw["w"] * 0.075:.1f}" fill="#0b0e14"/>')
+    pw = e.get("pw") or 22
+    R1, R2 = pw * 0.45, pw * 0.22
+    d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in poly)
+    L = _poly_len(poly) or 1
+    f3 = lambda v: f"{max(0, min(1, v)):.4f}"
+    light = lambda anims: (f'<g class="gh-anim" pointer-events="none"><circle r="{R1:.1f}" fill="#ffffff" opacity="0.3">{anims[0]}</circle>'
+                           f'<circle r="{R2:.1f}" fill="#ffffff">{anims[0]}</circle>' + "".join(anims[1:]) + "</g>")
+    red = lambda t: _smil("animate", attributeName="fill", values="#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes=f"0;{t};{t + 0.02:.2f};1")
+    def cross(pt, t0):
+        return (f'<text x="{pt[0]:.1f}" y="{pt[1] - R1 * 1.6:.1f}" text-anchor="middle" font-size="{max(14, R1 * 2.2):.1f}" fill="#ff5c5c" opacity="0" pointer-events="none">✕'
+                + _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes=f"0;{t0};{t0 + 0.02:.2f};{t0 + 0.12:.2f};{t0 + 0.16:.2f};1") + "</text>")
+    gap = G["ww"] / 2 + R1 + 2
+    if row:   # your friend's request comes in from the far (internet) end
+        dF, dP = _dist_to(poly, (F["cx"], F["cy"])), _dist_to(poly, (Pw["cx"], Pw["cy"]))
+        fF, fP = f3((dF + gap) / L), f3((dP + gap) / L)
+        mv = (_smil("animateMotion", path=d, keyPoints=f"1;{fF};{fF};{fP};{fP};0;0", keyTimes="0;0.1;0.15;0.21;0.26;0.42;1", calcMode="linear") if opens_port
+              else _smil("animateMotion", path=d, keyPoints=f"1;{fF};{fF};0;0", keyTimes="0;0.1;0.15;0.42;1", calcMode="linear"))
+        o.append(light(["", mv, _smil("animate", attributeName="opacity", values="1;1;0;0", keyTimes="0;0.42;0.45;1")]))
+        fB = f3((dF + gap + 60) / L)
+        o.append(light([red(0.67), _smil("animateMotion", path=d, keyPoints=f"1;1;{fF};{fB};{fB}", keyTimes="0;0.55;0.68;0.75;1", calcMode="linear"),
+                        _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes="0;0.54;0.56;0.72;0.78;1")]))
+        o.append(cross(_poly_at(poly, dF + gap), 0.68))
+    else:   # a tunnel: your server calls out over the gates, your friend comes back in on that line
+        o.append(light(["", _smil("animateMotion", path=d, keyPoints="0;0;1;1;1;0;0", keyTimes="0;0.04;0.26;0.3;0.34;0.58;1", calcMode="linear"),
+                        _smil("animate", attributeName="opacity", values="0;1;1;0;0;1;1;0;0", keyTimes="0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1")]))
+        fr = [(gh["mq"], G["rowY"]), (gh["mp"], G["rowY"])]
+        Lr = abs(gh["mq"] - gh["mp"]) or 1
+        fS, fSb = f3((abs(gh["mq"] - F["cx"]) - gap) / Lr), f3((abs(gh["mq"] - F["cx"]) - gap - 40) / Lr)
+        o.append(light([red(0.78), _smil("animateMotion", path=f"M {fr[0][0]:.1f} {fr[0][1]:.1f} L {fr[1][0]:.1f} {fr[1][1]:.1f}", keyPoints=f"0;0;{fS};{fSb};{fSb}", keyTimes="0;0.66;0.79;0.86;1", calcMode="linear"),
+                        _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes="0;0.65;0.67;0.83;0.89;1")]))
+        o.append(cross(_poly_at(fr, abs(gh["mq"] - F["cx"]) - gap), 0.79))
+    o.append("</g>")
+    return "".join(o)
+
+
+def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one lookup loop — mirrors flow.js drawPhonebook
+    W, H, D, s = PB["W"], PB["H"], lt["dir"], B["s"]
+    DARK, PAGE, INK, BAR, EDGE, GRAY = "#0a140a", "#f6f1e3", "#1f2328", "#d6cfbd", "#b9b2a2", "#9aa3ad"
+    INSIDE, BAND, CY, MONO = shade(col, 0.7), shade(col, 1.3), H / 2 - 3, "ui-monospace, monospace"
+    F = lambda v: format(round(v, 4), "g")
+    lines = str(n.get("entry", "")).split("\n")
+    url = lines[0]
+    host = re.sub(r"/$", "", re.sub(r"^https?://", "", url))
+    m = re.search(r"\d{1,3}(\.\d{1,3}){3}", " ".join(lines[1:]))
+    ip = m.group(0) if m else "?"
+    off = PB["U"] if lt["update"] else 0
+    T = PB["T"] + off
+    k = lambda d: round((off + d * PB["T"]) / T, 4)   # demo fraction → this loop
+
+    def keys(kv):
+        v = ([(0, kv[0][1])] if off else []) + [(k(d), x) for d, x in kv]
+        return ";".join(F(t) for t, _ in v), ";".join(x if isinstance(x, str) else F(x) for _, x in v)
+
+    def anim(**a):
+        tag = "animateMotion" if "path" in a else "animateTransform" if "type" in a else "animate"
+        return f'<{tag} dur="{F(T)}s" repeatCount="indefinite" ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + "/>"
+
+    def fade(kv):
+        kt, vs = keys(kv)
+        return anim(attributeName="opacity", keyTimes=kt, values=vs)
+    path_of = lambda pts: "M " + " L ".join(f"{F(x)} {F(y)}" for x, y in pts)
+
+    def motion(pts, kv):
+        kt, vs = keys(kv)
+        return anim(path=path_of(pts), keyPoints=vs, keyTimes=kt, calcMode="linear")
+    X = lambda x0, w: x0 if D == 1 else -(x0 + w)   # book units: the spine at x 0, the page top at y 0 (text never mirrors)
+    hx, py = (B["x"] if D == 1 else B["x"] + B["w"]), B["y"] + 3 * s
+
+    def R(x, y, w, h, **a):
+        a = {q.replace("_", "-"): v for q, v in a.items()}
+        return f'<rect x="{F(x)}" y="{F(y)}" width="{F(w)}" height="{F(h)}" ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + "/>"
+
+    def txt(x, y, t, inner="", **a):
+        a = {q.replace("_", "-"): v for q, v in a.items()}
+        return f'<text x="{F(x)}" y="{F(y)}" ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + f">{html.escape(t)}{inner}</text>"
+
+    def page(pl, letter=None):
+        return R(pl, 0, W, H, fill=PAGE, stroke=EDGE, stroke_width=0.8) + (txt(pl + W / 2, 11, letter, text_anchor="middle", font_size=9, font_weight=700, fill="#9a917d") if letter else "")
+
+    def rows(pl, ys):   # other people: name … number
+        return "".join(R(pl + 7, y, 24 + (i * 11) % 22, 2.4, rx=1, fill=BAR) + R(pl + W - 33, y, 26, 2.4, rx=1, fill=BAR) for i, y in enumerate(ys))
+    ROWS, pl0, plO = [19 + i * 8 for i in range(7)], X(0, W), X(-W, W)   # the closed side's page / the open side's
+
+    def cover():
+        c = [R(X(0, W), -3, W, H, rx=4, fill=col, stroke=DARK, stroke_width=1.5), R(X(0, 11), -3, 11, H, rx=4, fill=INSIDE, stroke=DARK, stroke_width=1.5)]
+        c += [f'<line x1="{D * 2}" y1="{F(y)}" x2="{D * 9}" y2="{F(y)}" stroke="{BAND}" stroke-width="1.5"/>' for y in (7, H - 13)]
+        c += [txt(D * (11 + (W - 11) / 2), y, t, text_anchor="middle", font_size=fs, font_weight=700, letter_spacing=1.5, fill="#ffffff") for t, fs, y in (("DNS", 15, CY - 1), ("PHONEBOOK", 10.5, CY + 13))]
+        if n.get("childDiagram"):   # FR85
+            c.append(txt(W - 6 if D == 1 else 6 - W, H - 9, "⊕ open", text_anchor="end" if D == 1 else "start", font_size=11, fill="rgba(255,255,255,0.8)", **{"class": "drill"}))
+        return "".join(c)
+    AT, HALF, C0, C1, C2 = (0.18, 0.25, 0.30, 0.35), (0.03, 0.022, 0.022, 0.022), 0.55, 0.58, 0.61   # turn i (0 = the cover) starts at AT[i]; shut C0 → C2
+
+    def turn(i, side, face):   # a turn folds a closed-side face into the spine, then unfolds its open-side face
+        a, h = AT[i], HALF[i]
+        kv = ([(0, "0 1"), (a + h, "0 1"), (a + 2 * h, "1 1"), (C0, "1 1"), (C1, "0 1"), (1, "0 1")] if side == "open"
+              else [(0, "1 1"), (a, "1 1"), (a + h, "0 1"), (C2, "0 1"), (C2 + 0.005, "1 1"), (1, "1 1")] if i
+              else [(0, "1 1"), (a, "1 1"), (a + h, "0 1"), (C1, "0 1"), (C2, "1 1"), (1, "1 1")])
+        kt, vs = keys(kv)
+        rest = ' transform="scale(0 1)"' if side == "open" else ""   # an open-side face starts folded away
+        return f'<g class="pb-anim"{rest}>' + face + anim(attributeName="transform", type="scale", keyTimes=kt, values=vs) + "</g>"
+    o = ['<g class="phonebook"><style>.pb-still{display:none}@media (prefers-reduced-motion: reduce){.pb-anim{display:none}.pb-still{display:inline}}</style>',
+         f'<g transform="translate({F(hx)} {F(py)}) scale({F(s)})">',
+         R(X(0, W + 5), -3, W + 5, H + 7, rx=4, fill=INSIDE, stroke=DARK, stroke_width=1.5),   # the back cover
+         page(pl0, "Y"), rows(pl0, [55, 62, 69])]   # the last page: your entry
+    o.append(f'<rect x="{F(pl0 + 5)}" y="17" width="{W - 10}" height="31" rx="3" fill="#fde68a" opacity="0" class="pb-anim">'
+             + fade([(0, 0), (0.40, 0), (0.42, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + "</rect>")
+    fs = min(9, (W - 24) / (max(len(host), len(ip) + 3, 1) * 0.6))
+    o.append(txt(pl0 + 19, 30, host, font_size=F(fs), fill=INK, font_family=MONO))
+    o.append(txt(pl0 + 19, 42, "ip " + ip, font_size=F(fs), fill=INK, font_family=MONO, font_weight=700))
+    kt, vs = keys([(0, 9), (0.39, 9), (0.42, 3.4), (1, 3.4)])
+    o.append(f'<circle cx="{F(pl0 + 12)}" cy="27" r="9" fill="#ffffff" stroke="{INK}" stroke-width="1" opacity="0" class="pb-anim">'   # the white light, landed
+             + fade([(0, 0), (0.39, 0), (0.40, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + anim(attributeName="r", keyTimes=kt, values=vs) + "</circle>")
+    for i, l in ((3, "P"), (2, "H"), (1, "A")):
+        o.append(turn(i, "closed", page(pl0, l) + rows(pl0, ROWS)))
+    o.append(turn(0, "closed", cover()))
+    o.append(turn(0, "open", R(X(-W - 5, W + 5), -3, W + 5, H + 7, rx=4, fill=INSIDE, stroke=DARK, stroke_width=1.5)))
+    for i in (1, 2, 3):
+        o.append(turn(i, "open", page(plO) + rows(plO, ROWS)))
+    o.append('<g class="pb-still">' + cover() + "</g>")   # prefers-reduced-motion: a still, shut book
+    if n.get("badge") == "snail":   # slow
+        o.append(f'<g transform="translate({F(X(W - 39, 44))} -19)">'
+                 f'<path d="M2 22 Q6 15 16 16 L34 16 Q39 16 38 22 Z" fill="#c9b38f" stroke="{DARK}" stroke-width="1.2"/>'
+                 f'<circle cx="16" cy="11" r="9" fill="#b07a3c" stroke="{DARK}" stroke-width="1.2"/>'
+                 f'<path d="M16 11 m-3 0 a3 3 0 1 1 3 3 a5.5 5.5 0 1 1 5.5 -5.5" fill="none" stroke="{DARK}" stroke-width="1.1"/>'
+                 + "".join(f'<line x1="34" y1="16" x2="{x2}" y2="{y2}" stroke="#c9b38f" stroke-width="1.4"/><circle cx="{x2}" cy="{y2}" r="1.8" fill="#c9b38f"/>' for x2, y2 in ((37, 7), (41, 10)))
+                 + "</g>")
+    elif n.get("badge") == "bolt":   # fast
+        bx0 = X(W - 22, 17)
+        pts = " ".join(f"{F(bx0 + a)},{c - 19}" for a, c in ((9, 0), (0, 15), (7, 15), (3, 28), (16, 10), (9, 10), (13, 0)))
+        o.append(f'<polygon points="{pts}" fill="#fde047" stroke="{DARK}" stroke-width="1.2"/>')
+    # found: the white light's address matches an ip
+    spans = "".join(f'<tspan fill="{c}">{html.escape(t)}</tspan>' for t, c in (("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)))
+    o.append(txt(0, -24, "", spans + fade([(0, 0), (0.41, 0), (0.43, 1), (0.62, 1), (0.65, 0), (1, 0)]), text_anchor="middle", font_size=12, opacity=0, **{"class": "pb-anim"}))
+    o.append("</g></g>")
+
+    # the lights ride the lines (diagram units): under the book coming in, over everything going out
+    def light(c, tag, g_anims, halo_r=9 * s, halo_a="", core_r=4.5 * s, core_a="", tag_a=""):
+        return (f'<g class="pb-anim" opacity="0" pointer-events="none"><circle r="{F(halo_r)}" fill="{c}" opacity="0.3">{halo_a}</circle>'
+                f'<circle r="{F(core_r)}" fill="{c}">{core_a}</circle>'
+                f'<text x="0" y="{F(-14 * s)}" text-anchor="middle" font-size="{F(10 * s)}" fill="{c}" font-family="ui-sans-serif, system-ui, sans-serif">{html.escape(tag)}{tag_a}</text>'
+                + g_anims + "</g>")
+
+    def inside(pts):   # …and on under the closed book
+        q, c = pts[-1], (B["x"] + B["w"] / 2, B["y"] + B["h"] / 2)
+        L = ((c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2) ** 0.5 or 1
+        t = min(1, 30 * s / L)
+        return list(pts) + [(q[0] + (c[0] - q[0]) * t, q[1] + (c[1] - q[1]) * t)]
+    if lt["update"]:   # your server updates its own entry: its ip comes in first
+        f = lambda t: F(round(t / T, 4))
+        under.append(light(GRAY, "ip " + ip, anim(path=path_of(inside(lt["update"]["poly"])), keyPoints="0;0;1;1", keyTimes=f"0;{f(0.1)};{f(PB['U'] - 0.3)};1", calcMode="linear")
+                           + anim(attributeName="opacity", values="0;1;1;0;0", keyTimes=f"0;{f(0.15)};{f(PB['U'] - 0.35)};{f(PB['U'] - 0.15)};1")))
+    if lt["ask"]:
+        under.append(light("#ffffff", url, motion(inside(lt["ask"]["poly"]), [(0, 0), (0.15, 1), (1, 1)]) + fade([(0, 0), (0.02, 1), (0.15, 1), (0.17, 0), (1, 0)])))
+    if lt["answer"]:   # the ip, packed into a gray light (its halo shrinks onto it), travels on to the far end
+        st = (hx + (pl0 + 60) * s, py + 39 * s)
+        hk, hv = keys([(0, 26 * s), (0.48, 26 * s), (0.53, 9 * s), (1, 9 * s)])
+        ck, cv = keys([(0, 0), (0.49, 0), (0.53, 4.5 * s), (1, 4.5 * s)])
+        over.append(light(GRAY, "ip " + ip, motion([st] + list(lt["answer"]["poly"]), [(0, 0), (C0, 0), (0.78, 1), (1, 1)]) + fade([(0, 0), (0.47, 0), (0.48, 1), (0.78, 1), (0.80, 0), (1, 0)]),
+                          halo_r=26 * s, halo_a=anim(attributeName="r", keyTimes=hk, values=hv), core_a=anim(attributeName="r", keyTimes=ck, values=cv),
+                          tag_a=fade([(0, 0), (0.635, 0), (0.655, 1), (1, 1)])))   # the tag shows once it is clear of the book
+        if lt.get("glow"):
+            gx, gy = lt["glow"]
+            over.append(f'<circle cx="{F(gx)}" cy="{F(gy)}" r="{F(26 * s)}" fill="#fff3a0" opacity="0" class="pb-anim" pointer-events="none">'
+                        + fade([(0, 0), (0.78, 0), (0.80, 0.55), (0.88, 0), (1, 0)]) + "</circle>")
+    return "".join(o)
 
 
 USB_T, USB_KT, USB_S = 6, "0;0.1;0.45;0.55;0.9;1", 1.8   # NT10 / NT12 — mirrors flow.js usbTrip
@@ -673,6 +1028,7 @@ def render(d):
         for g in t.get("sameLayout") or []:
             CANON.setdefault(t["id"], {}).update({v: g[0] for v in g})
     images = (d.get("meta") or {}).get("images") or {}   # FR114: uploaded pictures used as icons
+    GH.clear()   # FR118: crossings are recomputed for this view
     toggles = (d.get("meta") or {}).get("toggles", [])
     state = default_state(toggles)
     nodes = d.get("nodes", [])
@@ -708,8 +1064,8 @@ def render(d):
     if isinstance(_gy, (int, float)):
         o.append(ground_svg(_gy, int(round(x0)), int(round(x1))))
 
-    gates = []   # FR93: open-port badges, drawn after the device icons
     front = []   # FR96: z "front" lines, drawn above the boxes (below the badges) — mirrors flow.js gFront
+    epoly, pb_under, pb_over = {}, [], []   # FR121: lines the book lights ride · lights under the books · over everything
     anc = lambda nid: anchor_box(by_id.get(nid), box.get(nid), vis, vis_ids, state)   # FR92: a pictogram's drawn icon
     vbs = lambda ed: [(i, anchor_box(by_id[i], box[i], vis, vis_ids, state)) for i in (ed.get("via") or []) if i in box]   # FR93: (id, box)
 
@@ -729,6 +1085,23 @@ def render(d):
                     return t, (seg if f == e["from"] else list(reversed(seg)))
         return None
 
+    houses = {}   # FR118: gatehouse router id → [(route, poly)] — its body + windows go UNDER the pipes, its gates over them
+    for e in edges:
+        if role_of(e) != "tunnel" or not e.get("gate") or e.get("path") or not shown(e, state):
+            continue
+        ea = pipe_spot_box(e["fromOn"], edges, box, state, anc, vbs) if e.get("fromOn") else anc(e["from"])
+        eb = pipe_spot_box(e["toOn"], edges, box, state, anc, vbs) if e.get("toOn") else anc(e["to"])
+        if ea and eb:
+            poly_ = _dedupe(pipe_poly(ea, eb, e, vbs(e)))
+            if e["id"] in GH:
+                houses.setdefault(e["gate"], []).append((e, poly_))
+    for rid, lst in houses.items():
+        n = by_id.get(rid)
+        if n and rid in box and n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
+            s_, ix, iy, _ = picto_geom(box[rid], str(n.get("label", "")).split("\n"))
+            o.append(icon_svg(n["icon"], ix, iy, s_, PALETTE.get(n.get("color"), PALETTE["note"])[1], images))
+            o.append(gatehouse_under_svg(lst, box[rid][2]))
+
     sleeves = []   # NT3: drawn after every tunnel, still under the boxes
     for e in edges:
         if not shown(e, state):
@@ -741,7 +1114,7 @@ def render(d):
         kind = e.get("kind", "plain")
         role = role_of(e)
         tube = role == "tunnel"
-        badge = None
+        badge, aside = None, 0
         nh, nh_poly, nh_r = nest_host(e), None, 0
         own_ = not nh and kind in ("cable", "lan") and role == "link" and not e.get("fromOn") and not e.get("toOn") and e.get("nest") is not False   # NT14
         if nh or own_:
@@ -751,15 +1124,10 @@ def render(d):
         if tube:
             poly = _dedupe(pipe_poly(a, b, e, vbs(e)))
             col = e.get("color") or "#8b949e"
-            g = e.get("gate")
-            gs = gate_split(poly, e, anc(g) if g and g in box and g in (e.get("via") or []) else None)
-            if gs:   # FR93: port-forward = the pipe is broken open at the router; the badge is drawn above the icons
-                o.append(mario_pipe_svg(gs[1], col, e.get("pw"), e.get("casing")))
-                o.append(mario_pipe_svg(gs[2], col, e.get("pw"), e.get("casing")))
-                gates.append((gs[0], col, gate_r(e)))
-            else:
-                o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))
-            mx, my = longest_mid(poly) if e.get("via") else poly[max(1, len(poly) // 2) - 1]
+            o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))   # FR118: whole — its gates are drawn over it
+            mx, my, up = longest_mid(poly) if e.get("via") else (*poly[max(1, len(poly) // 2) - 1], False)
+            if up:
+                aside = (e.get("pw") or 22) / 2 + 6   # upright stretch: the label goes beside the pipe, not across it
         elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
             lan_ = kind in ("cable", "lan")
             col_ = line_color(e) or ("#7b828a" if lan_ else "#8b949e")
@@ -773,6 +1141,7 @@ def render(d):
         else:
             # arrows connect side-MIDPOINT → side-midpoint, straight or 90° only (mirrors flow.js)
             poly = _dedupe(pipe_poly(a, b, e))
+            epoly[e["id"]] = poly
             lw = e.get("lw") if isinstance(e.get("lw"), (int, float)) else line_width(role, kind)
             _dir = "none" if role == "link" else e.get("dir", "to")   # FR90: a link has no direction
             ah = max(e.get("ah") if isinstance(e.get("ah"), (int, float)) else 12, lw * 2.5)   # head never thinner than the line
@@ -806,7 +1175,8 @@ def render(d):
         if e.get("label"):
             dy = 18 if tube else (EBADGE / 2 + 12 if badge else 4)
             halo = HALO if badge else ""
-            o.append(f'<text x="{mx:.1f}" y="{my - dy:.1f}" text-anchor="middle" font-size="11"{halo} fill="{FG if tube else DIM}">{html.escape(e["label"])}</text>')
+            xy = f'x="{mx + aside:.1f}" y="{my + 4:.1f}" text-anchor="start"' if aside else f'x="{mx:.1f}" y="{my - dy:.1f}" text-anchor="middle"'
+            o.append(f'<text {xy} font-size="11"{halo} fill="{FG if tube else DIM}">{html.escape(e["label"])}</text>')
         if e.get("z") == "front":
             front.extend(o[mark:])
             del o[mark:]
@@ -814,6 +1184,7 @@ def render(d):
             sleeves.extend(o[mark:])
             del o[mark:]
     o.extend(sleeves)
+    nodes_at = len(o)   # FR121: the lights coming into a book go here — over the lines, UNDER the books
 
     rank = lambda n: 2 if active_container(n, state) else (0 if is_container(n, vis, vis_ids, state) else 1)
     for n in sorted(vis, key=rank):
@@ -825,10 +1196,22 @@ def render(d):
         r = T["rx"](bx) if T else 8
         cx = bx[0] + bx[2] / 2.0
         lines = str(n.get("label", "")).split("\n")
+        if n.get("nodeType") == "phonebook":   # FR119 / FR121: drawn as the DNS book (⊕ open on its cover), its label below
+            B = book_geom(n, bx)
+            lt = book_lights(n, B, epoly, edges)
+            far = lt["answer"] and lt["answer"]["far"]
+            if far and far in box:   # where the answer lands
+                fb = anc(far)
+                lt["glow"] = (fb[0] + fb[2] / 2.0, fb[1] + fb[3] / 2.0)
+            o.append(phonebook_svg(n, B, stroke, lt, pb_under, pb_over))
+            for i, ln in enumerate(lines):
+                o.append(f'<text x="{cx:.1f}" y="{B["ty"] + i * 15:.1f}" text-anchor="middle" font-size="12"{HALO} fill="{FG}">{html.escape(ln)}</text>')
+            continue
         if n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
             # FR89: a device IS its icon (pictogram) — no box drawn; the box still sizes + anchors it
             s_, ix, iy, ty = picto_geom(bx, lines)
-            o.append(icon_svg(n["icon"], ix, iy, s_, stroke, images))
+            if n["id"] not in houses:   # FR118: a gatehouse router was drawn under the pipes already
+                o.append(icon_svg(n["icon"], ix, iy, s_, stroke, images))
             for i, ln in enumerate(lines):
                 o.append(f'<text x="{cx:.1f}" y="{ty + i * 15:.1f}" text-anchor="middle" font-size="12"{HALO} fill="{FG}">{html.escape(ln)}</text>')
             if n.get("childDiagram"):
@@ -851,11 +1234,12 @@ def render(d):
             o.append(f'<text x="{cx:.1f}" y="{start_y + i * 15:.1f}" text-anchor="middle" font-size="12" fill="{FG}">{html.escape(ln)}</text>')
         if n.get("childDiagram"):
             o.append(f'<text x="{bx[0] + bx[2] - max(8, r * 0.7):.0f}" y="{bx[1] + 14:.0f}" text-anchor="end" font-size="11" fill="{DIM}">⊕ open</text>')
-    for c, col, gr in gates:   # FR93: the gap in the pipe shows an opened port (mirrors flow.js)
-        s = gr * 1.5
-        o.append(f'<circle cx="{c[0]:.1f}" cy="{c[1]:.1f}" r="{gr - 1:g}" fill="#0b0e14" stroke="{col}" stroke-width="3"/>'
-                 f'<use href="#ic-barrier" x="{c[0] - s / 2:.1f}" y="{c[1] - s / 2:.1f}" width="{s:g}" height="{s:g}" style="color:{col}"/>')
+    for rid, lst in houses.items():   # FR118: the gates + moving lights, over the pipes (mirrors flow.js gatehouseGates)
+        if rid in vis_ids:
+            o.append(gatehouse_gates_svg(rid, lst))
     o.extend(front)   # FR102: "front" lines go above the gate badges too
+    o[nodes_at:nodes_at] = pb_under   # FR121 (mirrors flow.js pbUnder / pbOver)
+    o.extend(pb_over)
     if used_types or used_roles or used_costs:
         o.append(legend_svg(x1 - LEGEND_W - 8, y0 + 8, used_types, used_roles, used_costs))
     o.append("</svg>")

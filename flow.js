@@ -19,6 +19,7 @@
     note:    { fill: "#14181f", stroke: "#6e7681", label: "note" },
     red:     { fill: "#2a1113", stroke: "#e5484d", label: "alert / name-only" },
     orange:  { fill: "#2a1a0c", stroke: "#f97316", label: "at a company you depend on" },   // FR108: = the "central" line colour
+    green:   { fill: "#10231a", stroke: "#3fb950", label: "free & in your own hands" },   // FR121: e.g. a free phonebook
   };
   const COLOR_KEYS = Object.keys(PALETTE);
   const ICONS = ["laptop", "server", "router", "cloud", "phone", "usb", "ethernet", "wifi", "safe", "relay",
@@ -26,7 +27,7 @@
   const EDGE_KINDS = ["plain", "cable", "wifi", "usb", "lan", "internet", "tunnel", "tor"];
 
   const $ = (id) => document.getElementById(id);
-  const svg = $("svg"), gViewport = $("viewport"), gNodes = $("nodes"), gEdges = $("edges");
+  const svg = $("svg"), gViewport = $("viewport"), gNodes = $("nodes"), gEdges = $("edges"), gUnder = $("under");
 
   const S = {
     id: null, data: null, index: { diagrams: [], root: "overview" },
@@ -312,11 +313,38 @@
   // enters each via box, crosses its centre and leaves towards the next. Hidden via boxes are skipped.
   const viaBoxes = (e) => (Array.isArray(e.via) ? e.via : []).map((id) => node(id)).filter((n) => n && visible(n)).map((n) => anchorBox(n, rbox(n)));
   const sideOf = (p, R) => Math.abs(p.x - R.x) < 0.5 ? "w" : Math.abs(p.x - R.x - R.w) < 0.5 ? "e" : Math.abs(p.y - R.y) < 0.5 ? "n" : "s";
-  function longestMid(poly) {   // FR93: a through-route's label sits on its longest straight stretch
-    let best = null;
-    for (let i = 1; i < poly.length; i++) { const L = Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
-      if (!best || L > best.L) best = { L, x: (poly[i].x + poly[i - 1].x) / 2, y: (poly[i].y + poly[i - 1].y) / 2 }; }
-    return best || poly[0];
+  function longestMid(poly) {   // FR93: a through-route's label sits on its longest LEVEL stretch (FR118: never across an upright
+    let best = null, lvl = null;   // pipe); with none level, on its longest stretch — beside the pipe when that one is upright (v)
+    for (let i = 1; i < poly.length; i++) { const a = poly[i - 1], b = poly[i], L = Math.hypot(b.x - a.x, b.y - a.y),
+        m = { L, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, v: Math.abs(b.x - a.x) < 0.5 };
+      if (!best || L > best.L) best = m;
+      if (L && Math.abs(b.y - a.y) < 0.5 && (!lvl || L > lvl.L)) lvl = m; }
+    return lvl || best || poly[0];
+  }
+  // FR118: the home router as a GATEHOUSE. A route whose `gate` is a via box runs, inside that box, along the GATE ROW
+  // through two windows — the 🔥 fire wall (on the exit = internet side) and the 🚧 port-443 barrier (on the server side)
+  // — when it opens gates (e.open: port-forward ["firewall","port"], direct IPv6 ["firewall"]); a route that opens none
+  // (a tunnel) runs along the LANE above the windows, OVER the shut gates. All geometry = fractions of the router body
+  // (its anchor box). Mirrored in docs/gen_flow_svg.py (gate_geo / gate_cross / gate_wins).
+  const GH = {};   // edge id → the last computed crossing of a gated route: { R, mode, mp, mq }
+  const gateMode = (e) => Array.isArray(e.open) && e.open.length ? "row" : "lane";
+  function gateGeo(R) {
+    return { mL: R.x + 0.083 * R.w, mR: R.x + 0.917 * R.w, laneY: R.y + 0.159 * R.h, rowY: R.y + 0.611 * R.h, botY: R.y + 0.95 * R.h,
+             xs: [R.x + 0.30 * R.w, R.x + 0.694 * R.w], ww: 0.278 * R.w, wy0: R.y + 0.333 * R.h, wy1: R.y + 0.889 * R.h };
+  }
+  function gateCross(p, q, R, mode) {   // p (entry, on R's outline) → the gate row or the lane → q (exit); risers in the margins
+    const G = gateGeo(R), Y = mode === "lane" ? G.laneY : G.rowY, sp = sideOf(p, R), sq = sideOf(q, R);
+    const pref = (pt, sd) => sd === "w" ? G.mL : sd === "e" ? G.mR : (pt.x < R.x + R.w / 2 ? G.mL : G.mR);
+    const mq = pref(q, sq); let mp = pref(p, sp); if (mp === mq) mp = mq === G.mL ? G.mR : G.mL;   // the exit side chooses first
+    const toY = (pt, sd, m) => sd === "w" || sd === "e" ? [pt, { x: m, y: pt.y }, { x: m, y: Y }]
+      : sd === "n" ? (mode === "lane" ? [pt, { x: pt.x, y: Y }] : [pt, { x: pt.x, y: G.laneY }, { x: m, y: G.laneY }, { x: m, y: Y }])
+      : [pt, { x: pt.x, y: G.botY }, { x: m, y: G.botY }, { x: m, y: Y }];
+    return { pts: dedupe([...toY(p, sp, mp), ...toY(q, sq, mq).reverse()]), mp, mq };
+  }
+  function gateWins(gh) {   // the windows: the fire wall on the exit (internet) side, the port barrier on the server side
+    const G = gateGeo(gh.R), fireX = gh.mq > gh.mp ? G.xs[1] : G.xs[0], portX = fireX === G.xs[1] ? G.xs[0] : G.xs[1];
+    const win = (cx) => ({ x: cx - G.ww / 2, y: G.wy0, w: G.ww, h: G.wy1 - G.wy0, cx, cy: G.rowY });
+    return { fire: win(fireX), port: win(portX), G };
   }
   function throughBox(p, q, R, c = center(R)) {   // orthogonal p (on R's outline) → c (R's centre / its gate) → q
     const into = (z) => (Math.abs(z.x - R.x) < 0.5 || Math.abs(z.x - R.x - R.w) < 0.5) ? { x: c.x, y: z.y } : { x: z.x, y: c.y };
@@ -347,11 +375,19 @@
       let leg = zRouteSegs(boxes[i], boxes[i + 1], o);
       // leaving a via box on the side it was entered = a dead end, not "through" → leave on the other axis instead
       if (i > 0 && sideOf(pts[pts.length - 1], boxes[i]) === sideOf(leg.pts[0], boxes[i])) leg = zRouteSegs(boxes[i], boxes[i + 1], { ...o, _H: !leg.H });
+      if (i > 0 && ids[i] === e.gate && leg.H && !("so" in o)) {   // FR118: leave the gatehouse level with its row / lane (unless dragged)
+        const G = gateGeo(boxes[i]);
+        leg = zRouteSegs(boxes[i], boxes[i + 1], { ...o, _H: true, so: (gateMode(e) === "lane" ? G.laneY : G.rowY) - (boxes[i].y + boxes[i].h / 2) });
+      }
       const ls = leg.segs.map((key) => ({ leg: i, key, H: leg.H, cv: leg.cv }));
       if (i === 0) { pts = leg.pts; segs = ls; ranges.push([0, pts.length - 1]); }
-      else { const c = ids[i] === e.gate ? gatePoint(e, boxes[i]) : center(boxes[i]);   // FR100: the pipe crosses at the gate
-        const s0 = pts.length + 3;   // = where leg.pts[0] lands after the 5 through-box points replace the last point
-        pts = pts.slice(0, -1).concat(throughBox(pts[pts.length - 1], leg.pts[0], boxes[i], c), leg.pts.slice(1)); segs = segs.concat([null, null, null, null], ls);
+      else { let cross;
+        if (ids[i] === e.gate) {   // FR118: through the gatehouse — along the gate row, or over the gates in the lane
+          const gc = gateCross(pts[pts.length - 1], leg.pts[0], boxes[i], gateMode(e));
+          cross = gc.pts; GH[e.id] = { R: boxes[i], mode: gateMode(e), mp: gc.mp, mq: gc.mq };
+        } else cross = throughBox(pts[pts.length - 1], leg.pts[0], boxes[i]);
+        const s0 = pts.length - 1 + cross.length - 1;   // where leg.pts[0] lands once the crossing replaces the last point
+        pts = pts.slice(0, -1).concat(cross, leg.pts.slice(1)); segs = segs.concat(cross.slice(1).map(() => null), ls);
         ranges.push([s0, pts.length - 1]); }
     }
     return { pts, segs, ids, ranges };
@@ -481,10 +517,11 @@
     const c = center(R), cl = (v, L) => { const m = Math.max(0, L / 2 - gateR(e)); return Math.max(-m, Math.min(m, v)); };
     return { x: c.x + cl(ofs(e.gx), R.w), y: c.y + cl(ofs(e.gy), R.h) };
   }
-  function gateOf(pe) {   // the gate point of a visible gated pipe (null = no gate shown)
+  function gateOf(pe, which) {   // FR118: a gated pipe's window ("firewall" | "port") as {x, y, w, h, cx, cy}, or null
     const gn = pe && pe.gate && node(pe.gate);
-    if (!gn || !visible(gn) || !(pe.via || []).includes(pe.gate) || !pipePolyOf(pe)) return null;
-    return gatePoint(pe, anchorBox(gn, rbox(gn)));
+    if (!gn || !visible(gn) || !(pe.via || []).includes(pe.gate) || !pipePolyOf(pe) || !GH[pe.id]) return null;
+    const W = gateWins(GH[pe.id]), hasPort = gateMode(pe) === "lane" || (pe.open || []).includes("port");
+    return which === "firewall" || !hasPort ? W.fire : W.port;
   }
   // bodyW (edge.pw, default 22) = pipe-body width. A wide translucent casing + two thin inner pipes drawn
   // on the same lane = "two tunnels within one tunnel" (FR59, the IPv4/IPv6 nesting). rimOnly skips the
@@ -530,7 +567,28 @@
                   : el("use", { href: "#ic-" + icon, x, y, width: s, height: s, class: "nicon" }, g);
     u.style.color = color; u.style.cursor = "pointer"; return u;
   }
+  // FR119 / FR121: a PHONEBOOK node (the domain → ip lookup) is the DNS book of the router-gates demo, drawn in the demo's
+  // units (a page = PB.W × PB.H) scaled so the OPEN book is as wide as the node: closed, "DNS PHONEBOOK" on a cover in the
+  // node's colour (= its cost: red bought · orange a company you depend on · green free), the badge (n.badge: "snail" =
+  // slow, you edit it by hand · "bolt" = fast, your server updates it) on its outer corner, the label below.
+  const PB = { W: 110, H: 78, T: 9, U: 1.6 };   // page size (book units) · one lookup (s) · the server's update before it (s)
+  function bookGeom(n, b) {   // the CLOSED book, centred above the label (lines attach to it)
+    const lh = String(n.label || "").split("\n").filter((l) => l).length * 15, h = Math.max(30, b.h - lh - (lh ? 6 : 0));
+    const s = Math.min(h / (PB.H + 7), b.w / (2 * (PB.W + 5))), w = (PB.W + 5) * s, bh = (PB.H + 7) * s;
+    return { x: b.x + (b.w - w) / 2, y: b.y + (h - bh) / 2, w, h: bh, s, ty: b.y + h + 16 };
+  }
+  function bookLights(n, B, epoly) {   // FR121: the lines n.lights names, oriented far end → book (in) or book → far end (out)
+    const L = n.lights || {};
+    const ride = (id, inward) => { const e = id && S.data.edges.find((x) => x.id === id), p = e && epoly[id];
+      if (!p || p.length < 2 || (e.from !== n.id && e.to !== n.id)) return null;   // gone, hidden, or not at this book
+      return { poly: (e.to === n.id) === inward ? p : p.slice().reverse(), far: e.from === n.id ? e.to : e.from }; };
+    const ask = ride(L.ask, true), answer = ride(L.answer, false), update = ride(L.update, true);
+    let dir = 1;   // 1 = spine left, opens to the left; -1 = spine right — the cover opens toward the line the question comes in on
+    if (ask) { const sd = sideOf(ask.poly[ask.poly.length - 1], B); dir = sd === "e" ? -1 : sd === "w" ? 1 : ask.poly[0].x > B.x + B.w / 2 ? -1 : 1; }
+    return { ask, answer, update, dir };
+  }
   function anchorBox(n, b) {   // FR92: lines attach to a pictogram's DRAWN icon, not its invisible box
+    if (n && b && n.nodeType === "phonebook") { const B = bookGeom(n, b); return { x: B.x, y: B.y, w: B.w, h: B.h }; }   // FR119: the book
     if (!n || !b || !isPictogram(n)) return b;
     const g = pictoGeom(b, String(n.label || "").split("\n")), bb = ICON_BOX[n.icon] || [0, 0, 24, 24], k = g.s / 24;
     return { x: g.x + bb[0] * k, y: g.y + bb[1] * k, w: bb[2] * k, h: bb[3] * k };
@@ -775,15 +833,199 @@
     for (let bx = x0 + 28; bx < x0 + W; bx += 56) el("line", { x1: bx, y1: gy + 44, x2: bx, y2: gy + H, stroke: mortar, "stroke-width": 3 }, parent);
   }
 
+  /* ---------- FR118: the gatehouse router — windows under the pipes, gates + moving lights over them ---------- */
+  const GH_T = 8;   // one loop: your friend gets in through the gates you opened, then a request bounces off a shut fire wall
+  const ghAnim = (p, attrs) => el(attrs.path ? "animateMotion" : attrs.type ? "animateTransform" : "animate", { dur: GH_T + "s", repeatCount: "indefinite", ...attrs }, p);
+  const ghPorts = (list) => list.some(({ e }) => gateMode(e) === "lane" || (e.open || []).includes("port"));
+  function polyAt(poly, dist) {   // the point at a distance along a polyline
+    for (let i = 1; i < poly.length; i++) { const L = Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
+      if (dist <= L || i === poly.length - 1) { const t = L ? Math.max(0, Math.min(1, dist / L)) : 0; return { x: poly[i - 1].x + (poly[i].x - poly[i - 1].x) * t, y: poly[i - 1].y + (poly[i].y - poly[i - 1].y) * t }; }
+      dist -= L; }
+    return poly[poly.length - 1];
+  }
+  const polyLen = (poly) => poly.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - poly[i].x, q.y - poly[i].y), 0);
+  function distTo(poly, pt) { const r = projPoly(poly, pt); let d = 0; for (let i = 1; i <= r.i; i++) d += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y);
+    return d + r.t * Math.hypot(poly[r.i + 1].x - poly[r.i].x, poly[r.i + 1].y - poly[r.i].y); }
+  function gatehouseUnder(list) {   // dark windows (and, for tunnels, the faint unused front door) — under the pipes
+    const { e } = list[0], gh = GH[e.id], W = gateWins(gh), G = W.G, sw = Math.max(1.5, gh.R.w * 0.008), ports = ghPorts(list);
+    for (const w of ports ? [W.fire, W.port] : [W.fire]) el("rect", { x: w.x, y: w.y, width: w.w, height: w.h, rx: w.w * 0.1, fill: "#0b0e14", stroke: "#6e7681", "stroke-width": sw }, gUnder);
+    if (list.every(({ e: x }) => gateMode(x) === "lane"))
+      el("line", { x1: gh.mp, y1: G.rowY, x2: gh.mq, y2: G.rowY, stroke: "#3a414b", "stroke-width": Math.max(3, (e.pw || 22) * 0.25) }, gUnder);
+    const fs = Math.max(9, Math.min(15, gh.R.w * 0.042));   // labels above the windows
+    const lbl = (w, t) => { const x = el("text", { x: w.cx, y: w.y - fs * 0.6, "text-anchor": "middle", fill: "#c9d1d9" }, gUnder); x.style.fontSize = fs + "px"; x.textContent = t; };
+    lbl(W.fire, "🔥 fire wall");
+    if (ports) lbl(W.port, "🚧 port 443");
+    else ["no", "receptionist"].forEach((t, i) => {   // below the pipe that runs along the row
+      const x = el("text", { x: W.port.cx, y: G.rowY + (e.pw || 22) / 2 + 6 + fs * (1 + i * 1.15), "text-anchor": "middle", fill: "#8b949e" }, gUnder); x.style.fontSize = fs * 0.9 + "px"; x.textContent = t; });
+  }
+  function flame(p, x, y, s, begin) {   // a small flickering flame standing on the bricks (base at x, y; s = scale)
+    const g = el("g", { transform: `translate(${x} ${y}) scale(${s})` }, p), f = el("g", {}, g);
+    el("path", { d: "M0 0 C-4 0 -5 -3 -4 -6 C-3 -8 -1 -9 0 -12 C1 -9 4 -8 4 -5 C5 -2 3 0 0 0 Z", fill: "#f97316", stroke: "#7c2d12", "stroke-width": 0.6 }, f);
+    el("path", { d: "M0 0 C-2 0 -2.5 -2 -2 -3.5 C-1.5 -4.5 -0.5 -5 0 -7 C0.5 -5 2 -4.5 2 -3 C2.5 -1.5 1.5 0 0 0 Z", fill: "#fde047" }, f);
+    el("animateTransform", { attributeName: "transform", type: "scale", values: "1 1;1.12 0.88;0.92 1.12;1 1", dur: "0.8s", begin: begin + "s", repeatCount: "indefinite" }, f);
+  }
+  function gatehouseGates(rid, list) {   // the fire wall + port barrier over the pipes, and the moving lights
+    const { e, poly } = list[0], gh = GH[e.id], W = gateWins(gh), G = W.G, F = W.fire, P = W.port, ports = ghPorts(list), row = gateMode(e) === "row";
+    const g = el("g", { class: "edge gatehouse" + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, gNodes);
+    // 🔥 the fire wall: bricks with flames, sliding down into the floor to open (clipped to its window)
+    const clip = el("clipPath", { id: "ghc-" + rid }, g); el("rect", { x: F.x + 1, y: F.y + 1, width: F.w - 2, height: F.h - 2 }, clip);
+    const wg = el("g", {}, el("g", { "clip-path": `url(#ghc-${rid})` }, g)), bw = F.w - 4, bh = F.h - 4, rh = bh / 6;
+    el("rect", { x: F.x + 2, y: F.y + 2, width: bw, height: bh, fill: "#8a3b2a", stroke: "#0a140a", "stroke-width": 1.2 }, wg);
+    for (let r = 0; r < 6; r++) { const y = F.y + 2 + r * rh;
+      el("line", { x1: F.x + 2, y1: y, x2: F.x + 2 + bw, y2: y, stroke: "#5a2418", "stroke-width": 1.2 }, wg);
+      for (const f of r % 2 ? [1 / 6, 1 / 2, 5 / 6] : [1 / 3, 2 / 3]) el("line", { x1: F.x + 2 + f * bw, y1: y, x2: F.x + 2 + f * bw, y2: y + rh, stroke: "#5a2418", "stroke-width": 1.2 }, wg); }
+    const fsc = F.w / 36;
+    flame(wg, F.x + F.w * 0.27, F.y + F.h * 0.25, fsc, 0); flame(wg, F.x + F.w * 0.73, F.y + F.h * 0.38, fsc, 0.3); flame(wg, F.x + F.w * 0.45, F.y + F.h * 0.9, fsc, 0.55);
+    // 🚧 the port barrier (the receptionist): lifts to open
+    let arm = null; const hx = P.x + P.w * 0.125, hy = G.rowY;
+    if (ports) {
+      el("rect", { x: P.x + P.w * 0.03, y: hy + P.w * 0.15, width: P.w * 0.17, height: Math.max(4, P.y + P.h - 2 - (hy + P.w * 0.15)), rx: 2, fill: "#c9d1d9" }, g);
+      arm = el("g", {}, g);
+      el("rect", { x: P.x + P.w * 0.075, y: hy - P.w * 0.1, width: P.w * 0.85, height: P.w * 0.2, rx: P.w * 0.07, fill: "#a3c55a", stroke: "#0a140a", "stroke-width": 1 }, arm);
+      for (const f of [0.32, 0.55, 0.78]) el("rect", { x: P.x + P.w * f, y: hy - P.w * 0.1, width: P.w * 0.1, height: P.w * 0.2, fill: "#0b0e14" }, arm);
+      el("circle", { cx: hx, cy: hy, r: P.w * 0.075, fill: "#0b0e14" }, g);
+    }
+    // the moving lights (your friend's request · a request at a shut gate)
+    const pw = e.pw || 22, R1 = pw * 0.45, R2 = pw * 0.22, d = "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), L = polyLen(poly) || 1;
+    const light = () => { const lg = el("g", { class: "gh-anim", "pointer-events": "none" }, g); el("circle", { r: R1, fill: "#ffffff", opacity: 0.3 }, lg); el("circle", { r: R2, fill: "#ffffff" }, lg); return lg; };
+    const f3 = (v) => Math.max(0, Math.min(1, v)).toFixed(4);
+    const red = (lg, t) => { for (const c of lg.children) ghAnim(c, { attributeName: "fill", values: "#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes: `0;${t};${(+t + 0.02).toFixed(2)};1` }); };
+    const cross = (pt, t0) => { const x = el("text", { x: pt.x, y: pt.y - R1 * 1.6, "text-anchor": "middle", fill: "#ff5c5c", opacity: 0, "pointer-events": "none" }, g);
+      Object.assign(x.style, { fontSize: Math.max(14, R1 * 2.2) + "px", fill: "#ff5c5c" }); x.textContent = "✕";   // inline: beats .edge text
+      ghAnim(x, { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: `0;${t0};${(t0 + 0.02).toFixed(2)};${(t0 + 0.12).toFixed(2)};${(t0 + 0.16).toFixed(2)};1` }); };
+    const gap = G.ww / 2 + R1 + 2;
+    if (row) {   // your friend's request comes in from the far (internet) end: the fire wall slides down, the barrier lifts
+      const opensPort = (e.open || []).includes("port"), dF = distTo(poly, { x: F.cx, y: F.cy }), dP = distTo(poly, { x: P.cx, y: P.cy });
+      const fF = f3((dF + gap) / L), fP = f3((dP + gap) / L), a = light();
+      if (opensPort) ghAnim(a, { path: d, keyPoints: `1;${fF};${fF};${fP};${fP};0;0`, keyTimes: "0;0.1;0.15;0.21;0.26;0.42;1", calcMode: "linear" });
+      else ghAnim(a, { path: d, keyPoints: `1;${fF};${fF};0;0`, keyTimes: "0;0.1;0.15;0.42;1", calcMode: "linear" });
+      ghAnim(a, { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.42;0.45;1" });
+      ghAnim(wg, { attributeName: "transform", type: "translate", values: `0 0;0 0;0 ${F.h};0 ${F.h};0 0;0 0`, keyTimes: "0;0.1;0.15;0.33;0.38;1" });
+      if (arm && opensPort) ghAnim(arm, { attributeName: "transform", type: "rotate", values: [0, 0, -80, -80, 0, 0].map((v) => `${v} ${hx} ${hy}`).join(";"), keyTimes: "0;0.21;0.26;0.38;0.43;1" });
+      const b = light(), fB = f3((dF + gap + 60) / L);   // later, with the gates shut again: stopped at the fire wall
+      ghAnim(b, { path: d, keyPoints: `1;1;${fF};${fB};${fB}`, keyTimes: "0;0.55;0.68;0.75;1", calcMode: "linear" });
+      ghAnim(b, { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: "0;0.54;0.56;0.72;0.78;1" }); red(b, 0.67);
+      cross(polyAt(poly, dF + gap), 0.68);
+    } else {   // a tunnel: your server calls out over the gates, your friend comes back in on that line — nothing opens
+      const a = light();
+      ghAnim(a, { path: d, keyPoints: "0;0;1;1;1;0;0", keyTimes: "0;0.04;0.26;0.3;0.34;0.58;1", calcMode: "linear" });
+      ghAnim(a, { attributeName: "opacity", values: "0;1;1;0;0;1;1;0;0", keyTimes: "0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1" });
+      const fr = [{ x: gh.mq, y: G.rowY }, { x: gh.mp, y: G.rowY }], Lr = Math.abs(gh.mq - gh.mp) || 1;   // a stranger at the front door
+      const fS = f3((Math.abs(gh.mq - F.cx) - gap) / Lr), fSb = f3((Math.abs(gh.mq - F.cx) - gap - 40) / Lr), b = light();
+      ghAnim(b, { path: `M ${fr[0].x} ${fr[0].y} L ${fr[1].x} ${fr[1].y}`, keyPoints: `0;0;${fS};${fSb};${fSb}`, keyTimes: "0;0.66;0.79;0.86;1", calcMode: "linear" });
+      ghAnim(b, { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: "0;0.65;0.67;0.83;0.89;1" }); red(b, 0.78);
+      cross(polyAt(fr, Math.abs(gh.mq - F.cx) - gap), 0.79);
+    }
+  }
+  // FR121: one loop of the book. Your friend's white light (the https address) comes in on n.lights.ask and slides under the
+  // closed book; the cover opens TOWARD that line and the pages flip to the entry, which lights up ("✓ … matches ip …"); the
+  // ip is packed into a gray light that leaves along n.lights.answer, and the far end glows. With n.lights.update the loop
+  // starts with your server's ip coming in on that line (the server updates its own entry).
+  function drawPhonebook(g, n, B, col, lt, under, over) {
+    const { W, H } = PB, D = lt.dir, s = B.s, DARK = "#0a140a", PAGE = "#f6f1e3", INK = "#1f2328", BAR = "#d6cfbd", EDGE = "#b9b2a2", GRAY = "#9aa3ad";
+    const INSIDE = shade(col, 0.7), BAND = shade(col, 1.3), CY = H / 2 - 3, MONO = "ui-monospace, monospace";
+    const lines = String(n.entry || "").split("\n"), url = lines[0] || "", host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const ip = (lines.slice(1).join(" ").match(/\d{1,3}(\.\d{1,3}){3}/) || ["?"])[0];
+    const off = lt.update ? PB.U : 0, T = PB.T + off, k = (d) => +((off + d * PB.T) / T).toFixed(4);   // demo fraction → this loop
+    const keys = (kv) => { const v = [...(off ? [[0, kv[0][1]]] : []), ...kv.map(([d, x]) => [k(d), x])];
+      return { keyTimes: v.map((p) => p[0]).join(";"), values: v.map((p) => p[1]).join(";") }; };
+    const anim = (p, a) => el(a.path ? "animateMotion" : a.type ? "animateTransform" : "animate", { dur: T + "s", repeatCount: "indefinite", ...a }, p);
+    const fade = (p, kv) => anim(p, { attributeName: "opacity", ...keys(kv) });
+    const pathOf = (pts) => "M " + pts.map((q) => `${q.x} ${q.y}`).join(" L ");
+    const motion = (p, pts, kv) => { const q = keys(kv); anim(p, { path: pathOf(pts), keyPoints: q.values, keyTimes: q.keyTimes, calcMode: "linear" }); };
+    // book units: the spine at x 0, the page top at y 0; X() mirrors a span for a spine-right book (its text never mirrors)
+    const X = (x0, w) => D === 1 ? x0 : -(x0 + w), hx = D === 1 ? B.x : B.x + B.w, py = B.y + 3 * s;
+    const root = el("g", { transform: `translate(${hx} ${py}) scale(${s})` }, g);
+    const R = (p, x, y, w, h, a) => { const r = el("rect", { x, y, width: w, height: h, ...a }, p); if (a["stroke-width"]) r.style.strokeWidth = a["stroke-width"]; return r; };   // inline: beats .node rect
+    const txt = (p, x, y, t, st, a) => { const e = el("text", { x, y, ...(a || {}) }, p); Object.assign(e.style, st); e.textContent = t; return e; };   // inline: beats .node text
+    const page = (p, pl, letter) => { R(p, pl, 0, W, H, { fill: PAGE, stroke: EDGE, "stroke-width": 0.8 });
+      if (letter) txt(p, pl + W / 2, 11, letter, { fontSize: "9px", fontWeight: 700, fill: "#9a917d" }, { "text-anchor": "middle" }); };
+    const rows = (p, pl, ys) => ys.forEach((y, i) => { R(p, pl + 7, y, 24 + (i * 11) % 22, 2.4, { rx: 1, fill: BAR }); R(p, pl + W - 33, y, 26, 2.4, { rx: 1, fill: BAR }); });   // other people: name … number
+    const ROWS = [0, 1, 2, 3, 4, 5, 6].map((i) => 19 + i * 8), pl0 = X(0, W), plO = X(-W, W);   // the closed side's page / the open side's
+    const cover = (p) => {
+      R(p, X(0, W), -3, W, H, { rx: 4, fill: col, stroke: DARK, "stroke-width": 1.5 });
+      R(p, X(0, 11), -3, 11, H, { rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 });
+      for (const y of [7, H - 13]) el("line", { x1: D * 2, y1: y, x2: D * 9, y2: y, stroke: BAND, "stroke-width": 1.5 }, p);
+      [["DNS", 15, CY - 1], ["PHONEBOOK", 10.5, CY + 13]].forEach(([t, fs, y]) =>
+        txt(p, D * (11 + (W - 11) / 2), y, t, { fontSize: fs + "px", fontWeight: 700, letterSpacing: "1.5px", fill: "#ffffff" }, { "text-anchor": "middle" }));
+      if (n.childDiagram) txt(p, D === 1 ? W - 6 : 6 - W, H - 9, "⊕ open", { fill: "rgba(255,255,255,0.8)" }, { "text-anchor": D === 1 ? "end" : "start", class: "drill" });   // FR85
+    };
+    const AT = [0.18, 0.25, 0.30, 0.35], HALF = [0.03, 0.022, 0.022, 0.022], C0 = 0.55, C1 = 0.58, C2 = 0.61;   // turn i (0 = the cover) starts at AT[i]; shut C0 → C2
+    const turn = (i, side, draw) => { const f = el("g", side === "open" ? { class: "pb-anim", transform: "scale(0 1)" } : { class: "pb-anim" }, root), a = AT[i], h = HALF[i];
+      draw(f);   // a turn folds a closed-side face into the spine, then unfolds its open-side face
+      const kv = side === "open" ? [[0, "0 1"], [a + h, "0 1"], [a + 2 * h, "1 1"], [C0, "1 1"], [C1, "0 1"], [1, "0 1"]]
+        : i ? [[0, "1 1"], [a, "1 1"], [a + h, "0 1"], [C2, "0 1"], [C2 + 0.005, "1 1"], [1, "1 1"]]   // a page's front comes back under the shut cover
+        : [[0, "1 1"], [a, "1 1"], [a + h, "0 1"], [C1, "0 1"], [C2, "1 1"], [1, "1 1"]];
+      anim(f, { attributeName: "transform", type: "scale", ...keys(kv) }); };
+    R(root, X(0, W + 5), -3, W + 5, H + 7, { rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 });   // the back cover
+    page(root, pl0, "Y"); rows(root, pl0, [55, 62, 69]);   // the last page: your entry
+    const hl = R(root, pl0 + 5, 17, W - 10, 31, { rx: 3, fill: "#fde68a", opacity: 0, class: "pb-anim" });
+    const fs = Math.min(9, (W - 24) / (Math.max(host.length, ip.length + 3, 1) * 0.6));
+    txt(root, pl0 + 19, 30, host, { fontSize: fs + "px", fill: INK, fontFamily: MONO });
+    txt(root, pl0 + 19, 42, "ip " + ip, { fontSize: fs + "px", fill: INK, fontFamily: MONO, fontWeight: 700 });
+    const hit = el("circle", { cx: pl0 + 12, cy: 27, r: 9, fill: "#ffffff", stroke: INK, "stroke-width": 1, opacity: 0, class: "pb-anim" }, root);   // the white light, landed
+    for (const [i, l] of [[3, "P"], [2, "H"], [1, "A"]]) turn(i, "closed", (f) => { page(f, pl0, l); rows(f, pl0, ROWS); });
+    turn(0, "closed", cover);
+    turn(0, "open", (f) => R(f, X(-W - 5, W + 5), -3, W + 5, H + 7, { rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 }));
+    for (const i of [1, 2, 3]) turn(i, "open", (f) => { page(f, plO); rows(f, plO, ROWS); });
+    cover(el("g", { class: "pb-still" }, root));   // prefers-reduced-motion: a still, shut book
+    if (n.badge === "snail") {   // slow
+      const sg = el("g", { transform: `translate(${X(W - 39, 44)} -19)` }, root);
+      el("path", { d: "M2 22 Q6 15 16 16 L34 16 Q39 16 38 22 Z", fill: "#c9b38f", stroke: DARK, "stroke-width": 1.2 }, sg);
+      el("circle", { cx: 16, cy: 11, r: 9, fill: "#b07a3c", stroke: DARK, "stroke-width": 1.2 }, sg);
+      el("path", { d: "M16 11 m-3 0 a3 3 0 1 1 3 3 a5.5 5.5 0 1 1 5.5 -5.5", fill: "none", stroke: DARK, "stroke-width": 1.1 }, sg);
+      for (const [x2, y2] of [[37, 7], [41, 10]]) { el("line", { x1: 34, y1: 16, x2, y2, stroke: "#c9b38f", "stroke-width": 1.4 }, sg); el("circle", { cx: x2, cy: y2, r: 1.8, fill: "#c9b38f" }, sg); }
+    } else if (n.badge === "bolt") {   // fast
+      const bx0 = X(W - 22, 17);
+      el("polygon", { points: [[9, 0], [0, 15], [7, 15], [3, 28], [16, 10], [9, 10], [13, 0]].map(([a, c]) => `${bx0 + a},${c - 19}`).join(" "), fill: "#fde047", stroke: DARK, "stroke-width": 1.2 }, root);
+    }
+    // found: the white light's address matches an ip
+    fade(hl, [[0, 0], [0.40, 0], [0.42, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
+    fade(hit, [[0, 0], [0.39, 0], [0.40, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
+    anim(hit, { attributeName: "r", ...keys([[0, 9], [0.39, 9], [0.42, 3.4], [1, 3.4]]) });
+    const cap = txt(root, 0, -24, "", { fontSize: "12px" }, { "text-anchor": "middle", opacity: 0, class: "pb-anim" });
+    for (const [t, fill] of [["✓ ", "#3fb950"], [url, "#ffffff"], [" matches ", "#8b949e"], ["ip " + ip, GRAY]]) el("tspan", { fill }, cap).textContent = t;
+    fade(cap, [[0, 0], [0.41, 0], [0.43, 1], [0.62, 1], [0.65, 0], [1, 0]]);
+    // the lights ride the lines (diagram units): under the book coming in, over everything going out
+    const light = (p, c, tag) => { const lg = el("g", { class: "pb-anim", opacity: 0, "pointer-events": "none" }, p);
+      return { g: lg, halo: el("circle", { r: 9 * s, fill: c, opacity: 0.3 }, lg), core: el("circle", { r: 4.5 * s, fill: c }, lg),
+        tag: txt(lg, 0, -14 * s, tag, { fontSize: 10 * s + "px", fill: c, fontFamily: "ui-sans-serif, system-ui, sans-serif" }, { "text-anchor": "middle" }) }; };
+    const inside = (pts) => { const q = pts[pts.length - 1], c = { x: B.x + B.w / 2, y: B.y + B.h / 2 }, L = Math.hypot(c.x - q.x, c.y - q.y) || 1, t = Math.min(1, 30 * s / L);
+      return [...pts, { x: q.x + (c.x - q.x) * t, y: q.y + (c.y - q.y) * t }]; };   // …and on under the closed book
+    if (lt.update) {   // your server updates its own entry: its ip comes in first
+      const u = light(under, GRAY, "ip " + ip), f = (t) => +(t / T).toFixed(4);
+      anim(u.g, { path: pathOf(inside(lt.update.poly)), keyPoints: "0;0;1;1", keyTimes: `0;${f(0.1)};${f(PB.U - 0.3)};1`, calcMode: "linear" });
+      anim(u.g, { attributeName: "opacity", values: "0;1;1;0;0", keyTimes: `0;${f(0.15)};${f(PB.U - 0.35)};${f(PB.U - 0.15)};1` });
+    }
+    if (lt.ask) {
+      const a = light(under, "#ffffff", url);
+      motion(a.g, inside(lt.ask.poly), [[0, 0], [0.15, 1], [1, 1]]);
+      fade(a.g, [[0, 0], [0.02, 1], [0.15, 1], [0.17, 0], [1, 0]]);
+    }
+    if (lt.answer) {   // the ip, packed into a gray light (its halo shrinks onto it), travels on to the far end
+      const o = light(over, GRAY, "ip " + ip), st = { x: hx + (pl0 + 60) * s, y: py + 39 * s };
+      o.halo.setAttribute("r", 26 * s);
+      motion(o.g, [st, ...lt.answer.poly], [[0, 0], [C0, 0], [0.78, 1], [1, 1]]);
+      fade(o.g, [[0, 0], [0.47, 0], [0.48, 1], [0.78, 1], [0.80, 0], [1, 0]]);
+      anim(o.halo, { attributeName: "r", ...keys([[0, 26 * s], [0.48, 26 * s], [0.53, 9 * s], [1, 9 * s]]) });
+      anim(o.core, { attributeName: "r", ...keys([[0, 0], [0.49, 0], [0.53, 4.5 * s], [1, 4.5 * s]]) });
+      fade(o.tag, [[0, 0], [0.635, 0], [0.655, 1], [1, 1]]);   // once it is clear of the book
+      if (lt.glow) fade(el("circle", { cx: lt.glow.x, cy: lt.glow.y, r: 26 * s, fill: "#fff3a0", opacity: 0, class: "pb-anim", "pointer-events": "none" }, over),
+        [[0, 0], [0.78, 0], [0.80, 0.55], [0.88, 0], [1, 0]]);
+    }
+  }
+
   function render() {
-    gEdges.textContent = ""; gNodes.textContent = ""; applyView();
+    gEdges.textContent = ""; gNodes.textContent = ""; gUnder.textContent = ""; applyView();
+    for (const k in GH) delete GH[k];   // FR118: crossings are recomputed for this view
     svg.style.background = (S.data.meta && S.data.meta.background) ? S.data.meta.background : "";
     if (S.data.meta && typeof S.data.meta.ground === "number") drawGround(gEdges, S.data.meta.ground);
     const vis = S.data.nodes.filter(visible);
     const boxOf = {}; for (const n of vis) boxOf[n.id] = rbox(n);
-    const gates = [];   // FR93: open-port badges, drawn on top of the device icons
+    const gates = [];   // FR118: routes crossing a gatehouse router — its windows go under the pipes, its gates over them
 
     let selPoly = null;
+    const epoly = {}, pbUnder = el("g", { class: "pb-lights" }), pbOver = el("g", { class: "pb-lights" });   // FR121: lines the book lights ride
     const gFront = el("g", { class: "front-edges" });   // FR96: z "front" lines, put above the boxes once they're drawn
     const gSleeve = el("g", { class: "sleeves" });   // NT3: sleeves go above every tunnel (so the tunnel shows INSIDE them)
     for (const e of S.data.edges) {
@@ -792,7 +1034,7 @@
       const { a, b } = ends, kind = e.kind || "plain";
       const nh = nestHost(e), sl = nh ? sleevePoly(e, nh) : isLan(e) ? ownCable(e, a, b) : null;   // NT14: every LAN line is a cable
       const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : sl && sl.poly ? gSleeve : gEdges);
-      let mx, my, iconOnLine = false;
+      let mx, my, iconOnLine = false, aside = 0;
       const role = roleOf(e);
       if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
         el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
@@ -810,15 +1052,15 @@
       } else if (isTube(e)) {
         const poly = dedupe(pipePoly(a, b, e));
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
-        const gs = gateSplit(poly, e);   // FR93: port-forward = the pipe is broken open at the router
-        if (gs) { drawMarioPipe(g, gs.a, e.color || "#8b949e", e.pw, e.casing); drawMarioPipe(g, gs.b, e.color || "#8b949e", e.pw, e.casing);
-          gates.push({ id: e.id, c: gs.c, r: gateR(e), color: e.color || "#8b949e" }); }
-        else drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
+        drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
+        if (e.gate && GH[e.id] && !e.path) gates.push({ e, poly });   // FR118: this route crosses a gatehouse router
         if (S.selEdge === e.id) selPoly = poly;
         const m = e.via && e.via.length ? longestMid(poly) : poly[Math.max(1, Math.floor(poly.length / 2)) - 1]; mx = m.x; my = m.y;
+        if (m.v) aside = (e.pw || 22) / 2 + 6;   // upright stretch: the label goes beside the pipe, not across it
       } else {
         // arrows connect side-MIDPOINT → side-midpoint, straight or 90° only, snap-to-straight (via zRoute)
         const poly = dedupe(pipePoly(a, b, e));
+        epoly[e.id] = poly;
         const lw = typeof e.lw === "number" ? e.lw : lineWidth(role, kind);
         // FR90: a link has no direction (traffic both ways); action/info point from source to target
         const dir = role === "link" ? "none" : (e.dir || "to"), ah = Math.max(typeof e.ah === "number" ? e.ah : 12, lw * 2.5);   // to=A→B, from=B→A, both=A↔B; head never thinner than the line
@@ -852,11 +1094,14 @@
         }
         if (kind === "usb") usbTrip(g, poly, a, b, usbS(e) * lw);   // NT10 / NT12: stick radius = usbS × line width
       }
-      if (e.label) { const t = el("text", { x: mx, y: my - (isTube(e) ? 18 : iconOnLine ? EBADGE / 2 + 12 : 4), "text-anchor": "middle" }, g);
+      if (e.label) { const t = el("text", aside ? { x: mx + aside, y: my + 4, "text-anchor": "start" }
+          : { x: mx, y: my - (isTube(e) ? 18 : iconOnLine ? EBADGE / 2 + 12 : 4), "text-anchor": "middle" }, g);
         if (iconOnLine) t.setAttribute("class", "halo");
         t.textContent = e.label; }
     }
 
+    const houses = {};   // FR118: gatehouse router id → the routes through it (the first one drives the animation)
+    for (const gt of gates) (houses[gt.e.gate] = houses[gt.e.gate] || []).push(gt);
     // draw containers first, then normal nodes, then contained children on top
     const rank = (n) => activeContainerOf(n) ? 2 : (isContainer(n) ? 0 : 1);
     for (const n of [...vis].sort((a, b) => rank(a) - rank(b))) {
@@ -871,8 +1116,17 @@
         const rect = el("rect", { x: hb.x, y: hb.y, width: hb.w, height: hb.h, rx: 3, ry: 3, fill: "transparent", stroke: "none" }, g);
         if (S.sel === n.id) { rect.setAttribute("stroke", pal.stroke); rect.style.strokeWidth = 1.5; }
         const pg = pictoGeom(bx, lines);
-        drawIcon(g, n.icon, pg.x, pg.y, pg.s, pal.stroke);
+        drawIcon(houses[n.id] ? gUnder : g, n.icon, pg.x, pg.y, pg.s, pal.stroke);   // FR118: a gatehouse sits under its pipes
+        if (houses[n.id]) gatehouseUnder(houses[n.id]);
         lines.forEach((ln, i) => { const t = el("text", { x: cx, y: pg.ty + i * 15, "text-anchor": "middle", class: "halo" }, g); t.textContent = ln; });
+      } else if (n.nodeType === "phonebook") {   // FR119 / FR121: drawn as the DNS book; click area + selection = the closed book
+        const B = bookGeom(n, bx), lt = bookLights(n, B, epoly);
+        const rect = el("rect", { x: B.x, y: B.y, width: B.w, height: B.h, rx: 5, fill: "transparent", stroke: "none" }, g);
+        if (S.sel === n.id) { rect.setAttribute("stroke", pal.stroke); rect.style.strokeWidth = 1.5; }
+        const fn = lt.answer && node(lt.answer.far), fb = fn && boxOf[fn.id] && anchorBox(fn, boxOf[fn.id]);
+        if (fb) lt.glow = { x: fb.x + fb.w / 2, y: fb.y + fb.h / 2 };   // where the answer lands
+        drawPhonebook(g, n, B, pal.stroke, lt, pbUnder, pbOver);
+        lines.forEach((ln, i) => { const t = el("text", { x: cx, y: B.ty + i * 15, "text-anchor": "middle", class: "halo" }, g); t.textContent = ln; });
       } else {
         const rect = el("rect", { x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: r, ry: r, fill: pal.fill, stroke: pal.stroke }, g);
         if (T) { rect.style.strokeWidth = T.sw; if (T.dash) rect.style.strokeDasharray = T.dash; }   // inline: beats .node rect CSS
@@ -888,15 +1142,14 @@
         const startY = n.icon ? ty : ty - (lines.length - 1) * 8;
         lines.forEach((ln, i) => { const t = el("text", { x: cx, y: startY + i * 15, "text-anchor": "middle" }, g); t.textContent = ln; });
       }
-      if (n.childDiagram) { const d = el("text", { x: bx.x + bx.w - Math.max(8, r * 0.7), y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
+      if (n.childDiagram && n.nodeType !== "phonebook") {   // (a phonebook has it on its cover, FR121)
+        const d = el("text", { x: bx.x + bx.w - Math.max(8, r * 0.7), y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
     }
-    for (const gt of gates) {   // FR93: the gap in the pipe shows an opened port (click = select that tunnel)
-      const gg = el("g", { class: "edge gate" + (S.selEdge === gt.id ? " sel" : ""), "data-edge": gt.id }, gNodes), s = gt.r * 1.5;
-      el("circle", { cx: gt.c.x, cy: gt.c.y, r: gt.r - 1, fill: "#0b0e14", stroke: gt.color, "stroke-width": 3 }, gg);
-      const u = el("use", { href: "#ic-barrier", x: gt.c.x - s / 2, y: gt.c.y - s / 2, width: s, height: s }, gg); u.style.color = gt.color;
-    }
+    for (const id in houses) if (node(id) && visible(node(id))) gatehouseGates(id, houses[id]);   // FR118: gates + lights, over the pipes
     gEdges.appendChild(gSleeve);   // NT3: after all tunnels, still under the boxes
+    gEdges.appendChild(pbUnder);   // FR121: lights coming into a book slide UNDER it
     gNodes.appendChild(gFront);   // FR102: "front" lines go above the gate badges too (an arrowhead on a gate stays visible)
+    gNodes.appendChild(pbOver);   // FR121: the answer leaves over everything
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(anchorBox(sn, boxOf[sn.id])); }   // FR99: on the icon
     if (selPoly) drawEndHandles(selPoly);
@@ -929,7 +1182,7 @@
     $("ep-costrow").style.display = isPipe || role === "link" ? "none" : "flex";   // FR103: only actions / info cost something
     for (const btn of p.querySelectorAll("#ep-costrow button")) btn.classList.toggle("on", (btn.getAttribute("data-cost") || "") === (e.cost || ""));
     $("ep-sizerow").style.display = isPipe ? "none" : "flex";
-    $("ep-gaterow").style.display = isPipe && e.gate ? "flex" : "none";   // FR102: gate badge size
+    $("ep-gaterow").style.display = "none";   // FR102's gate size: retired by FR118 (the gates are windows of the router)
     $("ep-usbrow").style.display = e.kind === "usb" && role === "link" ? "flex" : "none";   // NT12
     if (e.kind === "usb") { $("ep-usbS").value = usbS(e); $("ep-usbSv").textContent = usbS(e).toFixed(1) + "×"; }
     const own = !nestHost(e), sleeve = !own || isLan(e);   // NT7 / NT14: the sleeve's numbers, for a sleeve or any LAN cable
@@ -973,7 +1226,7 @@
   }
   function onPipeBox(spec) {   // the spot as a box the pipe's girth wide → the arrow tip lands on the pipe's outline
     const i = String(spec).indexOf(":"), pe = S.data.edges.find((x) => x.id === String(spec).slice(0, i)), key = String(spec).slice(i + 1);
-    if (key === "gate") { const g = gateOf(pe), r = g && gateR(pe) + 1; return g && { x: g.x - r, y: g.y - r, w: 2 * r, h: 2 * r }; }   // FR100: the badge's outline
+    if (key === "gate" || key === "firewall") { const w = gateOf(pe, key === "firewall" ? "firewall" : "port"); return w && { x: w.x, y: w.y, w: w.w, h: w.h }; }   // FR118: the window's outline
     const poly = pipePolyOf(pe), p = poly && pipeSpot(poly, key);
     if (!p) return null;
     const r = (pe.pw || 22) / 2 + 3;
@@ -1001,11 +1254,13 @@
   // side-mid within SNAP_PX, else the auto side-mid; pipe: nearest elbow/segment-mid). Shift → exactly the cursor spot.
   function resolveTarget(wp, shift, skipEdge) {
     const tol = SNAP_PX / (S.view.k || 1), dist = (q) => Math.hypot(q.x - wp.x, q.y - wp.y);
-    for (const pe of S.data.edges) {   // FR100: on (or next to) an open gate → attach to the gate itself
+    for (const pe of S.data.edges) {   // FR118: on (or next to) a gate window → attach to that gate itself
       if (pe.id === skipEdge) continue;
-      const g = gateOf(pe);
-      if (g && dist(g) <= gateR(pe) + tol / 2) { const r = gateR(pe) + 1;
-        return { pipe: pe.id, key: "gate", pt: g, snapped: true, box: { x: g.x - r, y: g.y - r, w: 2 * r, h: 2 * r } }; }
+      for (const [key, which] of [["firewall", "firewall"], ["gate", "port"]]) {
+        const w = gateOf(pe, which);
+        if (w && wp.x >= w.x - tol / 2 && wp.x <= w.x + w.w + tol / 2 && wp.y >= w.y - tol / 2 && wp.y <= w.y + w.h + tol / 2)
+          return { pipe: pe.id, key, pt: { x: w.cx, y: w.cy }, snapped: true, box: { x: w.x, y: w.y, w: w.w, h: w.h } };
+      }
     }
     let best = null;
     for (const pe of S.data.edges) {

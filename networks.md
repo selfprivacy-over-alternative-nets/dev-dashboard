@@ -125,7 +125,8 @@ Matrix reach rows for these routes: Cloudflare tunnel + custom domain = `cloudfl
 + no-port-forward is only physically possible **over IPv6** (no NAT to cross). So:
 
 - **Preferred (decentralised):** direct IPv6 — `grandma-1.duckdns.org → AAAA → B:443`, free, human
-  readable, survives reboots (dynamic AAAA), cert via Let's Encrypt **DNS-01**, zero router config.
+  readable, survives reboots (dynamic AAAA), cert via Let's Encrypt **DNS-01**, no port-forward — but you open the
+  router's IPv6 firewall for B (incoming TCP 443; most home routers block incoming IPv6), so a server at home only.
   Only works when B *and* the visitor both have IPv6.
 - **Fallback (universal, centralised):** a Cloudflare tunnel — works behind CGNAT for any visitor, at
   the cost of routing through Cloudflare (D) and the media ToS caveat.

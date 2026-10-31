@@ -71,7 +71,7 @@
       "kind": "cable",
       "label": "",
       "mo": 250,
-      "nestB": -4,
+      "nestB": 0,
       "nestOp": 0.85,
       "role": "link",
       "showWhen": {
@@ -96,7 +96,7 @@
       "kind": "wifi",
       "label": "",
       "nestA": 1.6,
-      "nestB": -3.1,
+      "nestB": 0,
       "role": "link",
       "showWhen": {
         "net": [
@@ -112,12 +112,10 @@
         "dx": -366,
         "dy": 383
       },
-      "eo": -74,
       "from": "server",
       "id": "e_sY",
       "kind": "wifi",
       "label": "",
-      "mo": -166,
       "role": "link",
       "showWhen": {
         "net": [
@@ -154,14 +152,10 @@
     {
       "color": "#8b949e",
       "from": "server",
+      "gate": "router",
       "id": "e_ts_up",
       "kind": "pipe",
       "label": "outbound tunnel",
-      "legs": {
-        "router>relayTS": {
-          "so": 136
-        }
-      },
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -193,14 +187,10 @@
     {
       "color": "#f38020",
       "from": "server",
+      "gate": "router",
       "id": "e_cf_up",
       "kind": "pipe",
       "label": "outbound tunnel",
-      "legs": {
-        "router>relayCF": {
-          "so": 135
-        }
-      },
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -233,15 +223,14 @@
       "color": "#3b82f6",
       "eo": 162,
       "from": "server",
+      "gate": "router",
       "id": "e_v6",
       "kind": "pipe",
       "label": "Direct · IPv6 only",
-      "legs": {
-        "router>inet": {
-          "so": 137
-        }
-      },
       "mo": -521,
+      "open": [
+        "firewall"
+      ],
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -264,18 +253,13 @@
       "eo": 129,
       "from": "server",
       "gate": "router",
-      "gx": -8,
-      "gy": 68,
       "id": "e_pf_b",
       "kind": "pipe",
       "label": "Direct · IPv4 · needs public IP",
-      "legs": {
-        "router>inet": {
-          "mo": 286,
-          "so": 154,
-          "ss": -9
-        }
-      },
+      "open": [
+        "firewall",
+        "port"
+      ],
       "role": "tunnel",
       "showWhen": {
         "reach": [
@@ -291,14 +275,10 @@
     {
       "color": "#9b59b6",
       "from": "server",
+      "gate": "router",
       "id": "e_tor_up",
       "kind": "pipe",
       "label": "hidden service",
-      "legs": {
-        "router>tn1": {
-          "so": 122
-        }
-      },
       "pw": 16,
       "role": "tunnel",
       "showWhen": {
@@ -402,10 +382,11 @@
     },
     {
       "cost": "central",
-      "from": "friend",
+      "dir": "to",
+      "from": "duck",
       "id": "e_duck",
       "kind": "plain",
-      "label": "looks up the name",
+      "label": "your friend looks up your ip",
       "mo": 280,
       "role": "info",
       "showWhen": {
@@ -417,7 +398,7 @@
           "portfwd"
         ]
       },
-      "to": "duck"
+      "to": "friend"
     },
     {
       "cost": "paid",
@@ -518,14 +499,14 @@
       },
       "cost": "free",
       "dir": "to",
+      "eo": -54,
       "from": "pfwarn",
       "id": "e6",
       "kind": "plain",
       "label": "",
       "lw": 13,
-      "mo": -36,
       "role": "action",
-      "so": 17,
+      "so": -55,
       "to": "inet",
       "toOn": "e_pf_b:gate",
       "z": "front"
@@ -552,11 +533,10 @@
     {
       "cost": "central",
       "dir": "to",
-      "eo": -94,
-      "from": "duck",
+      "from": "server",
       "id": "e_duck_srv",
       "kind": "plain",
-      "label": "name + token (keeps it pointing at you)",
+      "label": "your server updates its own entry",
       "role": "info",
       "showWhen": {
         "name": [
@@ -567,7 +547,8 @@
           "portfwd"
         ]
       },
-      "to": "server"
+      "so": -94,
+      "to": "duck"
     },
     {
       "bp": {
@@ -699,27 +680,23 @@
       "to": "friend"
     },
     {
-      "eo": 9,
+      "eo": 10,
       "from": "relayTS",
       "id": "e10",
       "kind": "pipe",
       "label": "",
-      "mo": -97,
       "role": "tunnel",
       "so": -27,
-      "ss": -22,
       "to": "routerY"
     },
     {
       "dir": "to",
-      "eo": 24,
       "from": "relayCF",
       "id": "e11",
       "kind": "pipe",
       "label": "",
-      "mo": -100,
       "role": "tunnel",
-      "so": -7,
+      "so": -25,
       "to": "routerY"
     },
     {
@@ -729,7 +706,6 @@
       },
       "color": "#813d9c",
       "dir": "to",
-      "eo": 29,
       "from": "routerY",
       "hideIn": [
         "method=cable;net=0c;reach=cloudflare;name=buy"
@@ -737,10 +713,104 @@
       "id": "e12",
       "kind": "pipe",
       "label": "",
-      "mo": 74,
       "role": "tunnel",
-      "so": -74,
       "to": "inet"
+    },
+    {
+      "bp": {
+        "dx": 1048,
+        "dy": 462
+      },
+      "cost": "paid",
+      "dir": "to",
+      "eo": 29,
+      "es": 19,
+      "from": "you",
+      "id": "e_pb_you",
+      "kind": "plain",
+      "label": "you edit this by hand",
+      "mo": 12,
+      "role": "action",
+      "so": -130,
+      "ss": 21,
+      "to": "pbook"
+    },
+    {
+      "ah": 28,
+      "bp": {
+        "dx": -1289,
+        "dy": 463
+      },
+      "cost": "paid",
+      "dir": "to",
+      "eo": -56,
+      "from": "pbook",
+      "id": "e_pb_friend",
+      "kind": "plain",
+      "label": "your friend looks up your ip",
+      "lw": 5,
+      "mo": 278,
+      "role": "info",
+      "so": 92,
+      "ss": 658,
+      "to": "friend"
+    },
+    {
+      "bp": {
+        "dx": -4,
+        "dy": 62
+      },
+      "cost": "paid",
+      "dir": "to",
+      "eo": -189,
+      "from": "pbook",
+      "id": "e_pb_srv",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "info",
+      "so": -23,
+      "to": "server"
+    },
+    {
+      "ah": 34,
+      "cost": "free",
+      "dir": "to",
+      "eo": -54,
+      "from": "v6warn",
+      "id": "e_v6open",
+      "kind": "plain",
+      "label": "",
+      "lw": 13,
+      "role": "action",
+      "so": -63,
+      "to": "inet",
+      "toOn": "e_v6:firewall",
+      "z": "front"
+    },
+    {
+      "cost": "free",
+      "dir": "to",
+      "from": "you",
+      "id": "e_v6you",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "action",
+      "to": "v6warn"
+    },
+    {
+      "cost": "free",
+      "dir": "to",
+      "eo": -14,
+      "from": "you",
+      "id": "e_v6youVM",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "role": "action",
+      "so": 50,
+      "to": "v6warnVM"
     }
   ],
   "meta": {
@@ -960,8 +1030,8 @@
         ]
       },
       "w": 180,
-      "x": 657,
-      "y": 331
+      "x": 720,
+      "y": 170
     },
     {
       "childDiagram": "tunnels",
@@ -1061,13 +1131,18 @@
       "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
       "nodeType": "info",
       "showWhen": {
+        "method": [
+          "cable",
+          "usb",
+          "wifi"
+        ],
         "reach": [
           "ipv6"
         ]
       },
       "w": 137,
-      "x": 411,
-      "y": 358
+      "x": 215,
+      "y": 150
     },
     {
       "color": "red",
@@ -1098,9 +1173,7 @@
           "buy"
         ],
         "reach": [
-          "cloudflare",
-          "ipv6",
-          "portfwd"
+          "cloudflare"
         ]
       },
       "w": 244,
@@ -1108,12 +1181,18 @@
       "y": -134
     },
     {
-      "color": "input",
-      "h": 85,
-      "icon": "tag",
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://yourname.duckdns.org\n→ your ip, like: 123.45.67.89",
+      "h": 140,
       "id": "duck",
-      "label": "DuckDNS: free NAME only\n(no domain to buy)\ntraffic goes direct",
-      "nodeType": "info",
+      "label": "DuckDNS (free)",
+      "lights": {
+        "answer": "e_duck_srv",
+        "ask": "e_duck",
+        "update": "e_duck_srv"
+      },
+      "nodeType": "phonebook",
       "showWhen": {
         "name": [
           "duckdns"
@@ -1123,9 +1202,9 @@
           "portfwd"
         ]
       },
-      "w": 244,
-      "x": 747,
-      "y": -134
+      "w": 262,
+      "x": 737,
+      "y": -172
     },
     {
       "color": "created",
@@ -1581,6 +1660,94 @@
       "w": 137,
       "x": 1303,
       "y": 212
+    },
+    {
+      "color": "note",
+      "h": 81,
+      "icon": "block",
+      "id": "v6block13",
+      "label": "Not everyone has IPv6\nan IPv4-only friend\ncan't open the link",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 137,
+      "x": 1303,
+      "y": 212
+    },
+    {
+      "badge": "snail",
+      "childDiagram": "registrar",
+      "color": "red",
+      "entry": "https://yourdomain.org\n→ your ip, like: 123.45.67.89",
+      "h": 140,
+      "id": "pbook",
+      "label": "Buy a domain\n(registrar, €/yr)",
+      "lights": {
+        "answer": "e_pb_srv",
+        "ask": "e_pb_friend"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "ipv6",
+          "portfwd"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "red",
+      "h": 212,
+      "icon": "warn",
+      "id": "v6warn",
+      "label": "Direct IPv6 = only for a server AT HOME\n\nOpen the fire wall for your server\nby hand in your router settings\n(ports 443 + 80)\n\nNot for a laptop on the move (café,\noffice…): a new address at each place,\nand their router won't let friends in",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "cable",
+          "usb",
+          "wifi"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 270,
+      "x": 70,
+      "y": 392
+    },
+    {
+      "color": "red",
+      "h": 212,
+      "icon": "warn",
+      "id": "v6warnVM",
+      "label": "Direct IPv6 = only for a server AT HOME\n\nOpen the fire wall for your server\nby hand in your router settings\n(ports 443 + 80)\n\nNot for a laptop on the move (café,\noffice…): a new address at each place,\nand their router won't let friends in",
+      "nodeType": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 270,
+      "x": 70,
+      "y": 445
     }
   ]
 }
