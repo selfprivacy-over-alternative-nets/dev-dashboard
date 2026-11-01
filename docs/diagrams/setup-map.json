@@ -381,85 +381,52 @@
       "to": "tn4"
     },
     {
+      "_H": true,
       "cost": "central",
-      "dir": "to",
+      "dir": "both",
       "from": "duck",
       "id": "e_duck",
       "kind": "plain",
-      "label": "your friend looks up your ip",
-      "mo": 280,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "showWhen": {
-        "name": [
-          "duckdns"
-        ],
-        "reach": [
-          "ipv6",
-          "portfwd"
-        ]
-      },
-      "to": "friend"
+      "to": "inet"
     },
     {
-      "cost": "paid",
+      "cost": "central",
       "dir": "to",
-      "eo": 11,
-      "from": "buy",
+      "eo": 58,
+      "from": "relayCF",
       "id": "e1",
       "kind": "plain",
-      "label": "",
+      "label": "Cloudflare writes your name",
       "role": "info",
-      "so": 11,
-      "to": "relayCF"
+      "so": 40.3,
+      "to": "cfbook"
     },
     {
-      "cost": "central",
-      "dir": "from",
-      "eo": 12,
-      "from": "cffree",
-      "id": "e2",
-      "kind": "plain",
-      "label": "",
-      "role": "info",
-      "so": 12,
-      "to": "relayCF"
-    },
-    {
-      "bp": {
-        "dx": 108,
-        "dy": -168
-      },
       "cost": "central",
       "dir": "to",
-      "eo": 31,
+      "eo": 58,
+      "from": "relayCF",
+      "id": "e2",
+      "kind": "plain",
+      "label": "Cloudflare writes a random name",
+      "role": "info",
+      "so": 40.3,
+      "to": "trybook"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "eo": 58,
       "from": "relayTS",
       "id": "e3",
       "kind": "plain",
-      "label": "",
-      "lw": 9,
+      "label": "Tailscale writes your name",
       "role": "info",
-      "so": 5,
-      "to": "tsname"
-    },
-    {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
-      "cost": "paid",
-      "dir": "to",
-      "eo": -56,
-      "from": "buy",
-      "id": "e4",
-      "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 278,
-      "role": "info",
-      "so": 92,
-      "ss": 658,
-      "to": "friend"
+      "so": 9.1,
+      "to": "tsbook"
     },
     {
       "cost": "free",
@@ -475,20 +442,24 @@
       "to": "pfwarn"
     },
     {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
+      "_H": true,
       "cost": "paid",
       "dir": "to",
-      "eo": -189,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
       "label": "",
       "lw": 5,
+      "mo": 27,
       "role": "info",
-      "so": -23,
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ]
+      },
+      "so": 20,
       "to": "server"
     },
     {
@@ -512,22 +483,15 @@
       "z": "front"
     },
     {
-      "bp": {
-        "dx": 1048,
-        "dy": 462
-      },
       "cost": "paid",
       "dir": "to",
-      "eo": 29,
-      "es": 19,
+      "eo": -20,
       "from": "you",
       "id": "e8",
       "kind": "plain",
       "label": "",
-      "mo": 12,
+      "mo": -362,
       "role": "action",
-      "so": -130,
-      "ss": 21,
       "to": "buy"
     },
     {
@@ -569,115 +533,53 @@
       "to": "duck"
     },
     {
-      "bp": {
-        "dx": 1048,
-        "dy": 462
-      },
+      "_H": true,
       "cost": "central",
-      "dir": "to",
-      "eo": -19,
-      "es": 19,
-      "from": "you",
-      "id": "e_try_you",
-      "kind": "plain",
-      "label": "",
-      "role": "action",
-      "so": -144,
-      "ss": -40,
-      "to": "cffree"
-    },
-    {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
-      "cost": "central",
-      "dir": "to",
-      "eo": -99,
-      "es": -26,
-      "from": "cffree",
-      "id": "e_try_srv",
-      "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "role": "info",
-      "so": 8,
-      "to": "server"
-    },
-    {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
-      "cost": "central",
-      "dir": "to",
-      "eo": -56,
-      "from": "cffree",
+      "dir": "both",
+      "from": "trybook",
       "id": "e_try_friend",
       "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 271,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 638,
-      "to": "friend"
+      "to": "inet"
     },
     {
-      "bp": {
-        "dx": -844,
-        "dy": 550
-      },
       "cost": "central",
       "dir": "to",
-      "eo": -17,
-      "es": 19,
       "from": "you",
       "id": "e_ts_you",
       "kind": "plain",
-      "label": "",
+      "label": "make an account, copy a key",
+      "lw": 5,
+      "mo": -168,
       "role": "action",
-      "so": -142,
-      "ss": -40,
-      "to": "tsname"
+      "to": "tskey"
     },
     {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
+      "_H": false,
       "cost": "central",
       "dir": "to",
-      "eo": -99,
-      "from": "tsname",
+      "from": "tskey",
       "id": "e_ts_srv",
       "kind": "plain",
-      "label": "",
+      "label": "pasted into the install",
       "lw": 5,
+      "mo": 113.7,
       "role": "info",
-      "so": 8,
       "to": "server"
     },
     {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
+      "_H": true,
       "cost": "central",
-      "dir": "to",
-      "eo": -56,
-      "from": "tsname",
+      "dir": "both",
+      "from": "tsbook",
       "id": "e_ts_friend",
       "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 278,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 644,
-      "to": "friend"
+      "to": "inet"
     },
     {
       "eo": 10,
@@ -736,24 +638,17 @@
       "to": "pbook"
     },
     {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
+      "_H": true,
       "cost": "paid",
-      "dir": "to",
-      "eo": -56,
+      "dir": "both",
       "from": "pbook",
       "id": "e_pb_friend",
       "kind": "plain",
-      "label": "your friend looks up your ip",
+      "label": "your friend looks up the ip",
       "lw": 5,
-      "mo": 278,
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 658,
-      "to": "friend"
+      "to": "inet"
     },
     {
       "bp": {
@@ -811,6 +706,74 @@
       "role": "action",
       "so": 50,
       "to": "v6warnVM"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "from": "buy",
+      "id": "e_cf_move",
+      "kind": "plain",
+      "lw": 5,
+      "role": "action",
+      "so": 48,
+      "to": "cfbook"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "from": "you",
+      "id": "e_cf_you",
+      "kind": "plain",
+      "label": "account + tunnel → copy its token",
+      "lw": 5,
+      "mo": -129,
+      "role": "action",
+      "to": "cftoken"
+    },
+    {
+      "_H": false,
+      "cost": "central",
+      "dir": "to",
+      "from": "cftoken",
+      "id": "e_cf_tok",
+      "kind": "plain",
+      "label": "pasted into the install",
+      "lw": 5,
+      "mo": 91.7,
+      "role": "info",
+      "to": "server"
+    },
+    {
+      "_H": true,
+      "cost": "central",
+      "dir": "both",
+      "from": "cfbook",
+      "id": "e_cf_net",
+      "kind": "plain",
+      "label": "your friend looks up the ip",
+      "mo": 148,
+      "role": "info",
+      "to": "inet"
+    },
+    {
+      "_H": true,
+      "cost": "paid",
+      "dir": "to",
+      "eo": -26.5,
+      "from": "buy",
+      "id": "e7vm",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "mo": 209.2,
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ]
+      },
+      "so": 20,
+      "to": "server"
     }
   ],
   "meta": {
@@ -963,9 +926,9 @@
       }
     ],
     "view": {
-      "cx": 993.3,
-      "cy": 166.9,
-      "k": 1.051
+      "cx": 951.1,
+      "cy": 214.5,
+      "k": 0.759
     }
   },
   "nodes": [
@@ -1073,22 +1036,6 @@
       "y": 546
     },
     {
-      "color": "orange",
-      "h": 60,
-      "icon": "tag",
-      "id": "tsname",
-      "label": "Free name: *.ts.net\n(nothing to buy)",
-      "nodeType": "info",
-      "showWhen": {
-        "reach": [
-          "tailscale"
-        ]
-      },
-      "w": 230,
-      "x": 776,
-      "y": -135
-    },
-    {
       "color": "created",
       "h": 94,
       "icon": "relay",
@@ -1103,25 +1050,6 @@
       "w": 190,
       "x": 790,
       "y": 550
-    },
-    {
-      "color": "orange",
-      "h": 60,
-      "icon": "",
-      "id": "cffree",
-      "label": "Free *.trycloudflare.com\n(random name, no account)",
-      "nodeType": "info",
-      "showWhen": {
-        "name": [
-          "trycf"
-        ],
-        "reach": [
-          "cloudflare"
-        ]
-      },
-      "w": 230,
-      "x": 776,
-      "y": -135
     },
     {
       "color": "note",
@@ -1163,10 +1091,10 @@
     {
       "childDiagram": "registrar",
       "color": "red",
-      "h": 85,
+      "h": 100,
       "icon": "cart",
       "id": "buy",
-      "label": "Buy a domain\n(registrar, €/yr)",
+      "label": "Buy a domain\n(registrar, €/yr)\nthen once, by hand: point it\nto Cloudflare's phonebook",
       "nodeType": "action",
       "showWhen": {
         "name": [
@@ -1176,20 +1104,31 @@
           "cloudflare"
         ]
       },
-      "w": 244,
-      "x": 747,
-      "y": -134
+      "w": 240,
+      "x": 700,
+      "y": -360
     },
     {
       "badge": "bolt",
       "color": "orange",
       "entry": "https://yourname.duckdns.org\n→ your ip, like: 123.45.67.89",
+      "entryWhen": {
+        "reach": {
+          "ipv6": "https://yourname.duckdns.org\n→ your ip, like: 2001:db8::1"
+        }
+      },
       "h": 140,
       "id": "duck",
       "label": "DuckDNS (free)",
       "lights": {
-        "answer": "e_duck_srv",
-        "ask": "e_duck",
+        "answer": [
+          "e_duck",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_duck"
+        ],
         "update": "e_duck_srv"
       },
       "nodeType": "phonebook",
@@ -1315,8 +1254,8 @@
         ]
       },
       "w": 300,
-      "x": 938,
-      "y": -32
+      "x": 1295,
+      "y": -150
     },
     {
       "color": "red",
@@ -1351,8 +1290,8 @@
         ]
       },
       "w": 310,
-      "x": 956,
-      "y": -55
+      "x": 1295,
+      "y": -150
     },
     {
       "color": "note",
@@ -1688,12 +1627,23 @@
       "childDiagram": "registrar",
       "color": "red",
       "entry": "https://yourdomain.org\n→ your ip, like: 123.45.67.89",
+      "entryWhen": {
+        "reach": {
+          "ipv6": "https://yourdomain.org\n→ your ip, like: 2001:db8::1"
+        }
+      },
       "h": 140,
       "id": "pbook",
       "label": "Buy a domain\n(registrar, €/yr)",
       "lights": {
-        "answer": "e_pb_srv",
-        "ask": "e_pb_friend"
+        "answer": [
+          "e_pb_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_pb_friend"
+        ]
       },
       "nodeType": "phonebook",
       "showWhen": {
@@ -1748,6 +1698,131 @@
       "w": 270,
       "x": 70,
       "y": 445
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://selfprivacy.tail1234.ts.net\n→ Tailscale's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "tsbook",
+      "label": "Tailscale (free)",
+      "lights": {
+        "answer": [
+          "e_ts_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_ts_friend"
+        ],
+        "update": "e3"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "orange",
+      "h": 80,
+      "icon": "key",
+      "id": "tskey",
+      "label": "Auth key: tskey-auth-…\n(single use, from your account)",
+      "nodeType": "info",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 220,
+      "x": 395,
+      "y": -230
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://yourdomain.org\n→ Cloudflare's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "cfbook",
+      "label": "Cloudflare",
+      "lights": {
+        "answer": [
+          "e_cf_net",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_cf_net"
+        ],
+        "update": "e1"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "orange",
+      "h": 80,
+      "icon": "key",
+      "id": "cftoken",
+      "label": "Tunnel token\n(from your Cloudflare account)",
+      "nodeType": "info",
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 220,
+      "x": 395,
+      "y": -230
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://pink-owl-sky.trycloudflare.com\n→ Cloudflare's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "trybook",
+      "label": "Cloudflare (free)",
+      "lights": {
+        "answer": [
+          "e_try_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_try_friend"
+        ],
+        "update": "e2"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
     }
   ]
 }

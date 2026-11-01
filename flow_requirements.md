@@ -1048,6 +1048,33 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   slip). Verified: editor = SVG for the book's place, every light's path + timing and the glow in 6 views (LAN / wifi /
   USB / VM × buy / DuckDNS × port-forward / IPv6); line parity, overlap scan and all views open without errors; frames
   checked in both; reduced motion checked in both.
+- **FR122. Every name route has its phonebook; lookups go through the internet; the credentials go into the install.**
+  (User: *for Tailscale show that it uses the fast phonebook and sets its own domain: you get an account + credentials
+  on your computer, they go into the installation, the server contacts Tailscale, Tailscale gives the domain … the
+  phonebook input should come through the internet (cloud icon) instead of from the friend's phone directly.*)
+  DNS never forwards traffic — it only answers *name → ip*; what differs per route is who writes the entry and whose ip
+  it holds. So: **Tailscale** — the `tsname` box is replaced by `tsbook`, an orange ⚡ phonebook *Tailscale (free)*
+  whose entry is `https://selfprivacy.tail1234.ts.net → Tailscale's relay` (`98.76.54.32`); `e3` *Tailscale writes your
+  name* (relay → book) is its `update`. A new info box `tskey` *Auth key: tskey-auth-… (single use, from your account)*
+  (new `key` icon) sits above the server: `e_ts_you` *make an account, copy a key* (you → key), `e_ts_srv` *pasted
+  into the install* (key → server). **Cloudflare + your domain** — `cfbook` (orange ⚡ *Cloudflare*, entry
+  `https://yourdomain.org → Cloudflare's relay`), `e1` *Cloudflare writes your name* (relay → book); *Buy a domain*
+  moves above the book and says *then once, by hand: point it to Cloudflare's phonebook* (`e_cf_move`, buy → book);
+  `cftoken` *Tunnel token (from your Cloudflare account)* with `e_cf_you` / `e_cf_tok` like the auth key; `e7`
+  (domain → server) keeps its meaning, the VM views use their own copy `e7vm`; `e4` is gone. **Quick tunnel** — `cffree`,
+  `e_try_you`, `e_try_srv` are replaced by `trybook` (orange ⚡ *Cloudflare (free)*, a random `*.trycloudflare.com`
+  name), `e2` *Cloudflare writes a random name*. **Every book's lookup** (`e_pb_friend`, `e_duck`, `e_ts_friend`,
+  `e_cf_net`, `e_try_friend`) now runs book ↔ *The internet* (both heads, *your friend looks up the ip*), leaving the
+  book's right side and dropping into the cloud's top; the warning notes `tswarn` / `trywarn` move right of it.
+  **Light chains:** a `lights` entry may be a list of line ids joined at shared boxes (ask/update listed far end →
+  book, answer book → far end), and a light can ride a tunnel — so `ask = ["e_friend", <lookup>]` brings the friend's
+  white light through their pipe and the internet up to the book, and `answer = [<lookup>, "e_friend"]` takes the ip
+  back down to the phone, which glows (the answer no longer goes to the server, handover 17's open choice). **IPv6
+  address:** a node's `entryWhen` = `{toggle: {value: entry}}` (like `optionsWhen`) overrides `entry` per view; `pbook`
+  and `duck` show `2001:db8::1` in the IPv6 views (the AAAA record), `123.45.67.89` for port-forward; the entry's ip is
+  an IPv4 or IPv6 address. Unchanged: the server's DuckDNS update still rides its own line, not the internet.
+  Verified: line parity in 11 views (incl. VM Tailscale / Cloudflare / IPv6), book + lights + glow parity in 10 views,
+  the entry text equal in editor and SVG, overlap scan, all views open without errors, frames of the Tailscale loop.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

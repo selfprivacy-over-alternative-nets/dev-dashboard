@@ -23,7 +23,7 @@
   };
   const COLOR_KEYS = Object.keys(PALETTE);
   const ICONS = ["laptop", "server", "router", "cloud", "phone", "usb", "ethernet", "wifi", "safe", "relay",
-    "tor", "onion", "gear", "block", "pipe", "gate", "warn", "tag", "cart", "tornode", "doc", "port", "barrier"];
+    "tor", "onion", "gear", "block", "pipe", "gate", "warn", "tag", "cart", "tornode", "doc", "port", "barrier", "key"];
   const EDGE_KINDS = ["plain", "cable", "wifi", "usb", "lan", "internet", "tunnel", "tor"];
 
   const $ = (id) => document.getElementById(id);
@@ -572,6 +572,11 @@
   // node's colour (= its cost: red bought · orange a company you depend on · green free), the badge (n.badge: "snail" =
   // slow, you edit it by hand · "bolt" = fast, your server updates it) on its outer corner, the label below.
   const PB = { W: 110, H: 78, T: 9, U: 1.6 };   // page size (book units) · one lookup (s) · the server's update before it (s)
+  const IP_RE = /\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}/i;   // FR122: an IPv4 or an IPv6 address
+  // FR122: the entry text, per view: n.entryWhen = { toggle: { value: "entry" } } (like optionsWhen), else n.entry
+  const entryOf = (n) => { const w = n.entryWhen || {};
+    for (const t in w) if (typeof (w[t] || {})[S.toggle[t]] === "string") return w[t][S.toggle[t]];
+    return String(n.entry || ""); };
   function bookGeom(n, b) {   // the CLOSED book, centred above the label (lines attach to it)
     const lh = String(n.label || "").split("\n").filter((l) => l).length * 15, h = Math.max(30, b.h - lh - (lh ? 6 : 0));
     const s = Math.min(h / (PB.H + 7), b.w / (2 * (PB.W + 5))), w = (PB.W + 5) * s, bh = (PB.H + 7) * s;
@@ -579,9 +584,16 @@
   }
   function bookLights(n, B, epoly) {   // FR121: the lines n.lights names, oriented far end → book (in) or book → far end (out)
     const L = n.lights || {};
-    const ride = (id, inward) => { const e = id && S.data.edges.find((x) => x.id === id), p = e && epoly[id];
-      if (!p || p.length < 2 || (e.from !== n.id && e.to !== n.id)) return null;   // gone, hidden, or not at this book
-      return { poly: (e.to === n.id) === inward ? p : p.slice().reverse(), far: e.from === n.id ? e.to : e.from }; };
+    // FR122: a light may ride a CHAIN of lines (an id list, far end → book for ask/update, book → far end for answer), each
+    // joined to the next at a shared box — e.g. your friend's pipe to the internet, then the internet's line to the book
+    const ride = (ids, inward) => { const list = [].concat(ids || []); if (!list.length) return null;
+      let at = n.id, pts = [];
+      for (const id of inward ? list.slice().reverse() : list) {   // walk outward from the book
+        const e = S.data.edges.find((x) => x.id === id), p = e && epoly[id];
+        if (!p || p.length < 2 || (e.from !== at && e.to !== at)) return null;   // gone, hidden, or not joined to the last one
+        pts = pts.concat(e.from === at ? p : p.slice().reverse()); at = e.from === at ? e.to : e.from;
+      }
+      return { poly: inward ? pts.reverse() : pts, far: at }; };
     const ask = ride(L.ask, true), answer = ride(L.answer, false), update = ride(L.update, true);
     let dir = 1;   // 1 = spine left, opens to the left; -1 = spine right — the cover opens toward the line the question comes in on
     if (ask) { const sd = sideOf(ask.poly[ask.poly.length - 1], B); dir = sd === "e" ? -1 : sd === "w" ? 1 : ask.poly[0].x > B.x + B.w / 2 ? -1 : 1; }
@@ -924,8 +936,8 @@
   function drawPhonebook(g, n, B, col, lt, under, over) {
     const { W, H } = PB, D = lt.dir, s = B.s, DARK = "#0a140a", PAGE = "#f6f1e3", INK = "#1f2328", BAR = "#d6cfbd", EDGE = "#b9b2a2", GRAY = "#9aa3ad";
     const INSIDE = shade(col, 0.7), BAND = shade(col, 1.3), CY = H / 2 - 3, MONO = "ui-monospace, monospace";
-    const lines = String(n.entry || "").split("\n"), url = lines[0] || "", host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-    const ip = (lines.slice(1).join(" ").match(/\d{1,3}(\.\d{1,3}){3}/) || ["?"])[0];
+    const lines = entryOf(n).split("\n"), url = lines[0] || "", host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const ip = (lines.slice(1).join(" ").match(IP_RE) || ["?"])[0];
     const off = lt.update ? PB.U : 0, T = PB.T + off, k = (d) => +((off + d * PB.T) / T).toFixed(4);   // demo fraction → this loop
     const keys = (kv) => { const v = [...(off ? [[0, kv[0][1]]] : []), ...kv.map(([d, x]) => [k(d), x])];
       return { keyTimes: v.map((p) => p[0]).join(";"), values: v.map((p) => p[1]).join(";") }; };
@@ -1051,6 +1063,7 @@
         }
       } else if (isTube(e)) {
         const poly = dedupe(pipePoly(a, b, e));
+        epoly[e.id] = poly;   // FR122: a book's light can ride a tunnel too (your friend's pipe to the internet)
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
         if (e.gate && GH[e.id] && !e.path) gates.push({ e, poly });   // FR118: this route crosses a gatehouse router

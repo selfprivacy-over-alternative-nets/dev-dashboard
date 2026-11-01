@@ -96,6 +96,14 @@ def gate_wins(gh):   # FR118: the fire wall on the exit (internet) side, the por
 
 
 PB = {"W": 110, "H": 78, "T": 9, "U": 1.6}   # FR121: page size (book units) · one lookup (s) · the server's update before it (s)
+IP_RE = re.compile(r"\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}", re.I)   # FR122: an IPv4 or an IPv6 address
+
+
+def entry_of(n, state):   # FR122: the entry text, per view (n.entryWhen = {toggle: {value: entry}}), else n.entry — mirrors flow.js entryOf
+    for t, by_v in (n.get("entryWhen") or {}).items():
+        if isinstance((by_v or {}).get(state.get(t)), str):
+            return by_v[state[t]]
+    return str(n.get("entry") or "")
 
 
 def book_geom(n, b):   # FR119 / FR121: the CLOSED book, centred above its label (lines attach to it) — mirrors flow.js bookGeom
@@ -110,12 +118,19 @@ def book_lights(n, B, epoly, edges):   # FR121: the lines n.lights names, orient
     L = n.get("lights") or {}
     by = {e["id"]: e for e in edges}
 
-    def ride(eid, inward):
-        e = by.get(eid) if eid else None
-        p = epoly.get(eid) if e else None
-        if not p or len(p) < 2 or n["id"] not in (e.get("from"), e.get("to")):   # gone, hidden, or not at this book
+    def ride(ids, inward):   # FR122: one line id, or a CHAIN of them joined at shared boxes — mirrors flow.js
+        lst = ids if isinstance(ids, list) else [ids] if ids else []
+        if not lst:
             return None
-        return {"poly": list(p) if (e.get("to") == n["id"]) == inward else list(reversed(p)), "far": e["to"] if e.get("from") == n["id"] else e["from"]}
+        at, pts = n["id"], []
+        for eid in (list(reversed(lst)) if inward else lst):   # walk outward from the book
+            e = by.get(eid)
+            p = epoly.get(eid) if e else None
+            if not p or len(p) < 2 or at not in (e.get("from"), e.get("to")):   # gone, hidden, or not joined to the last one
+                return None
+            pts += list(p) if e.get("from") == at else list(reversed(p))
+            at = e["to"] if e.get("from") == at else e["from"]
+        return {"poly": list(reversed(pts)) if inward else pts, "far": at}
     ask, answer, update = ride(L.get("ask"), True), ride(L.get("answer"), False), ride(L.get("update"), True)
     d = 1   # 1 = spine left, opens to the left; -1 = spine right — the cover opens toward the line the question comes in on
     if ask:
@@ -659,10 +674,10 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
     DARK, PAGE, INK, BAR, EDGE, GRAY = "#0a140a", "#f6f1e3", "#1f2328", "#d6cfbd", "#b9b2a2", "#9aa3ad"
     INSIDE, BAND, CY, MONO = shade(col, 0.7), shade(col, 1.3), H / 2 - 3, "ui-monospace, monospace"
     F = lambda v: format(round(v, 4), "g")
-    lines = str(n.get("entry", "")).split("\n")
+    lines = lt["entry"].split("\n")
     url = lines[0]
     host = re.sub(r"/$", "", re.sub(r"^https?://", "", url))
-    m = re.search(r"\d{1,3}(\.\d{1,3}){3}", " ".join(lines[1:]))
+    m = IP_RE.search(" ".join(lines[1:]))
     ip = m.group(0) if m else "?"
     off = PB["U"] if lt["update"] else 0
     T = PB["T"] + off
@@ -1123,6 +1138,7 @@ def render(d):
             nh_poly = s_ and trim_poly(s_, "end", nest_p(e, "nestB") * nh_r)
         if tube:
             poly = _dedupe(pipe_poly(a, b, e, vbs(e)))
+            epoly[e["id"]] = poly   # FR122: a book's light can ride a tunnel too (your friend's pipe to the internet)
             col = e.get("color") or "#8b949e"
             o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))   # FR118: whole — its gates are drawn over it
             mx, my, up = longest_mid(poly) if e.get("via") else (*poly[max(1, len(poly) // 2) - 1], False)
@@ -1199,6 +1215,7 @@ def render(d):
         if n.get("nodeType") == "phonebook":   # FR119 / FR121: drawn as the DNS book (⊕ open on its cover), its label below
             B = book_geom(n, bx)
             lt = book_lights(n, B, epoly, edges)
+            lt["entry"] = entry_of(n, state)
             far = lt["answer"] and lt["answer"]["far"]
             if far and far in box:   # where the answer lands
                 fb = anc(far)
