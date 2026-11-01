@@ -1075,6 +1075,17 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   an IPv4 or IPv6 address. Unchanged: the server's DuckDNS update still rides its own line, not the internet.
   Verified: line parity in 11 views (incl. VM Tailscale / Cloudflare / IPv6), book + lights + glow parity in 10 views,
   the entry text equal in editor and SVG, overlap scan, all views open without errors, frames of the Tailscale loop.
+- **FR123. Tailscale: the key is a one-time ticket; how the server keeps its address.** (User: *update the Tailscale
+  diagram to reflect the explanation* — written out in `docs/diagrams/network_explanations.md` § tailscale.) `tskey`
+  now says *one-time entry ticket, used up when the server joins*; `e_ts_srv` says *pasted at the end, sent to your
+  server* (the installer sends it over SSH after NixOS is installed — it is not part of the install package).
+  `tswarn` (company caveats) gains *switch Funnel on once, in your browser* and *the relay passes your traffic on but
+  can't read it*; its reinstall bullet moves to a new red note **`tslife`** *Keeping the same address* (left of the
+  router, also clear of the VM container): the server proves who it is with its own ID file (`tailscaled.state`), not
+  the key; reboot / new home ip keep machine + address, but today the tunnel only comes back after re-running the
+  finish step (`install_service` writes to `/run`); reinstall wipes the ID → `selfprivacy-1`, delete the old machine
+  first (fix planned: round0 R2); an untagged machine's login runs out after 180 days → switch off key expiry on
+  Tailscale's Machines page. Verified: line + book parity, overlap scan, all views open, box + VM views looked at.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

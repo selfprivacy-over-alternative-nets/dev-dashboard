@@ -563,7 +563,7 @@
       "from": "tskey",
       "id": "e_ts_srv",
       "kind": "plain",
-      "label": "pasted into the install",
+      "label": "pasted at the end, sent to your server",
       "lw": 5,
       "mo": 113.7,
       "role": "info",
@@ -774,6 +774,32 @@
       },
       "so": 20,
       "to": "server"
+    },
+    {
+      "cost": "central",
+      "dir": "both",
+      "eo": 109,
+      "from": "you",
+      "id": "e4",
+      "kind": "plain",
+      "label": "",
+      "mo": -414,
+      "role": "action",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "net": [
+          "0a"
+        ],
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "so": 65,
+      "to": "relayTS"
     }
   ],
   "meta": {
@@ -926,9 +952,9 @@
       }
     ],
     "view": {
-      "cx": 951.1,
-      "cy": 214.5,
-      "k": 0.759
+      "cx": 818.9,
+      "cy": 239.9,
+      "k": 1.223
     }
   },
   "nodes": [
@@ -1279,10 +1305,10 @@
     },
     {
       "color": "red",
-      "h": 215,
+      "h": 230,
       "icon": "warn",
       "id": "tswarn",
-      "label": "Free Tailscale Funnel = at a company\n• needs a Tailscale account (Google/GitHub/… login)\n• name is <machine>.<tailnet>.ts.net — no own domain\n• ONE name only → the app's API, not the\n  cloud. / git. / matrix. / meet. services\n• bandwidth limits (not published) · still beta\n• a new name can take ~10 min to work\n• reinstall → new name, old links stop working\n  (until the box keeps its Tailscale state)",
+      "label": "Free Tailscale Funnel = at a company\n• needs a Tailscale account (Google/GitHub/… login)\n• address: selfprivacy.<tailnet>.ts.net\n  (no own domain)\n• switch Funnel on once, in your browser\n• ONE name only → the app's API, not the\n  cloud. / git. / matrix. / meet. services\n• bandwidth limits (not published) · still beta\n• a new name can take ~10 min to work\n• the relay passes your traffic on but can't\n  read it (the encryption ends on your server)",
       "nodeType": "info",
       "showWhen": {
         "reach": [
@@ -1729,10 +1755,10 @@
     },
     {
       "color": "orange",
-      "h": 80,
+      "h": 88,
       "icon": "key",
       "id": "tskey",
-      "label": "Auth key: tskey-auth-…\n(single use, from your account)",
+      "label": "Auth key: tskey-auth-…\none-time entry ticket, used\nup when the server joins",
       "nodeType": "info",
       "showWhen": {
         "reach": [
@@ -1741,7 +1767,7 @@
       },
       "w": 220,
       "x": 395,
-      "y": -230
+      "y": -238
     },
     {
       "badge": "bolt",
@@ -1823,6 +1849,25 @@
       "w": 262,
       "x": 737,
       "y": -172
+    },
+    {
+      "color": "red",
+      "h": 275,
+      "hideIn": [
+        "method=cable;net=0a;reach=tailscale"
+      ],
+      "icon": "warn",
+      "id": "tslife",
+      "label": "Keeping the same address\n• the key is used once; after that the\n  server proves who it is with its own\n  ID file on its disk (tailscaled.state)\n• reboot / new home ip: same machine,\n  same address — but today the tunnel\n  only comes back when you re-run the\n  finish step\n• reinstall wipes the ID file → a new\n  machine selfprivacy-1, old links stop\n  working: delete the old machine first\n  (fix planned: keep the ID file)\n• its login runs out after 180 days:\n  switch off key expiry on Tailscale's\n  Machines page",
+      "nodeType": "info",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 280,
+      "x": 50,
+      "y": 215
     }
   ]
 }
