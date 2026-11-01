@@ -1086,6 +1086,157 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   finish step (`install_service` writes to `/run`); reinstall wipes the ID → `selfprivacy-1`, delete the old machine
   first (fix planned: round0 R2); an untagged machine's login runs out after 180 days → switch off key expiry on
   Tailscale's Machines page. Verified: line + book parity, overlap scan, all views open, box + VM views looked at.
+- **FR124. Step mode: a view is told in steps, each showing only what matters then, acted out by a runner.** (User,
+  `docs/diagrams/network_explanations.md` § Change requirements + § Steps and components: *the overview was a bit
+  overwhelming — build the diagrams up in steps, based on what the user will do, and only show the components that are
+  relevant at that point in time.*) **Data:** `d.steps` = ordered list of `{id, showWhen, label, title, show, caption,
+  play}`; the steps whose `showWhen` matches the toggles are the view's steps (0…n−1). Step i shows the union of
+  `show` (node + edge ids) of steps 0…i and nothing else (an edge also needs both ends shown); **all** = the normal
+  view. **UI:** a *Steps* group after the toggles (`0 account · 1 install · 2 phonebook · 3 friend · all`), the hash
+  gains `;step=i`; `☐ in step` adds / removes the selected box or line to / from the current step, `✎ caption` edits
+  the step's text; an item added, drawn or pasted while a step is on joins that step, an item deleted everywhere
+  leaves every step. **Caption** (`<nr.nr>`): a box bottom-right of the canvas — *Step i of n · title*, ‹ ›, the
+  caption. **Runner** (`play`, SMIL, class `actor`, hidden under `prefers-reduced-motion`): one loop per step of the
+  actions `run` (walk a line — one id, or alternatives of which the first one drawn wins, e.g. `["e_cable", "e_usb"]`;
+  `back` = reversed; 240 px/s, 1.2–5 s per line; hops while running), `get` (an item
+  appears in its hands), `pop` (a sign above its head), `hammer` (builds the box it stands at: a hammer swings while
+  a cover slides off the icon bottom-up; a carried `light` goes into the box), `vault` (a safe appears next to it:
+  the `use` item goes in, the door opens, the `get` item comes out; `burn` = the used item burns in a flame, else it
+  is taken back), `wait`. Items: `key` (orange, the auth key), `idkey` (green, the machine's own key), `light` (the
+  install), `ip` (*my ip*), `domain` (*selfprivacy.tail1234.ts.net*). The runner fades in at the first line's start
+  and out at the end; lines are joined by walking across the box between them. The static renderer draws the same
+  (`render_state.py` with `"step": i`), the caption as a text block bottom-right. Phonebook: with no `ask` light
+  the entry's caption reads *✎ … → ip … written* (step 2: Tailscale writes, nobody looks up yet). **Tailscale
+  steps:** 0 *account* — you, the internet, Tailscale, `e_ts_run`, `e4`; the runner walks `e4` to Tailscale, *account
+  ✓*, gets the key, walks back. 1 *install* — + server, router, `e_cable` / `e_usb` / `e_wifi`, `e_scable`,
+  `e_ts_up`; runs with key + light down the netboot cable (or the USB line; over wifi it starts at the server),
+  hammers the server up, takes *my ip*, runs the tunnel to Tailscale, vault 1: key → own key (the auth key burns),
+  vault 2: own key → domain, runs back. 2 *phonebook* — + `tsbook`, `e3` (the book's update light). 3 *friend* — +
+  friend, `e_friend`, `e_ts_friend` (the lookup). The user's `e4` (you ↔ Tailscale, both heads) ran off the drawing:
+  it now goes down from the laptop, along the bottom under the router and up into Tailscale (`so 648 · mo 382 ·
+  eo 21`), in the box views only (in the VM view it would cut through the `tslife` note, so the VM story's step 0 has
+  no runner). A step's static render gets room for its caption below the drawing. Verified: `parity_steps.py` (items,
+  every runner animation, caption, hash — 7 step views), `ui_steps.py` (buttons, ‹ ›, ☐ in step, hash, a view
+  without steps), line + book parity, overlap scan, all views open, frames of both runner loops looked at. Not done:
+  `1.I`'s ladder / flag-pole movement (the runner hops along every line); steps for the other reaches.
+- **FR125. The steps play one after another; a click starts a step from its start; one step's end is the next one's
+  start.** (User: *make it loop through the steps automatically; each time a person clicks a step it should start at
+  the start state of that step, and the end state of the previous step should be identical to the start state of the
+  next step.*) **Play:** a ▶ / ⏸ button in the Steps group and in the caption box; playing (the default) each step
+  runs once and the next one starts when it ends — 0 → 1 → 2 → 3 → 0, round and round; paused, a step plays once
+  and freezes at its end state; `;play=0` in the link = paused. **Start state:** entering a step (a click, ‹ ›, the
+  auto-advance, a toggle change, a link) stamps its start time (`S.stepT0`, SVG seconds); every animation of the
+  step begins there and runs once (`repeatCount 1 · fill freeze`), so a click always starts at the beginning, and a
+  re-render while editing keeps the step where it is. A step lasts as long as its runner plan, else its `dur`
+  (steps 2 + 3: 10.6 s = one loop of the book), else 8 s. **Continuity:** a step's runner plan starts from the previous
+  step's end state — its spot, the box it is at and what it holds — and walks from there to its first line; a step
+  without a script keeps the runner standing with its things (steps 2 + 3: at the server with the own key and the
+  domain); the runner fades in only at the story's first step (or when there is nothing to follow on from) and out
+  only at its last, so the wrap 3 → 0 is the only cut. What a step adds to the picture fades in (0.7 s, class
+  `stepnew`, also in the static render) as the step starts. The static render of step i chains the plans 0…i the same
+  way. Verified: `parity_steps.py` (now also repeatCount / fill), `ui_steps.py` (⏸ pauses and `;play=0`, the standing
+  runner in step 2, step 3 hands over to step 0 after 11.6 s), line + book parity, overlap scan, all views open,
+  frames of the hand-over 0 → 1 looked at.
+- **FR126. In a step nobody comes in unless the step says so; a step's loops start with the step.** (User: *for step
+  1 install don't let the light go through e_ts_up; don't let the light be bounced by the firewall, there is nothing
+  coming in at that time. I like to keep the diagram clean.*) FR118's moving parts at the router — the light in
+  through the route (here out through `e_ts_up` and back), the stranger bounced by the fire wall with its ✕, and, on
+  the direct routes, the wall sliding down and the barrier lifting — run in a step only when it has
+  **`visitors: true`**; otherwise the gates are drawn shut and still (the flames keep flickering). Tailscale: only step
+  3 *friend* has visitors, so steps 1 *install* and 2 *phonebook* are quiet (step 2 follows the same reasoning: the
+  friend isn't there yet). The whole view (*all*) is unchanged. **Start state, also for the loops:** with a step on,
+  every animation drawn without its own begin (the phonebook's loop, the gates, the USB stick) begins at the step's
+  start (`begin = S.stepT0`), so a click shows the book from its first page too, not wherever its 10.6 s loop was;
+  the whole view keeps the page's clock. The static render of a step starts at 0 = the step's start already.
+  Verified: `parity_steps.py` (gate lights 0 in steps 0–2, 2 in step 3, editor = SVG, USB / wifi / VM too),
+  `ui_steps.py` (step 2's book begins at the click; no gate lights in steps 1 + 2; both in step 3; the whole view keeps
+  them on the page's clock), line + book parity, overlap scan, all views open; frames of step 1 at the router at 1.0 /
+  3.5 / 6.2 / 12 s (only the runner moves) and of step 3 (the friend's light and the stranger) looked at.
+- **FR127. A picture on an icon's screen: the SelfPrivacy logo on the server's laptop.** (User: *on the screen of the
+  laptop icon of "your private server" put the `Screenshot From 2026-11-01 18-56-58.png` icon* — the SelfPrivacy logo;
+  the user had just switched the server's icon from `server` to `laptop`.) An icon can declare its screen in
+  `docs/icons.svg` (`data-screen="x y w h"` in the 24-grid, like FR92's `data-bbox`); the laptop's is the inside of its
+  frame, `4.8 5.8 14.4 8.4`. A node's **`screen: "img:<key>"`** draws that picture there (`preserveAspectRatio meet`),
+  under the icon's outline so the frame stays crisp; the picture is kept in the diagram like FR114's uploaded ones
+  (`meta.images.selfprivacy` = the logo shrunk to 448 × 264, 64 colours, PNG, 23 KB). Both renderers; it shows wherever
+  the server is a pictogram (every view, incl. the VM views inside *Your computer*), and in step mode it appears with
+  the server as the runner builds it. Set by `handover17-checks/fr127_screen_apply.py`. Verified: the picture's spot
+  is the same in the editor and the SVG in 11 views (`parity_lines.py`), close-up and the build in step 1 looked at.
+- **FR128. Step 1 at Tailscale: two safes, a fire and real keys; a pause that stops at once; ⏪ / ⏩.** (User: *instead
+  of Mario carrying "my ip", make it carry <your SelfPrivacy IP address>. Ensure the pause button actually pauses the
+  animation directly when it is pressed, not at the end of each step. Make left / right fast-forward a bit, speed up
+  and reverse. Instead of moving / teleporting the orange auth key to the centre of the safe, show how Mario puts it in
+  the safe's keyhole. Instead of showing another safe at the same position later, show the 2 safes at the start beside
+  each other (with a bit of space in between). Instead of flashing a fire and not showing the key any more, show a fire
+  starting and then Mario taking the key out of the open vault door and throwing it into the fire. Show Mario picking
+  the green key out of the first locker, taking that key into the lock of the second vault, getting the domain name
+  out of it, then taking the key out of the second vault door, taking the url and bringing them both back, and show
+  the ip being stored in Tailscale.*)
+  **The scene** (`{"scene": {"A": …, "B": …}}`, both renderers, `SCENE` in `flow.js` = `SCENE` in
+  `docs/gen_flow_svg.py`): when the runner reaches Tailscale, a brick ledge appears above the Tailscale cloud with safe
+  A and safe B side by side (44 × 52, an 18 px gap) and a fire bowl at the right end; it fades in at the start and out
+  once the runner has left. Each safe has a door with a yellow keyhole (like the logo's), hinged on the side the runner
+  stands (A left, B right); open = the door swung out past its hinge. What a safe holds shows inside once its door is
+  open (A: the green own key, B: the domain, tiny). **Actions:** `walk` (to safe A / B, or `O` = back down to where it
+  came up; ≥ 0.6 s at 240 px/s, hopping), `put` (`"A.lock"`: the key flies from the runner's hand into the keyhole and
+  turns a quarter; `"B"`: into the safe, shrinking), `open` / `close` (a key in the lock moves with the door), `fire`
+  (a fire starts in the bowl), `take` (out of a keyhole or out of a safe, back into the hand), `throw` (in an arc over
+  the safes into the fire: the key shrinks away, the fire flares, then burns down), `pop` with `at` (a sign above a
+  safe). **Step 1's script:** … run to Tailscale · scene · walk A · put the auth key in A's lock · open A · fire · take
+  the key out of the open door · throw it into the fire · take the green key out of A · close A · walk B · put the green
+  key in B's lock · open B · put *your SelfPrivacy IP address* into B · take the domain out · take the green key out of
+  B's door · close B · *ip stored ✓* above B · walk down · run back with the green key and the domain (26.7 s).
+  **Carried items** sit at fixed places above the runner: keys left (with their tag), the light right, a text on top —
+  the IP is now the text *your SelfPrivacy IP address*. **The runner faces** the way it walks or works (the sprite flips;
+  what it holds doesn't), and the facing carries over to the next step. **⏸** stops the page's SVG clock at once —
+  everything freezes where it is — and **▶** runs it on from there (and the auto-advance with it); a step clicked while
+  paused shows its start state and stays paused; the whole view always runs. **⏪ / ⏩** in the caption box: a click
+  moves the story 2 s back / ahead, holding plays it backwards / fast forward at 4× (after 0.25 s); across steps — back
+  into the previous step (at the story's start it stops), ahead into the next one, round from step 3 to step 0; a step's
+  end is the next step's start. The texts the runner carries use the diagram's font. Set by
+  `handover17-checks/fr124_steps_apply.py`. Verified: `parity_steps.py` (all 36 animations of step 1 the same in the
+  editor and the SVG, in the box, USB and VM views), `ui_steps.py` (⏸ freezes at once and stays frozen, ⏪ / ⏩ clicks =
+  2 s, held ≈ 4×, into step 0 and back, stops at the start, goes round from step 3), line + book parity, overlap scan,
+  all views open; frames of the whole scene looked at (key into the lock, door open with the key, fire, the throw,
+  green key, IP in / domain out, *ip stored ✓*, the way back).
+- **FR129. Step 1 stores the IP and a copy of the domain on Tailscale's shelf; in step 2 Yoshi writes the phonebook.**
+  (User: *instead of showing "ip stored", show it stores the ip in a shelf, and put on the top shelf a COPY of the domain
+  it gets out of the vault (or just show the domain twice in the vault, put one on the shelf and let Mario bring one with
+  him). For Tailscale let Yoshi pick up the ip and the domain name to the phonebook and show Yoshi writing it in the
+  phonebook. Put the fire, awesome, left of the vaults.*) **The scene** (`SCENE` in both renderers) now has, left to
+  right on the ledge: the fire bowl, safe A, safe B, and a **shelf** with three boards (`S.top`, `S.mid`, `S.bottom`).
+  Safe B holds the domain twice (`"B": ["domain", "domain"]`); Mario takes one, walks to the shelf (`walk S`) and puts it
+  on the top board and *your SelfPrivacy IP address* on the middle board, then goes back for the second copy, which he
+  keeps. The bottom board already holds **Tailscale's relay address** (`relayip`, *relay ip 98.76.54.32*) — Tailscale's
+  own. The *ip stored ✓* sign is gone. The key is now tossed into the fire on the left. **The scene lasts into the next
+  step:** a step that doesn't end it (`{"scene": false}`) hands it on as it is (the doors shut, the fire out, what stands
+  on the boards and in the safes) — the end state of step 1 is the start state of step 2. **Runners:** a script action
+  may name who does it (`"who": "yoshi"`, else Mario); `appear` (out of a box: Yoshi comes out of the Tailscale cloud,
+  fading in), `vanish` (back in). New sprite `ic-yoshi` (also in the icon picker). **Step 2:** Yoshi appears, walks up to
+  the shelf, takes the domain (top board) and the relay address (bottom board), jumps down — the scene fades — climbs `e3`
+  to the phonebook and **writes** it (`{"write": "tsbook"}`): the book plays once from when he arrives (no update light:
+  he brings the entry), his two tags go into the book, and a pencil writes the entry line by line while a page-coloured
+  cover slides off behind it; then he climbs back down and vanishes into the cloud (15 s). The IP Yoshi carries is the
+  relay's, not your server's: Tailscale's phonebook points to its relay (as the book's entry already says), so your
+  server's IP stays on the shelf. Step 2's caption says so. Verified: `parity_steps.py` (every runner animation and the
+  book's write-mode animations the same in the editor and the SVG, box + VM), `ui_steps.py`, frames of the shelf, Yoshi
+  at the shelf, his way down and the book being written looked at.
+- **FR130. Two steps before the friend: back up the server's key in KeePass, send the link.** (User: *let Mario after
+  step phonebook put a COPY of the orange state key into a vault locked with the KeePass lock icon at "your new private
+  server", then carry that vault (above his head) back to "your computer" along with the Tailscale url. Then add a step
+  where a line from "Your computer" to "A friend's phone" is drawn and Mario carries the Tailscale url to the friend's
+  phone. Put that before step 3 friend.*) The steps are now `0 account · 1 install · 2 phonebook · 3 backup · 4 share ·
+  5 friend`. **3 backup:** the key Mario backs up is the server's own key (green, its ID file `tailscaled.state` — the
+  orange auth key was used up and burnt in step 1): it goes into the server (`{"put": "idkey", "in": "server"}` — into
+  a box: it flies in and is kept there), a KeePass vault appears above his head (`vault`, the KeePass logo from the
+  user's link, kept as `meta.images.keepass`, 96 × 96), a copy of the key comes out of the server into the vault
+  (`{"copy": "idkey", "from": "server", "in": "vault"}`), and he carries the vault and the address back along the
+  netboot cable and puts the vault into your computer. The caption marks it as planned (round0 R2 — the installer
+  doesn't keep the ID file yet). **4 share:** a new line `e_share` (*you send your friend the link*, info, free) from the
+  top of your computer over everything, down beside the phone and into it from the right (`e_sharevm` in the VM views,
+  where your computer is a box around the server); Mario carries the address along it and puts it into the phone.
+  **5 friend:** as before (the lookup, visitors at the gates). The static SVG's legend now also stays above the highest
+  line. Verified as FR129, plus frames of the vault being filled and carried home and of the share line.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

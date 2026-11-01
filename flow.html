@@ -113,6 +113,18 @@
     .usb-trip { pointer-events: none; }
     @media (prefers-reduced-motion: reduce) { .gh-anim { display: none; } }   /* FR118: the gatehouse's moving lights */
     @media (prefers-reduced-motion: reduce) { .usb-trip { display: none; } }   /* NT10 */
+    @media (prefers-reduced-motion: reduce) { .actor { display: none; } }   /* FR124: the step mode's runner */
+    .stepnew { animation: stepfade .7s ease-out both; }   /* FR125: what a step adds fades in as the step starts */
+    @keyframes stepfade { from { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .stepnew { animation: none; } }
+    /* FR124: the step caption, bottom-right of the canvas: what is going on in this step */
+    #stepcap { position: absolute; right: 12px; bottom: 10px; z-index: 30; max-width: 400px; background: rgba(20,24,31,.92);
+               border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px 9px; box-sizing: border-box;
+               font: 12px/1.45 ui-sans-serif, system-ui, sans-serif; color: var(--fg); user-select: none; }
+    #stepcap .sc-head { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 4px; }
+    #stepcap .sc-head b { color: var(--fg); font-size: 12px; text-transform: none; letter-spacing: 0; flex: 1; }
+    #stepcap .sc-head button { font: 12px ui-sans-serif, system-ui, sans-serif; line-height: 18px; padding: 0 7px; }
+    #stepcap .sc-body { color: var(--fg); }
     .pb-still { display: none; }   /* FR121: the phonebook's still cover, only when motion is reduced */
     @media (prefers-reduced-motion: reduce) { .pb-anim { display: none; } .pb-still { display: inline; } }
     #edgepanel .ep-nest .val { width: 30px; }
@@ -189,6 +201,7 @@
       </g>
     </svg>
     <div id="legend" hidden></div>
+    <div id="stepcap" hidden></div>
     <div id="iconpicker" hidden></div>
     <div id="edgepanel">
       <div class="row" id="ep-idrow">

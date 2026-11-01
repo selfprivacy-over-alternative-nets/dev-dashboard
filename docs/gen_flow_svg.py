@@ -277,6 +277,16 @@ def icon_boxes():   # FR92: icon → (x, y, w, h) of its drawn glyph in the 24-g
 ICON_BOX = icon_boxes()
 
 
+def icon_screens():   # FR127: icon → (x, y, w, h) of its screen in the 24-grid (data-screen in icons.svg) — mirrors flow.js ICON_SCREEN
+    out = {}
+    for m in re.finditer(r'<symbol id="ic-([a-z0-9-]+)"[^>]*? data-screen="([^"]+)"', open(ICONS, encoding="utf-8").read()):
+        out[m.group(1)] = tuple(float(v) for v in m.group(2).split())
+    return out
+
+
+ICON_SCREEN = icon_screens()
+
+
 def anchor_box(n, b, vis, vis_ids, state):   # FR92: lines attach to a pictogram's DRAWN icon (mirrors flow.js anchorBox)
     if n and b and n.get("nodeType") == "phonebook":   # FR119: the book
         B = book_geom(n, b)
@@ -602,7 +612,8 @@ def flame_svg(x, y, s, begin):   # FR118: a small flickering flame on the bricks
             '</g></g>')
 
 
-def gatehouse_gates_svg(rid, lst):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
+def gatehouse_gates_svg(rid, lst, quiet=False):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
+    # FR126: quiet = nobody comes in in this step: no lights, the wall and the barrier stay shut and still
     e, poly = lst[0]
     gh = GH[e["id"]]
     F, Pw, G = gate_wins(gh)
@@ -622,7 +633,7 @@ def gatehouse_gates_svg(rid, lst):   # FR118: the fire wall + port barrier over 
     fsc = F["w"] / 36
     o += [flame_svg(F["x"] + F["w"] * 0.27, F["y"] + F["h"] * 0.25, fsc, 0), flame_svg(F["x"] + F["w"] * 0.73, F["y"] + F["h"] * 0.38, fsc, 0.3),
           flame_svg(F["x"] + F["w"] * 0.45, F["y"] + F["h"] * 0.9, fsc, 0.55)]
-    if row:   # the fire wall slides down for your friend, then shuts again
+    if row and not quiet:   # the fire wall slides down for your friend, then shuts again
         o.append(_smil("animateTransform", attributeName="transform", type="translate", values=f'0 0;0 0;0 {F["h"]:.1f};0 {F["h"]:.1f};0 0;0 0', keyTimes="0;0.1;0.15;0.33;0.38;1"))
     o.append("</g></g>")
     hx, hy = Pw["x"] + Pw["w"] * 0.125, G["rowY"]
@@ -631,9 +642,12 @@ def gatehouse_gates_svg(rid, lst):   # FR118: the fire wall + port barrier over 
         o.append(f'<rect x="{Pw["x"] + Pw["w"] * 0.03:.1f}" y="{hy + Pw["w"] * 0.15:.1f}" width="{Pw["w"] * 0.17:.1f}" height="{max(4, Pw["y"] + Pw["h"] - 2 - (hy + Pw["w"] * 0.15)):.1f}" rx="2" fill="#c9d1d9"/>')
         o.append("<g>" + f'<rect x="{Pw["x"] + Pw["w"] * 0.075:.1f}" y="{hy - Pw["w"] * 0.1:.1f}" width="{Pw["w"] * 0.85:.1f}" height="{Pw["w"] * 0.2:.1f}" rx="{Pw["w"] * 0.07:.1f}" fill="#a3c55a" stroke="#0a140a" stroke-width="1"/>'
                  + "".join(f'<rect x="{Pw["x"] + Pw["w"] * f:.1f}" y="{hy - Pw["w"] * 0.1:.1f}" width="{Pw["w"] * 0.1:.1f}" height="{Pw["w"] * 0.2:.1f}" fill="#0b0e14"/>' for f in (0.32, 0.55, 0.78))
-                 + (_smil("animateTransform", attributeName="transform", type="rotate", values=";".join(f"{v} {hx:.1f} {hy:.1f}" for v in (0, 0, -80, -80, 0, 0)), keyTimes="0;0.21;0.26;0.38;0.43;1") if row and opens_port else "")
+                 + (_smil("animateTransform", attributeName="transform", type="rotate", values=";".join(f"{v} {hx:.1f} {hy:.1f}" for v in (0, 0, -80, -80, 0, 0)), keyTimes="0;0.21;0.26;0.38;0.43;1") if row and opens_port and not quiet else "")
                  + "</g>")
         o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="{Pw["w"] * 0.075:.1f}" fill="#0b0e14"/>')
+    if quiet:
+        o.append("</g>")
+        return "".join(o)
     pw = e.get("pw") or 22
     R1, R2 = pw * 0.45, pw * 0.22
     d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in poly)
@@ -687,9 +701,12 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         v = ([(0, kv[0][1])] if off else []) + [(k(d), x) for d, x in kv]
         return ";".join(F(t) for t, _ in v), ";".join(x if isinstance(x, str) else F(x) for _, x in v)
 
+    wr = lt.get("write")   # FR129: written by a runner in this step — the book plays once, from then (no update light: the runner brings the entry)
+    rc = f'repeatCount="1" fill="freeze" begin="{_f3(wr["t"])}s"' if wr else 'repeatCount="indefinite"'
+
     def anim(**a):
         tag = "animateMotion" if "path" in a else "animateTransform" if "type" in a else "animate"
-        return f'<{tag} dur="{F(T)}s" repeatCount="indefinite" ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + "/>"
+        return f'<{tag} dur="{F(T)}s" {rc} ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + "/>"
 
     def fade(kv):
         kt, vs = keys(kv)
@@ -745,7 +762,20 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
     o.append(txt(pl0 + 19, 42, "ip " + ip, font_size=F(fs), fill=INK, font_family=MONO, font_weight=700))
     kt, vs = keys([(0, 9), (0.39, 9), (0.42, 3.4), (1, 3.4)])
     o.append(f'<circle cx="{F(pl0 + 12)}" cy="27" r="9" fill="#ffffff" stroke="{INK}" stroke-width="1" opacity="0" class="pb-anim">'   # the white light, landed
-             + fade([(0, 0), (0.39, 0), (0.40, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + anim(attributeName="r", keyTimes=kt, values=vs) + "</circle>")
+             + ((fade([(0, 0), (0.39, 0), (0.40, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + anim(attributeName="r", keyTimes=kt, values=vs)) if lt["ask"] else "")   # FR124: only when someone looks the name up
+             + "</circle>")
+    if wr:   # FR129: the entry is written while the book is open — a pencil goes along each line, a page-coloured cover slides off behind it — mirrors flow.js
+        x0, w1, w2 = pl0 + 19, min(W - 24, len(host) * 0.6 * fs), min(W - 24, (len(ip) + 3) * 0.6 * fs)
+        for y0, d0, d1 in ((19, 0.42, 0.48), (31, 0.48, 0.54)):
+            kx, vx = keys([(0, _f3(pl0 + 15)), (d0, _f3(pl0 + 15)), (d1, _f3(pl0 + W - 5)), (1, _f3(pl0 + W - 5))])
+            kw, vw = keys([(0, W - 20), (d0, W - 20), (d1, 0), (1, 0)])
+            o.append(f'<rect x="{F(pl0 + 15)}" y="{y0}" width="{W - 20}" height="13" fill="{PAGE}" class="pb-anim">'
+                     + anim(attributeName="x", keyTimes=kx, values=vx) + anim(attributeName="width", keyTimes=kw, values=vw) + "</rect>")
+        kt, vs = keys([(0, f"{_f3(x0)} 28"), (0.42, f"{_f3(x0)} 28"), (0.48, f"{_f3(x0 + w1)} 28"), (0.485, f"{_f3(x0)} 40"), (0.54, f"{_f3(x0 + w2)} 40"), (1, f"{_f3(x0 + w2)} 40")])
+        o.append(f'<g class="pb-anim" opacity="0"><path d="M 0 0 L 2 -5 L 11 -14 L 14 -11 L 5 -2 Z" fill="#facc15" stroke="{DARK}" stroke-width="0.8"/>'
+                 f'<path d="M 11 -14 L 13 -16 L 16 -13 L 14 -11 Z" fill="#f472b6" stroke="{DARK}" stroke-width="0.8"/>'
+                 + anim(attributeName="transform", type="translate", keyTimes=kt, values=vs)
+                 + fade([(0, 0), (0.41, 0), (0.42, 1), (0.54, 1), (0.56, 0), (1, 0)]) + "</g>")
     for i, l in ((3, "P"), (2, "H"), (1, "A")):
         o.append(turn(i, "closed", page(pl0, l) + rows(pl0, ROWS)))
     o.append(turn(0, "closed", cover()))
@@ -764,8 +794,10 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         bx0 = X(W - 22, 17)
         pts = " ".join(f"{F(bx0 + a)},{c - 19}" for a, c in ((9, 0), (0, 15), (7, 15), (3, 28), (16, 10), (9, 10), (13, 0)))
         o.append(f'<polygon points="{pts}" fill="#fde047" stroke="{DARK}" stroke-width="1.2"/>')
-    # found: the white light's address matches an ip
-    spans = "".join(f'<tspan fill="{c}">{html.escape(t)}</tspan>' for t, c in (("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)))
+    # found: the white light's address matches an ip — or, with no lookup (FR124), the entry was written
+    cap_t = ((("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)) if lt["ask"]
+             else (("✎ ", "#f97316"), (url, "#ffffff"), (" → ", "#8b949e"), ("ip " + ip, GRAY), (" written", "#8b949e")))
+    spans = "".join(f'<tspan fill="{c}">{html.escape(t)}</tspan>' for t, c in cap_t)
     o.append(txt(0, -24, "", spans + fade([(0, 0), (0.41, 0), (0.43, 1), (0.62, 1), (0.65, 0), (1, 0)]), text_anchor="middle", font_size=12, opacity=0, **{"class": "pb-anim"}))
     o.append("</g></g>")
 
@@ -972,9 +1004,12 @@ def default_state(toggles):
 CANON = {}   # FR115: toggle id → {value: the first value of its sameLayout group}; set per diagram in render()
 
 
+STEP_SET = None   # FR124: with a step active, the ids (boxes + lines) that step shows; None = the whole view — mirrors flow.js inStep
+
+
 def shown(o, state):   # FR113: showWhen matches and the item isn't hidden in this exact view — mirrors flow.js visible
     key = ";".join(f"{k}={CANON.get(k, {}).get(v, v)}" for k, v in state.items() if v is not None)   # state is built in toggle order
-    return when_ok(o.get("showWhen"), state) and key not in (o.get("hideIn") or [])
+    return when_ok(o.get("showWhen"), state) and key not in (o.get("hideIn") or []) and (STEP_SET is None or o.get("id") in STEP_SET)
 
 
 def when_ok(when, state):
@@ -1037,6 +1072,601 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
                and any(k["id"] in (e["from"], e["to"]) for e in drawn) for k in nodes)
 
 
+# ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
+ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26,   # px/s · s — mirrors flow.js ACT
+       "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
+             "throw": 1.0, "copy": 1.2, "write": 6.0}}
+ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
+    "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
+    "idkey":   {"icon": "key", "color": "#3fb950", "dx": -14, "dy": -32, "tag": "own key"},
+    "light":   {"light": True, "color": "#fff3a0", "dx": 14, "dy": -32},
+    "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -44},   # FR130: a small safe locked with the KeePass logo, above its head
+    "ip":      {"text": "your SelfPrivacy IP address", "color": "#9aa3ad", "dx": 0, "dy": -58},
+    "relayip": {"text": "relay ip 98.76.54.32", "color": "#9aa3ad", "dx": 0, "dy": -58},   # FR129: Tailscale's own address — what its phonebook gets
+    "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -70},
+}
+ACTORS = ["mario", "yoshi"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
+# FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with three boards) — mirrors flow.js SCENE
+SCENE = {"x0": -84, "x1": 240, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w": 44, "h": 52, "inset": 5, "lock": 17},
+         "A": {"x": -28, "hinge": "l", "mark": -44}, "B": {"x": 34, "hinge": "r", "mark": 93}, "F": {"x": -68},
+         "S": {"x": 170, "w": 60, "h": 66, "mark": 150, "rows": ["top", "mid", "bottom"]}, "IN": {"safe": 0.22, "shelf": 0.36, "icon": 0.8}}
+_num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)   # JS typeof v === "number"
+_r1 = lambda v: int(v * 10 + 0.5) / 10   # tenths, halves up (v ≥ 0) — flow.js r1
+_dist = lambda p, q: ((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) ** 0.5
+
+
+def _f3(v):   # a number the way flow.js writes +v.toFixed(3) (FR129)
+    s = ("%.3f" % v).rstrip("0").rstrip(".")
+    return "0" if s in ("", "-0") else s
+
+
+def _f4(v):   # a number the way flow.js writes +v.toFixed(4): up to 4 decimals, no trailing zeros, no "-0"
+    s = ("%.4f" % v).rstrip("0").rstrip(".")
+    return "0" if s in ("", "-0") else s
+
+
+def scene_geo(O):   # where the ledge, the safes, the fire bowl and the shelf are — mirrors flow.js sceneGeo
+    s, top = SCENE["safe"], O[1] + SCENE["top"]
+    g = {"O": O, "top": top, "x0": O[0] + SCENE["x0"], "x1": O[0] + SCENE["x1"], "fire": (O[0] + SCENE["F"]["x"], top)}
+    for k in ("A", "B"):
+        x, y, dw = O[0] + SCENE[k]["x"], top - s["h"], s["w"] - 2 * s["inset"]
+        hx = x + s["inset"] if SCENE[k]["hinge"] == "l" else x + s["inset"] + dw
+        lock = (x + s["w"] / 2, y + s["lock"])
+        g[k] = {"x": x, "y": y, "hx": hx, "dw": dw, "lock": lock, "open": (hx + SCENE["OPEN"] * (lock[0] - hx), lock[1]),
+                "inside": (x + s["w"] / 2, y + s["h"] / 2 + 3), "mark": (O[0] + SCENE[k]["mark"], top)}
+    sh = SCENE["S"]
+    x, y = O[0] + sh["x"], top - sh["h"]
+    rh = sh["h"] / len(sh["rows"])
+    g["S"] = {"x": x, "y": y, "w": sh["w"], "h": sh["h"], "rh": rh, "mark": (O[0] + sh["mark"], top)}
+    for i, r in enumerate(sh["rows"]):   # where a thing stands on that board
+        g["S." + r] = (x + sh["w"] / 2, y + rh * i + rh / 2 + 4)
+    return g
+
+
+def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lambda i: None):   # one step's plan — mirrors flow.js actorPlan
+    by = {e["id"]: e for e in edges}
+    st0 = (start or {}).get("actors") or {}
+    T = ACT["FADE"] if first or not st0.get("mario") else 0.0
+    W, writes, ACTS = {}, [], {}
+    sc, n_inst = None, [0]
+
+    def carry(R, i, on):   # (already holding it: nothing changes)
+        lst = R["items"].setdefault(i, [])
+        if not any(v[1] is None for v in lst):
+            lst.append([on, None])
+
+    def drop(R, i, off):
+        for iv in R["items"].get(i, []):
+            if iv[1] is None:
+                iv[1] = off
+                break
+
+    def actor(who):   # a runner: where it is, its path, what it holds, which way it faces, when it shows
+        if who in ACTS:
+            return ACTS[who]
+        s0 = st0.get(who)
+        fc = s0["face"] if s0 and s0.get("face") else 1
+        R = ACTS[who] = {"who": who, "pts": [], "kf": [], "dist": 0.0, "runs": [], "acts": [], "pops": [], "items": {}, "inst": {}, "spot": None, "at": None,
+                         "facing": fc, "face": [[0, fc]], "op": [[0, 1 if s0 else 0]], "gone": False}
+        if s0:
+            R["spot"], R["at"] = s0["spot"], s0["at"]
+            R["pts"].append(s0["spot"])
+            R["kf"].append([0, 0])
+            for i in s0["items"]:
+                carry(R, i, 0)
+        return R
+
+    def turn(R, t, dx):   # it faces where it goes or works
+        if abs(dx) <= 1:
+            return
+        v = 1 if dx > 0 else -1
+        if v == R["facing"]:
+            return
+        R["facing"] = v
+        if R["face"][-1][0] == t:
+            R["face"][-1][1] = v
+        else:
+            R["face"].append([t, v])
+
+    def go_to(R, q, dur):
+        nonlocal T
+        R["kf"].append([T, R["dist"]])
+        turn(R, T, q[0] - R["spot"][0])
+        L = _dist(R["spot"], q)
+        R["pts"].append(q)
+        R["runs"].append([T, T + dur])
+        T += dur
+        R["dist"] += L
+        R["kf"].append([T, R["dist"]])
+        R["spot"] = q
+
+    hand = lambda R, i: (R["spot"][0] + ACT_ITEMS[i]["dx"], R["spot"][1] + ACT_ITEMS[i]["dy"])
+    track = lambda inst: W.setdefault(inst, {"id": inst.split("#")[0], "pts": [], "kf": [], "d": 0, "vis": [], "sc": [], "rot": []})
+
+    def new_inst(i):
+        n_inst[0] += 1
+        return f"{i}#{n_inst[0]}"
+
+    def inst_of(R, i):   # the copy the runner holds (a new one when it got it by `get`)
+        if not R["inst"].get(i):
+            R["inst"][i] = new_inst(i)
+        return R["inst"][i]
+
+    def kf_add(w, t, d):
+        last_ = w["kf"][-1] if w["kf"] else None
+        if not last_ or last_[0] != t or last_[1] != d:
+            w["kf"].append([t, d])
+
+    def w_move(inst, t0, t1, path):   # the thing goes from where it is along the path, between t0 and t1
+        w = track(inst)
+        if not w["pts"]:
+            w["pts"].append(path[0])
+            kf_add(w, t0, 0)
+            path = path[1:]
+        kf_add(w, t0, w["d"])
+        for q in path:
+            L = _dist(w["pts"][-1], q)
+            if L > 0:
+                w["d"] += L
+                w["pts"].append(q)
+        kf_add(w, t1, w["d"])
+
+    def holder(k):   # inside a safe, or on a shelf board
+        if not sc or not (k in ("A", "B") or re.fullmatch(r"S\.(top|mid|bottom)", k)):
+            return None
+        return {"at": sc["g"][k]["inside"], "safe": True} if k in ("A", "B") else {"at": sc["g"][k], "safe": False}
+    in_scale = lambda i, safe: (SCENE["IN"]["safe"] if safe else SCENE["IN"]["shelf"]) if ACT_ITEMS[i].get("text") else SCENE["IN"]["icon"]
+    middle = lambda b: (b[0] + b[2] / 2, b[1] + b[3] / 2)
+    if start and start.get("scene"):   # FR129: the scene the step before left standing — as it was, the doors shut, the fire out
+        sc = {"g": scene_geo(start["scene"]["O"]), "t0": 0, "fadeIn": False, "t1": None, "doors": {"A": [], "B": []}, "lock": {}, "fire": [], "pops": [],
+              "inside": [{"id": v["id"], "k": v["k"], "inst": None, "on": 0, "off": None, "x": v["x"], "y": v["y"], "s": v["s"]} for v in start["scene"]["inside"]]}
+    for who in st0:   # the runners the step before left standing
+        actor(who)
+    for a in step.get("play") or []:
+        R = actor(a["who"] if a.get("who") in ACTORS else "mario")
+        if a.get("run") is not None:   # one line id, or alternatives (the first one drawn in this view wins: e_cable / e_usb)
+            ids = a["run"] if isinstance(a["run"], list) else [a["run"]]
+            e = next((by[i] for i in ids if i in by and len(epoly.get(i) or []) >= 2), None)
+            p = epoly.get(e["id"]) if e else None
+            if not p:
+                continue
+            p = list(reversed(p)) if a.get("back") else list(p)
+            L, seq = _poly_len(p), p
+            if not R["pts"]:   # it fades in where it starts
+                R["pts"].extend(p)
+                R["kf"].extend([[0, 0], [T, 0]])
+                if T > ACT["FADE"]:
+                    R["op"].append([T - ACT["FADE"], 0])
+                R["op"].append([T, 1])
+            else:
+                q = R["pts"][-1]
+                gap = _dist(q, p[0])
+                R["kf"].append([T, R["dist"]])
+                if gap > 0.5:   # walks across the box to where the next line starts
+                    R["pts"].append(p[0])
+                    L += gap
+                    seq = [q] + p
+                R["pts"].extend(p[1:])
+            dur = min(ACT["MAX"], max(ACT["MIN"], _r1(L / ACT["V"])))
+            c = 0
+            for j in range(1, len(seq)):   # each stretch that goes left or right turns it that way
+                turn(R, T + (c / L if L else 0) * dur, seq[j][0] - seq[j - 1][0])
+                c += _dist(seq[j - 1], seq[j])
+            R["runs"].append([T, T + dur])
+            T += dur
+            R["dist"] += L
+            R["kf"].append([T, R["dist"]])
+            R["spot"], R["at"] = p[-1], (e["from"] if a.get("back") else e["to"])
+        elif a.get("get") is not None:
+            for i in (a["get"] if isinstance(a["get"], list) else [a["get"]]):
+                if i in ACT_ITEMS:
+                    carry(R, i, T)
+            T += ACT["T"]["get"]
+        elif a.get("pop") is not None:
+            if sc and a.get("at") in ("A", "B"):   # above a safe
+                q = sc["g"][a["at"]]
+                sc["pops"].append([str(a["pop"]), q["x"] + SCENE["safe"]["w"] / 2, q["y"] - 28, T, T + ACT["T"]["pop"]])
+            else:
+                R["pops"].append([str(a["pop"]), T, T + ACT["T"]["pop"]])
+            T += ACT["T"]["pop"]
+        elif a.get("hammer") is not None:
+            dur = a["hammer"] if _num(a["hammer"]) and a["hammer"] > 0 else ACT["T"]["hammer"]
+            R["acts"].append({"kind": "hammer", "t0": T, "t1": T + dur, "at": R["at"]})
+            drop(R, "light", T + 0.4)   # the install light goes into the box
+            T += dur
+        elif a.get("appear") is not None:   # FR129: it comes out of a box (Yoshi, out of the Tailscale cloud)
+            b = box_at(str(a["appear"]))
+            if not b or R["pts"]:
+                continue
+            R["spot"] = middle(b)
+            R["pts"].append(R["spot"])
+            R["kf"].append([0, 0])
+            R["op"] += [[T, 0], [T + ACT["T"]["scene"], 1]]
+            T += ACT["T"]["scene"]
+        elif a.get("vanish") and R["pts"]:   # …and goes back in
+            R["op"] += [[T, 1], [T + ACT["T"]["scene"], 0]]
+            R["gone"] = True
+            T += ACT["T"]["scene"]
+        elif a.get("scene") is False:   # FR129: the scene fades away
+            if sc and sc["t1"] is None:
+                sc["t1"] = T + 0.6
+            T += ACT["T"]["unscene"]
+        elif a.get("scene") and R["spot"]:   # FR128: the ledge, the safes, the fire bowl and the shelf appear here, holding what the script says
+            sc = {"g": scene_geo((R["spot"][0], R["spot"][1])), "t0": T, "fadeIn": True, "t1": None, "doors": {"A": [], "B": []}, "lock": {}, "fire": [], "pops": [], "inside": []}
+            for k in a["scene"]:
+                h = holder(k)
+                ids = [i for i in (a["scene"][k] if isinstance(a["scene"][k], list) else [a["scene"][k]]) if i in ACT_ITEMS]
+                if not h:
+                    continue
+                for j, i in enumerate(ids):
+                    sc["inside"].append({"id": i, "k": k, "inst": None, "on": T, "off": None, "x": h["at"][0], "y": h["at"][1] + (j - (len(ids) - 1) / 2) * 8, "s": in_scale(i, h["safe"])})
+            T += ACT["T"]["scene"]
+        elif sc and a.get("walk") in ("O", "A", "B", "S") and R["spot"]:   # to a safe or the shelf, or back down to where the scene started
+            q = sc["g"]["O"] if a["walk"] == "O" else sc["g"]["S"]["mark"] if a["walk"] == "S" else sc["g"][a["walk"]]["mark"]
+            go_to(R, (q[0], q[1]), max(ACT["WALK"], _r1(_dist(R["spot"], q) / ACT["V"])))
+        elif a.get("put") is not None and a["put"] in ACT_ITEMS and R["spot"]:   # into a keyhole ("A.lock"), a safe or onto a shelf board ("B", "S.top"), or into a box ("server")
+            i, into = a["put"], str(a.get("in") or "")
+            parts = into.split(".")
+            k, part = parts[0], (parts[1] if len(parts) > 1 else None)
+            lock = bool(part == "lock" and sc and k in ("A", "B"))
+            h = None if lock else holder(into)
+            b = box_at(into) if not lock and not h else None
+            to = sc["g"][k]["lock"] if lock else (h["at"][0], h["at"][1] + len([v for v in sc["inside"] if v["k"] == into and v["off"] is None]) * 8) if h else middle(b) if b else None
+            if not to:
+                continue
+            inst = inst_of(R, i)
+            w, t1 = track(inst), T + (0.5 if lock else 0.6)
+            R["inst"].pop(i, None)
+            turn(R, T, to[0] - R["spot"][0])
+            drop(R, i, T)
+            w_move(inst, T, T, [hand(R, i)])
+            w["vis"].append([T, None])
+            w["sc"].append([T, 1])
+            w_move(inst, T, t1, [to])
+            if lock:
+                w["sc"].append([t1, 0.8])
+                w["rot"] += [[t1, 0], [T + ACT["T"]["put"], 90]]
+                sc["lock"][k] = inst
+                T += ACT["T"]["put"]
+            elif h:
+                s = in_scale(i, h["safe"])
+                w["sc"].append([t1, s])
+                w["vis"][-1][1] = t1
+                sc["inside"].append({"id": i, "k": into, "inst": inst, "on": t1, "off": None, "x": to[0], "y": to[1], "s": s})
+                T += ACT["T"]["putIn"]
+            else:   # FR130: into a box — it goes in and is kept there
+                w["sc"].append([t1, 0.3])
+                w["vis"][-1][1] = t1
+                T += ACT["T"]["putIn"]
+        elif sc and (a.get("open") if a.get("open") is not None else a.get("close")) in ("A", "B"):   # the door swings open / shut; a key in its lock goes with it
+            opening = a.get("open") is not None
+            k = a["open"] if opening else a["close"]
+            q, d = sc["g"][k], (ACT["T"]["open"] if opening else ACT["T"]["close"])
+            sc["doors"][k] += [[T, 1 if opening else SCENE["OPEN"]], [T + d, SCENE["OPEN"] if opening else 1]]
+            if sc["lock"].get(k):
+                w_move(sc["lock"][k], T, T + d, [q["open"] if opening else q["lock"]])
+            T += d
+        elif sc and a.get("fire"):   # a fire starts in the bowl
+            sc["fire"] += [[T, 0], [T + ACT["T"]["fire"], 1]]
+            T += ACT["T"]["fire"]
+        elif a.get("take") is not None and a["take"] in ACT_ITEMS and R["spot"]:   # out of a keyhole ("A.lock"), out of a safe or off a shelf board ("A", "S.top")
+            i, frm = a["take"], str(a.get("from") or "")
+            parts = frm.split(".")
+            k, part = parts[0], (parts[1] if len(parts) > 1 else None)
+            if part == "lock" and sc and k in ("A", "B"):
+                inst = sc["lock"].get(k)
+                if not inst:
+                    continue
+                w, t1 = track(inst), T + ACT["T"]["unlock"]
+                turn(R, T, sc["g"][k]["lock"][0] - R["spot"][0])
+                w_move(inst, T, t1, [hand(R, i)])
+                w["sc"] += [[T, 0.8], [t1, 1]]
+                w["rot"] += [[T, 90], [t1, 0]]
+                if w["vis"]:
+                    w["vis"][-1][1] = t1
+                carry(R, i, t1)
+                R["inst"][i] = inst
+                sc["lock"][k] = None
+                T = t1
+            else:
+                v = next((x for x in sc["inside"] if x["id"] == i and x["k"] == frm and x["off"] is None), None) if sc else None
+                if not v:
+                    continue
+                inst = v["inst"] or new_inst(i)
+                w, t1 = track(inst), T + ACT["T"]["take"]
+                v["off"] = T
+                turn(R, T, v["x"] - R["spot"][0])
+                w_move(inst, T, T, [(v["x"], v["y"])])
+                w_move(inst, T, t1, [hand(R, i)])
+                w["vis"].append([T, t1])
+                w["sc"] += [[T, v["s"]], [t1, 1]]
+                carry(R, i, t1)
+                R["inst"][i] = inst
+                T = t1
+        elif sc and a.get("throw") is not None and a["throw"] in ACT_ITEMS and R["spot"]:   # tossed into the fire: it shrinks away, the fire flares, then burns down
+            i = a["throw"]
+            inst = inst_of(R, i)
+            w, frm = track(inst), hand(R, i)
+            to, t1 = (sc["g"]["fire"][0], sc["g"]["fire"][1] - 12), T + 0.8
+            R["inst"].pop(i, None)
+            turn(R, T, to[0] - R["spot"][0])
+            drop(R, i, T)
+            w_move(inst, T, T, [frm])
+            w["vis"].append([T, T + ACT["T"]["throw"]])
+            w["sc"] += [[T, 1], [t1, 1], [T + ACT["T"]["throw"], 0.3]]
+            arc = []
+            for j in range(1, 9):
+                u = j / 8
+                arc.append((frm[0] + (to[0] - frm[0]) * u, frm[1] + (to[1] - frm[1]) * u - 160 * u * (1 - u)))
+            w_move(inst, T, t1, arc)
+            sc["fire"] += [[t1, 1], [t1 + 0.15, 1.5], [t1 + 0.5, 1], [t1 + 1.5, 1], [t1 + 2.5, 0]]
+            T += ACT["T"]["throw"]
+        elif a.get("copy") is not None and a["copy"] in ACT_ITEMS and str(a.get("in") or "") in ACT_ITEMS and R["spot"]:   # FR130: a copy comes out of a box into what the runner holds (the vault)
+            b = box_at(str(a.get("from") or ""))
+            if not b:
+                continue
+            inst = new_inst(a["copy"])
+            w, frm, to, t1 = track(inst), middle(b), hand(R, str(a["in"])), T + 0.8
+            turn(R, T, frm[0] - R["spot"][0])
+            w_move(inst, T, T, [frm])
+            w_move(inst, T + 0.2, t1, [to])
+            w["vis"].append([T, t1 + 0.2])
+            w["sc"] += [[T, 0.6], [T + 0.2, 1], [t1, 1], [t1 + 0.2, 0.3]]
+            T += ACT["T"]["copy"]
+        elif a.get("write") is not None and R["spot"]:   # FR129: the book opens, what the runner brings goes in, the entry is written
+            b = box_at(str(a["write"]))
+            if not b:
+                continue
+            writes.append({"book": str(a["write"]), "t": T + 0.2})
+            for i in list(R["items"].keys()):
+                if ACT_ITEMS[i].get("text") and any(v[1] is None for v in R["items"][i]):
+                    inst = inst_of(R, i)
+                    w = track(inst)
+                    R["inst"].pop(i, None)
+                    drop(R, i, T + 3.4)
+                    w_move(inst, T + 3.4, T + 3.4, [hand(R, i)])
+                    w_move(inst, T + 3.4, T + 3.9, [middle(b)])
+                    w["vis"].append([T + 3.4, T + 3.9])
+                    w["sc"] += [[T + 3.4, 1], [T + 3.9, 0.3]]
+            T += ACT["T"]["write"]
+        elif _num(a.get("wait")):
+            T += max(0, a["wait"])
+    all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
+    if not all_ and not sc:
+        return None   # no runner and no scene in this step
+    if _num(step.get("dur")):   # standing time
+        T = max(T, step["dur"])
+    elif not (step.get("play") or []):
+        T = max(T, ACT["STAND"])
+    for R in all_:
+        R["kf"].append([T, R["dist"]])
+    if last:
+        for R in all_:
+            if not R["gone"]:
+                R["op"] += [[T, 1], [T + ACT["FADE"], 0]]
+        T += ACT["FADE"]
+        for R in all_:
+            R["kf"].append([T, R["dist"]])
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "last": last, "end": {"actors": {}, "scene": None},
+           "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
+                       "items": R["items"], "face": R["face"], "op": R["op"]} for R in all_]}
+    for R in all_:
+        if not R["gone"]:
+            out["end"]["actors"][R["who"]] = {"spot": R["spot"], "at": R["at"], "face": R["facing"], "items": [i for i, ivs in R["items"].items() if any(v[1] is None for v in ivs)]}
+    if sc and sc["t1"] is None:
+        out["end"]["scene"] = {"O": sc["g"]["O"], "inside": [{"id": v["id"], "k": v["k"], "x": v["x"], "y": v["y"], "s": v["s"]} for v in sc["inside"] if v["off"] is None]}
+    return out
+
+
+def step_plans(steps_now, step, epoly, edges, box_at):   # FR125 / FR129: the plans of steps 0…step, each starting where the one before ended — mirrors flow.js stepPlans
+    P = prev = None
+    durs = []
+    for k in range(step + 1):
+        P = actor_plan(steps_now[k], epoly, edges, prev, k == 0, k == len(steps_now) - 1, box_at)
+        prev = P["end"] if P else None
+        durs.append(P["T"] if P else (steps_now[k]["dur"] if _num(steps_now[k].get("dur")) else ACT["STAND"]))
+    return {"P": P, "durs": durs}
+
+
+def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animation runs once and freezes at its end — mirrors flow.js drawActor
+    T = P["T"]
+    images = images or {}
+    tk = lambda t: _f4(max(0.0, min(1.0, t / T)))
+
+    def anim(**a):
+        tag = "animateMotion" if "path" in a else "animateTransform" if "type" in a else "animate"
+        return f'<{tag} dur="{_f4(T)}s" repeatCount="1" fill="freeze" ' + " ".join(f'{k}="{v}"' for k, v in a.items()) + "/>"
+    tail = T - ACT["FADE"] if P["last"] else None   # a thing still held at the end goes with the fade-out — or stays, for the next step
+
+    def fade_kv(ivs0):   # opacity 1 during each [on, off] (off None = held to the end), 0.05 s ramps → (constant value or None, markup)
+        ivs = [[on, tail if off is None else off] for on, off in ivs0]
+        ivs = [[on, off] for on, off in ivs if off is None or off - on >= 0.12]   # (a moment's flash is left out)
+        kv, open_ = [[0, 1 if any(on <= 0 for on, _ in ivs) else 0]], False
+        for on, off in ivs:
+            if off is None:
+                if on > 0:
+                    kv += [[on, 0], [on + 0.05, 1]]
+                open_ = True
+                continue
+            if on > 0:
+                kv += [[on, 0], [on + 0.05, 1]]
+            kv += [[off - 0.05, 1], [off, 0]]
+        kv.append([T, 1 if open_ else 0])
+        ks = [v for i, v in enumerate(kv) if not i or v[0] >= kv[i - 1][0]]   # key times never go back
+        if all(v[1] == ks[0][1] for v in ks):
+            return ks[0][1], ""
+        return None, anim(attributeName="opacity", values=";".join(str(v[1]) for v in ks), keyTimes=";".join(tk(v[0]) for v in ks))
+
+    def fade_iv(ivs):   # …as an opacity attribute + animation for a group opened by the caller with opacity="0"
+        c, a = fade_kv(ivs)
+        return a if c is None else f'<set attributeName="opacity" to="{c}"/>'
+
+    def keyed(kv0):   # [time, value] key frames over the whole plan (held before the first and after the last) — mirrors flow.js keyed
+        kv = ([[0, kv0[0][1]]] + list(kv0)) if kv0 and kv0[0][0] > 0 else list(kv0)
+        if kv and kv[-1][0] < T:
+            kv.append([T, kv[-1][1]])
+        return [v for i, v in enumerate(kv) if not i or v[0] >= kv[i - 1][0]]
+    varies = lambda kv: any(v[1] != kv[0][1] for v in kv)
+
+    def look(i, x, y, s, plain, ivs=None, opacity=None):   # a thing's look at (x, y), scaled: its icon (+ tag, unless plain), the vault, or its text
+        it = ACT_ITEMS[i]
+        c, a = fade_kv(ivs) if ivs is not None else (opacity, "")
+        o = [f'<g transform="translate({_f4(x)} {_f4(y)})' + (f' scale({_f4(s)})' if s != 1 else "") + f'" opacity="{0 if c is None else c}">']
+        if it.get("icon"):
+            o.append(f'<use href="#ic-{it["icon"]}" x="-9" y="-9" width="18" height="18" style="color:{it["color"]}"/>')
+        elif it.get("light"):
+            o.append(f'<circle r="9" fill="{it["color"]}" opacity="0.35"/><circle r="4.5" fill="#fffbe0"/>')
+        elif it.get("vault"):   # FR130: locked with the KeePass logo
+            o.append(f'<rect x="-14" y="-12" width="28" height="24" rx="3" fill="#2d333b" stroke="{it["color"]}" stroke-width="1.5"/>')
+            src = images.get(it["vault"])
+            o.append(f'<image href="{html.escape(src, quote=True)}" x="-9" y="-9" width="18" height="18"/>' if src else '<circle r="4" fill="#facc15"/>')
+        label = it.get("text") or (None if plain else it.get("tag"))
+        if label:
+            o.append(f'<text x="0" y="{3.5 if it.get("text") else -12}" text-anchor="middle" fill="{it["color"]}" font-size="10"{HALO}>{html.escape(label)}</text>')
+        o.append(a + "</g>")
+        return "".join(o)
+    o = ['<g class="actor" pointer-events="none" font-family="ui-sans-serif, system-ui, sans-serif"><style>@media (prefers-reduced-motion: reduce){.actor{display:none}}</style>']
+    for A in P["actors"]:   # world-fixed things first (under the runners): the build cover
+        for a in A["acts"]:
+            if a["kind"] == "hammer":
+                b = anchor_of(a["at"]) if a.get("at") else None
+                if not b:
+                    continue
+                o.append(f'<rect x="{_f4(b[0] - 2)}" y="{_f4(b[1] - 2)}" width="{_f4(b[2] + 4)}" height="{_f4(b[3] + 4)}" fill="{bg}">'   # the box is built bottom-up
+                         + anim(attributeName="height", values=f"{_f4(b[3] + 4)};{_f4(b[3] + 4)};0;0", keyTimes=f"0;{tk(a['t0'])};{tk(a['t1'] - 0.3)};1") + "</rect>")
+    sc = P["scene"]
+    if sc:   # FR128 / FR129: the ledge, the safes, the fire bowl and the shelf — they fade in when the scene starts and out when it ends
+        g, s = sc["g"], SCENE["safe"]
+        so = keyed(([[0, 0], [sc["t0"], 0], [sc["t0"] + 0.4, 1]] if sc["fadeIn"] else [[0, 1]]) + ([[sc["t1"] - 0.6, 1], [sc["t1"], 0]] if sc["t1"] is not None else []))
+        if varies(so):
+            o.append('<g opacity="0">' + anim(attributeName="opacity", values=";".join(str(v[1]) for v in so), keyTimes=";".join(tk(v[0]) for v in so)))
+        else:
+            o.append(f'<g opacity="{so[0][1] if so else 1}">')
+        o.append(f'<rect x="{_f4(g["x0"])}" y="{_f4(g["top"])}" width="{_f4(g["x1"] - g["x0"])}" height="{SCENE["h"]}" fill="#9a5523" stroke="#5c2f0d" stroke-width="1.5"/>')   # the ledge (bricks)
+        x = g["x0"] + 16
+        while x < g["x1"] - 4:
+            o.append(f'<line x1="{_f4(x)}" y1="{_f4(g["top"])}" x2="{_f4(x)}" y2="{_f4(g["top"] + SCENE["h"])}" stroke="#5c2f0d" stroke-width="1.5"/>')
+            x += 16
+        for k in ("A", "B"):
+            q = g[k]
+            dh = s["h"] - 2 * s["inset"]
+            x0 = 0 if SCENE[k]["hinge"] == "l" else -q["dw"]
+            kx, ky = x0 + q["dw"] / 2, s["lock"] - s["inset"]
+            o.append(f'<rect x="{_f4(q["x"])}" y="{_f4(q["y"])}" width="{s["w"]}" height="{s["h"]}" rx="4" fill="#2d333b" stroke="#c9d1d9" stroke-width="1.5"/>')
+            o.append(f'<rect x="{_f4(q["x"] + s["inset"])}" y="{_f4(q["y"] + s["inset"])}" width="{q["dw"]}" height="{dh}" fill="#0b0e14"/>')   # inside
+            for v in sc["inside"]:
+                if v["k"] == k:
+                    o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
+            dk = keyed(sc["doors"][k])
+            o.append(f'<g transform="translate({_f4(q["hx"])} {_f4(q["y"] + s["inset"])})"><g>'   # the door, turning on its hinge
+                     f'<rect x="{x0}" y="0" width="{q["dw"]}" height="{dh}" fill="#3d444d" stroke="#c9d1d9" stroke-width="1"/>'
+                     f'<circle cx="{_f4(kx)}" cy="{_f4(ky)}" r="3.4" fill="#facc15"/>'   # the keyhole (yellow, like the logo's)
+                     f'<path d="M {_f4(kx - 1.8)} {_f4(ky + 1)} L {_f4(kx + 1.8)} {_f4(ky + 1)} L {_f4(kx + 3)} {_f4(ky + 9)} L {_f4(kx - 3)} {_f4(ky + 9)} Z" fill="#facc15"/>'
+                     + (anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} 1" for v in dk), keyTimes=";".join(tk(v[0]) for v in dk)) if varies(dk) else "")
+                     + "</g></g>")
+        SH = g["S"]   # FR129: the shelf — a frame with three boards, and what stands on them
+        o.append(f'<rect x="{_f4(SH["x"])}" y="{_f4(SH["y"])}" width="{SH["w"]}" height="{SH["h"]}" fill="#2b1d12" stroke="#8b5a2b" stroke-width="1.5"/>')
+        for i in range(1, len(SCENE["S"]["rows"]) + 1):
+            o.append(f'<line x1="{_f4(SH["x"])}" y1="{_f4(SH["y"] + SH["rh"] * i)}" x2="{_f4(SH["x"] + SH["w"])}" y2="{_f4(SH["y"] + SH["rh"] * i)}" stroke="#8b5a2b" stroke-width="2.5"/>')
+        for v in sc["inside"]:
+            if v["k"].startswith("S."):
+                o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
+        fk = keyed(sc["fire"])   # the fire bowl; the fire starts, flares, burns down
+        o.append(f'<g transform="translate({_f4(g["fire"][0])} {_f4(g["fire"][1])})">'
+                 '<path d="M -13 -9 L 13 -9 L 9 0 L -9 0 Z" fill="#6e7681" stroke="#2d333b" stroke-width="1.2"/>'
+                 '<g transform="translate(0 -9)">'
+                 + ('<g>' + anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in fk), keyTimes=";".join(tk(v[0]) for v in fk))
+                    if varies(fk) else f'<g transform="scale({_f4(fk[0][1]) if fk else 0})">')
+                 + flame_svg(-6, 0, 1.2, 0) + flame_svg(0, 0, 1.7, 0.3) + flame_svg(6, 0, 1.2, 0.55) + "</g></g></g>")
+        o.append("</g>")
+    for inst, w in P["W"].items():   # things away from the runners — into a keyhole, a safe, a shelf, the fire or a box, and back
+        kk, sk, rk = keyed(w["kf"]), keyed(w["sc"]), keyed(w["rot"])
+        c, fa = fade_kv(w["vis"])
+        o.append(f'<g opacity="{0 if c is None else c}"' + ("" if w["d"] > 0 else f' transform="translate({_f4(w["pts"][0][0])} {_f4(w["pts"][0][1])})"') + ">")
+        if w["d"] > 0:
+            o.append(anim(path="M " + " L ".join(f"{_f4(x)} {_f4(y)}" for x, y in w["pts"]), keyPoints=";".join(_f4(min(1.0, v[1] / w["d"])) for v in kk),
+                          keyTimes=";".join(tk(v[0]) for v in kk), calcMode="linear"))
+        o.append(fa + "<g>")   # it shrinks into a keyhole / safe / box and turns in a lock
+        if varies(sk):
+            o.append(anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in sk), keyTimes=";".join(tk(v[0]) for v in sk)))
+        o.append("<g>")
+        if varies(rk):
+            o.append(anim(attributeName="transform", type="rotate", values=";".join(_f4(v[1]) for v in rk), keyTimes=";".join(tk(v[0]) for v in rk)))
+        o.append(look(w["id"], 0, 0, 1, True, opacity=1) + "</g></g></g>")
+    for A in P["actors"]:   # the runners: along their paths, or standing where the step before left them
+        ro = keyed(A["op"])   # it fades in / out where it appears and vanishes, and at the story's ends
+        const_o = None if varies(ro) else (ro[0][1] if ro else 1)
+        o.append(f'<g opacity="{0 if const_o is None else const_o}"' + (f' transform="translate({_f4(A["pts"][0][0])} {_f4(A["pts"][0][1])})"' if len(A["pts"]) < 2 else "") + ">")
+        if len(A["pts"]) >= 2:
+            path = "M " + " L ".join(f"{_f4(x)} {_f4(y)}" for x, y in A["pts"])
+            o.append(anim(path=path, keyPoints=";".join(_f4(min(1.0, k[1] / A["L"])) for k in A["kf"]), keyTimes=";".join(tk(k[0]) for k in A["kf"]), calcMode="linear"))
+        if const_o is None:
+            o.append(anim(attributeName="opacity", values=";".join(str(v[1]) for v in ro), keyTimes=";".join(tk(v[0]) for v in ro)))
+        hop = [[0, 0]]   # hops while running: up 4 every half hop
+        for t0, t1 in A["runs"]:
+            hop.append([t0, 0])
+            k, t = 1, t0 + ACT["HOP"] / 2
+            while t < t1 - 0.05:
+                hop.append([t, -4 if k % 2 else 0])
+                k += 1
+                t = t0 + k * ACT["HOP"] / 2
+            hop.append([t1, 0])
+        hop.append([T, 0])
+        o.append("<g>" + (anim(attributeName="transform", type="translate", values=";".join(f"0 {h[1]}" for h in hop), keyTimes=";".join(tk(h[0]) for h in hop)) if A["runs"] else ""))
+        fv, sz = keyed(A["face"]), ACT["SIZE"]   # the sprite faces where it goes (what it holds doesn't turn)
+        if varies(fv):
+            o.append("<g>" + anim(attributeName="transform", type="scale", values=";".join(f"{v[1]} 1" for v in fv), keyTimes=";".join(tk(v[0]) for v in fv), calcMode="discrete"))
+        else:
+            o.append('<g transform="scale(-1 1)">' if fv and fv[0][1] == -1 else "<g>")
+        o.append(f'<use href="#ic-{A["who"]}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}"/></g>')
+        for i, ivs in A["items"].items():
+            o.append(look(i, ACT_ITEMS[i]["dx"], ACT_ITEMS[i]["dy"], 1, False, ivs=ivs))
+        for text, t0, t1 in A["pops"]:
+            o.append(f'<text x="0" y="-46" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
+        for a in A["acts"]:
+            if a["kind"] == "hammer":   # the hammer swings in its right hand
+                o.append('<g transform="translate(9 -16)" opacity="0">' + fade_iv([[a["t0"], a["t1"]]])
+                         + '<use href="#ic-hammer" x="-3" y="-19" width="22" height="22" style="color:#c9d1d9"/>'
+                         '<animateTransform attributeName="transform" type="rotate" additive="sum" values="0;-60;0" keyTimes="0;0.45;1" dur="0.45s" repeatCount="indefinite"/></g>')
+        o.append("</g></g>")
+    if sc:
+        for text, x, y, t0, t1 in sc["pops"]:   # a sign above a safe
+            o.append(f'<text x="{_f4(x)}" y="{_f4(y)}" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
+    o.append("</g>")
+    return "".join(o)
+
+
+def caption_lines(s):   # FR124: the caption wrapped at 58 characters
+    words, lines, cur = (s.get("caption") or "").split(), [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > 58:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def caption_height(s):
+    return 30 + 16 * len(caption_lines(s))
+
+
+def caption_svg(s, i, x1, y1):   # FR124: the step's caption, a box bottom-right of the drawing (the editor shows the same text in #stepcap)
+    lines = caption_lines(s)
+    W, lh = 400, 16
+    H = caption_height(s)
+    x, y = x1 - W - 8, y1 - H - 8
+    o = [f'<g class="stepcap"><rect x="{x:.0f}" y="{y:.0f}" width="{W}" height="{H}" rx="6" fill="#14181f" fill-opacity="0.92" stroke="{DIM}"/>',
+         f'<text x="{x + 12:.0f}" y="{y + 17:.0f}" font-size="10" fill="{DIM}" letter-spacing="0.6">STEP {i}</text>',
+         f'<text x="{x + 58:.0f}" y="{y + 17:.0f}" font-size="12" fill="{FG}" font-weight="700">{html.escape(s.get("title") or s.get("id", ""))}</text>']
+    for k, ln in enumerate(lines):
+        o.append(f'<text x="{x + 12:.0f}" y="{y + 36 + k * lh:.0f}" font-size="12" fill="{FG}">{html.escape(ln)}</text>')
+    o.append("</g>")
+    return "".join(o)
+
+
 def render(d):
     CANON.clear()
     for t in (d.get("meta") or {}).get("toggles") or []:   # FR115: values sharing one layout share their view key
@@ -1045,7 +1675,16 @@ def render(d):
     images = (d.get("meta") or {}).get("images") or {}   # FR114: uploaded pictures used as icons
     GH.clear()   # FR118: crossings are recomputed for this view
     toggles = (d.get("meta") or {}).get("toggles", [])
-    state = default_state(toggles)
+    state = dict(default_state(toggles))
+    global STEP_SET   # FR124: render_state.py may ask for one step of this view's story ("step": i in the state)
+    step = state.pop("step", None)
+    steps_now = [s for s in d.get("steps") or [] if when_ok(s.get("showWhen"), state)]
+    STEP_SET = None
+    if step is not None and steps_now:
+        step = min(max(0, int(step)), len(steps_now) - 1)
+        STEP_SET = {i for s in steps_now[:step + 1] for i in (s.get("show") or [])}
+    else:
+        step = None
     nodes = d.get("nodes", [])
     edges = d.get("edges", [])
     by_id = {n["id"]: n for n in nodes}
@@ -1060,6 +1699,8 @@ def render(d):
         x0, y0, x1, y1 = min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad
     else:
         x0, y0, x1, y1 = 0, 0, 400, 200
+    if step is not None:
+        y1 += caption_height(steps_now[step]) + 16   # FR124: the caption gets its own room below the drawing
     used_types = [t for t in NODE_TYPES if any(n.get("nodeType") == t for n in nodes)]
     used_roles = any(role_of(e) for e in edges)
     used_costs = any(e.get("cost") in COST for e in edges)
@@ -1078,6 +1719,11 @@ def render(d):
     _gy = (d.get("meta") or {}).get("ground")
     if isinstance(_gy, (int, float)):
         o.append(ground_svg(_gy, int(round(x0)), int(round(x1))))
+    NEW = set(steps_now[step].get("show") or []) if step is not None else set()   # FR125: what this step adds fades in (mirrors flow.js NEW_SET)
+    if NEW:
+        o.append("<style>.stepnew{animation:stepfade .7s ease-out both}@keyframes stepfade{from{opacity:0}}"
+                 "@media (prefers-reduced-motion: reduce){.stepnew{animation:none}}</style>")
+    wrap_new = lambda i, mark: o.__setitem__(slice(mark, None), ['<g class="stepnew">'] + o[mark:] + ["</g>"]) if i in NEW else None
 
     front = []   # FR96: z "front" lines, drawn above the boxes (below the badges) — mirrors flow.js gFront
     epoly, pb_under, pb_over = {}, [], []   # FR121: lines the book lights ride · lights under the books · over everything
@@ -1114,8 +1760,10 @@ def render(d):
         n = by_id.get(rid)
         if n and rid in box and n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
             s_, ix, iy, _ = picto_geom(box[rid], str(n.get("label", "")).split("\n"))
+            mark = len(o)
             o.append(icon_svg(n["icon"], ix, iy, s_, PALETTE.get(n.get("color"), PALETTE["note"])[1], images))
             o.append(gatehouse_under_svg(lst, box[rid][2]))
+            wrap_new(rid, mark)
 
     sleeves = []   # NT3: drawn after every tunnel, still under the boxes
     for e in edges:
@@ -1145,6 +1793,7 @@ def render(d):
             if up:
                 aside = (e.get("pw") or 22) / 2 + 6   # upright stretch: the label goes beside the pipe, not across it
         elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
+            epoly[e["id"]] = list(nh_poly)   # FR124: the step mode's runner can walk a cable
             lan_ = kind in ("cable", "lan")
             col_ = line_color(e) or ("#7b828a" if lan_ else "#8b949e")
             body_ = cable_svg(nh_poly, col_, nh_r) if lan_ else mario_pipe_svg(nh_poly, col_, 2 * nh_r)   # NT13
@@ -1193,6 +1842,7 @@ def render(d):
             halo = HALO if badge else ""
             xy = f'x="{mx + aside:.1f}" y="{my + 4:.1f}" text-anchor="start"' if aside else f'x="{mx:.1f}" y="{my - dy:.1f}" text-anchor="middle"'
             o.append(f'<text {xy} font-size="11"{halo} fill="{FG if tube else DIM}">{html.escape(e["label"])}</text>')
+        wrap_new(e["id"], mark)   # FR125
         if e.get("z") == "front":
             front.extend(o[mark:])
             del o[mark:]
@@ -1200,10 +1850,26 @@ def render(d):
             sleeves.extend(o[mark:])
             del o[mark:]
     o.extend(sleeves)
+    top_line = min((y for pl in epoly.values() for _, y in pl), default=None)   # FR130: the legend goes above the highest line too
+    if top_line is not None and (used_types or used_roles or used_costs):
+        y0n = top_line - pad - legend_height(used_types, used_roles, used_costs) - 8
+        if int(round(y0n)) < int(round(y0)):   # grow the drawing upwards: the svg tag and the background follow
+            y0, h = y0n, h + int(round(y0)) - int(round(y0n))
+            o[0] = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{int(round(x0))} {int(round(y0))} {w} {h}" '
+                    f'width="{w}" height="{h}" font-family="ui-sans-serif, system-ui, sans-serif">')
+            o[2] = f'<rect x="{int(round(x0))}" y="{int(round(y0))}" width="{w}" height="{h}" fill="{bg}"/>'
     nodes_at = len(o)   # FR121: the lights coming into a book go here — over the lines, UNDER the books
+    SP = step_plans(steps_now, step, epoly, edges, lambda nid: anc(nid) if nid in box else None) if step is not None else None   # FR129: before the books are drawn (a runner may write one)
 
     rank = lambda n: 2 if active_container(n, state) else (0 if is_container(n, vis, vis_ids, state) else 1)
+    open_new = False   # FR125: a box this step adds is wrapped in <g class="stepnew"> (closed at the next box, or after the loop)
     for n in sorted(vis, key=rank):
+        if open_new:
+            o.append("</g>")
+            open_new = False
+        if n["id"] in NEW:
+            o.append('<g class="stepnew">')
+            open_new = True
         fill, stroke = PALETTE.get(n.get("color"), PALETTE["note"])
         bx = box[n["id"]]
         see = n.get("seeThrough") or auto_see_through(n, vis, edges, vis_ids, state)
@@ -1216,6 +1882,9 @@ def render(d):
             B = book_geom(n, bx)
             lt = book_lights(n, B, epoly, edges)
             lt["entry"] = entry_of(n, state)
+            wr = next((w for w in SP["P"]["writes"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
+            if wr:   # FR129: a runner writes it in this step
+                lt["update"], lt["write"] = None, wr
             far = lt["answer"] and lt["answer"]["far"]
             if far and far in box:   # where the answer lands
                 fb = anc(far)
@@ -1227,6 +1896,11 @@ def render(d):
         if n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
             # FR89: a device IS its icon (pictogram) — no box drawn; the box still sizes + anchors it
             s_, ix, iy, ty = picto_geom(bx, lines)
+            sc, scr = ICON_SCREEN.get(n["icon"]), str(n.get("screen") or "")
+            if sc and scr.startswith("img:") and images.get(scr[4:]) and n["id"] not in houses:   # FR127: a picture on the icon's screen, under its outline
+                k24 = s_ / 24
+                o.append(f'<image href="{html.escape(images[scr[4:]], quote=True)}" x="{ix + sc[0] * k24:.1f}" y="{iy + sc[1] * k24:.1f}" '
+                         f'width="{sc[2] * k24:.1f}" height="{sc[3] * k24:.1f}" preserveAspectRatio="xMidYMid meet"/>')
             if n["id"] not in houses:   # FR118: a gatehouse router was drawn under the pipes already
                 o.append(icon_svg(n["icon"], ix, iy, s_, stroke, images))
             for i, ln in enumerate(lines):
@@ -1251,12 +1925,21 @@ def render(d):
             o.append(f'<text x="{cx:.1f}" y="{start_y + i * 15:.1f}" text-anchor="middle" font-size="12" fill="{FG}">{html.escape(ln)}</text>')
         if n.get("childDiagram"):
             o.append(f'<text x="{bx[0] + bx[2] - max(8, r * 0.7):.0f}" y="{bx[1] + 14:.0f}" text-anchor="end" font-size="11" fill="{DIM}">⊕ open</text>')
+    if open_new:
+        o.append("</g>")
     for rid, lst in houses.items():   # FR118: the gates + moving lights, over the pipes (mirrors flow.js gatehouseGates)
         if rid in vis_ids:
-            o.append(gatehouse_gates_svg(rid, lst))
+            mark = len(o)
+            o.append(gatehouse_gates_svg(rid, lst, quiet=step is not None and not steps_now[step].get("visitors")))   # FR126
+            wrap_new(rid, mark)
     o.extend(front)   # FR102: "front" lines go above the gate badges too
     o[nodes_at:nodes_at] = pb_under   # FR121 (mirrors flow.js pbUnder / pbOver)
     o.extend(pb_over)
+    if step is not None:   # FR124: the active step's runner (over everything) and its caption, bottom-right
+        s = steps_now[step]   # FR125: this step's runners follow on from the previous steps' (the end of one is the start of the next)
+        if SP and SP["P"]:
+            o.append(actor_svg(SP["P"], lambda nid: anc(nid) if nid in box else None, bg, images))
+        o.append(caption_svg(s, step, x1, y1))
     if used_types or used_roles or used_costs:
         o.append(legend_svg(x1 - LEGEND_W - 8, y0 + 8, used_types, used_roles, used_costs))
     o.append("</svg>")
