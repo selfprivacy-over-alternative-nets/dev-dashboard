@@ -1960,7 +1960,7 @@
       "title": "Make a Tailscale account"
     },
     {
-      "caption": "You give the one-time auth key you got from Tailscale to your SelfPrivacy server. That machine registers itself at Tailscale, where it gets a domain name.",
+      "caption": "You give the one-time auth key you got from Tailscale to your SelfPrivacy server. That machine registers itself at Tailscale, which keeps a copy of its IP address, and gets a domain name.",
       "id": "ts1",
       "label": "install",
       "play": [
@@ -1977,6 +1977,7 @@
           ]
         },
         {
+          "at": "server",
           "hammer": 3
         },
         {
@@ -1991,9 +1992,16 @@
             "B": [
               "domain",
               "domain"
-            ],
-            "S.bottom": "relayip"
+            ]
           }
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "copy": true,
+          "in": "S.bottom",
+          "put": "ip"
         },
         {
           "walk": "A"
@@ -2045,10 +2053,6 @@
           "put": "domain"
         },
         {
-          "in": "S.mid",
-          "put": "ip"
-        },
-        {
           "walk": "B"
         },
         {
@@ -2068,6 +2072,10 @@
         {
           "back": true,
           "run": "e_ts_up"
+        },
+        {
+          "in": "server",
+          "put": "ip"
         },
         {
           "wait": 1
@@ -2090,7 +2098,7 @@
       "title": "Install, then register at Tailscale"
     },
     {
-      "caption": "Tailscale keeps its own DNS phonebook. Its helper takes your domain name and Tailscale's relay address from the shelf and writes them in, so others can find your server (through the relay).",
+      "caption": "Tailscale keeps its own DNS phonebook. Its helper takes your domain name and your server's IP address from the shelf and writes them in. The name points to Tailscale's relay, which passes visitors on to your server.",
       "id": "ts2",
       "label": "phonebook",
       "play": [
@@ -2109,7 +2117,7 @@
         },
         {
           "from": "S.bottom",
-          "take": "relayip",
+          "take": "ip",
           "who": "yoshi"
         },
         {

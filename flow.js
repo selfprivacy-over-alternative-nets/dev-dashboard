@@ -1068,27 +1068,27 @@
   }
 
   /* ---------- FR124: step mode — the view told step by step, acted out by a runner (mirrored in gen_flow_svg.py) ---------- */
-  const ACT = { V: 240, FADE: 0.4, HOP: 0.32, MIN: 1.2, MAX: 5, STAND: 8, WALK: 0.6, SIZE: 26,   // px/s · s (a run lasts 1.2–5 s, a walk at least 0.6 s;
-    T: { get: 0.9, pop: 0.9, hammer: 3, scene: 0.4, unscene: 0.3, put: 0.8, putIn: 0.7, open: 0.6, close: 0.5, fire: 0.8, take: 0.6, unlock: 0.5,   // a step without
-      throw: 1.0, copy: 1.2, write: 6.0 } };   // a script lasts its dur, else STAND)
+  const ACT = { V: 240, FADE: 0.4, HOP: 0.32, MIN: 1.2, MAX: 5, STAND: 8, WALK: 0.6, SIZE: 26, BLOW: 0.5,   // px/s · s (a run lasts 1.2–5 s, a walk at least 0.6 s;
+    T: { get: 0.9, pop: 0.9, hammer: 3, give: 0.7, scene: 0.4, unscene: 0.3, put: 0.8, putIn: 0.7, open: 0.6, close: 0.5, fire: 0.8, take: 0.6, unlock: 0.5,   // a step without
+      throw: 1.0, copy: 1.2, write: 6.0 } };   // a script lasts its dur, else STAND; FR131: a hammer blow every BLOW s)
   const ACT_ITEMS = {   // what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top)
     key:     { icon: "key", color: "#f97316", dx: -14, dy: -32, tag: "auth key" },
     idkey:   { icon: "key", color: "#3fb950", dx: -14, dy: -32, tag: "own key" },
     light:   { light: true, color: "#fff3a0", dx: 14, dy: -32 },
-    vault:   { vault: "keepass", color: "#c9d1d9", dx: 0, dy: -44 },   // FR130: a small safe locked with the KeePass logo, above its head
-    ip:      { text: "your SelfPrivacy IP address", color: "#9aa3ad", dx: 0, dy: -58 },
-    relayip: { text: "relay ip 98.76.54.32", color: "#9aa3ad", dx: 0, dy: -58 },   // FR129: Tailscale's own address — what its phonebook gets
-    domain:  { text: "selfprivacy.tail1234.ts.net", color: "#f97316", dx: 0, dy: -70 },
+    vault:   { vault: "keepass", color: "#c9d1d9", dx: 0, dy: -40 },   // FR130: a small safe locked with the KeePass logo, above its head
+    ip:      { text: "Your SelfPrivacy IP address:\n192.42.69.314", color: "#9aa3ad", dx: 0, dy: -74 },   // FR132: two lines, the last one at dy
+    domain:  { text: "selfprivacy.tail1234.ts.net", color: "#f97316", dx: 0, dy: -60 },
   };
   const ACTORS = ["mario", "yoshi"];   // FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
   // FR128 / FR129: the scene the runners work in — a brick ledge above the box where it starts (Tailscale), the fire bowl, two safes
-  // side by side (a gap between them) and a shelf with three boards; geometry relative to the spot it started on (mirrored in
+  // side by side (a gap between them) and a shelf with two boards; geometry relative to the spot it started on (mirrored in
   // docs/gen_flow_svg.py SCENE): the ledge (x range, top, height); a safe (size, door inset, keyhole height); per safe its left edge,
   // hinge side and where a runner stands to work it; the fire bowl; the shelf (left edge, size, where to stand, its boards); how
-  // small things are inside a safe / on a board. OPEN = the door's x-scale when open (swung out past its hinge).
-  const SCENE = { x0: -84, x1: 240, top: -72, h: 12, OPEN: -0.35, safe: { w: 44, h: 52, inset: 5, lock: 17 },
-    A: { x: -28, hinge: "l", mark: -44 }, B: { x: 34, hinge: "r", mark: 93 }, F: { x: -68 },
-    S: { x: 170, w: 60, h: 66, mark: 150, rows: ["top", "mid", "bottom"] }, IN: { safe: 0.22, shelf: 0.36, icon: 0.8 } };
+  // small things are inside a safe / on a board. OPEN = the door's x-scale when open (swung out past its hinge). FR132: the safes
+  // a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304).
+  const SCENE = { x0: -84, x1: 284, top: -72, h: 12, OPEN: -0.35, safe: { w: 44, h: 52, inset: 5, lock: 17 },
+    A: { x: 16, hinge: "l", mark: 0 }, B: { x: 78, hinge: "r", mark: 137 }, F: { x: -68 },
+    S: { x: 160, w: 114, h: 72, mark: 148, rows: ["top", "bottom"] }, IN: { safe: 0.22, shelf: 0.8, icon: 0.8 } };
   const r1 = (v) => Math.floor(v * 10 + 0.5) / 10;   // tenths, halves up (Python: math.floor(v * 10 + 0.5) / 10)
   function sceneGeo(O) {   // where the ledge, the safes (keyhole, keyhole of the open door, inside, where to stand), the fire bowl and the shelf are
     const s = SCENE.safe, top = O.y + SCENE.top, g = { O, top, x0: O.x + SCENE.x0, x1: O.x + SCENE.x1, fire: { x: O.x + SCENE.F.x, y: top } };
@@ -1098,7 +1098,7 @@
     }
     const sh = SCENE.S, x = O.x + sh.x, y = top - sh.h, rh = sh.h / sh.rows.length;
     g.S = { x, y, w: sh.w, h: sh.h, rh, mark: { x: O.x + sh.mark, y: top } };
-    sh.rows.forEach((r, i) => { g["S." + r] = { x: x + sh.w / 2, y: y + rh * i + rh / 2 + 4 }; });   // where a thing stands on that board
+    sh.rows.forEach((r, i) => { g["S." + r] = { x: x + sh.w / 2, y: y + rh * (i + 1) - 7 }; });   // where a thing stands on that board (just above it)
     return g;
   }
   // The plan of one step: per runner its path (runs and walks joined end to end; between two lines it walks across the box), the
@@ -1135,7 +1135,7 @@
       kfAdd(w, t0, w.d);
       for (const q of path) { const p = w.pts[w.pts.length - 1], L = Math.hypot(q.x - p.x, q.y - p.y); if (L > 0) { w.d += L; w.pts.push(q); } }
       kfAdd(w, t1, w.d); };
-    const holder = (k) => !sc || !(k === "A" || k === "B" || /^S\.(top|mid|bottom)$/.test(k)) ? null   // inside a safe, or on a shelf board
+    const holder = (k) => !sc || !(k === "A" || k === "B" || (k.startsWith("S.") && SCENE.S.rows.includes(k.slice(2)))) ? null   // inside a safe, or on a shelf board
       : k === "A" || k === "B" ? { at: sc.g[k].inside, safe: true } : { at: sc.g[k], safe: false };
     const inScale = (id, safe) => ACT_ITEMS[id].text ? (safe ? SCENE.IN.safe : SCENE.IN.shelf) : SCENE.IN.icon;
     const middle = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
@@ -1164,7 +1164,21 @@
         else R.pops.push([String(a.pop), T, T + ACT.T.pop]);
         T += ACT.T.pop;
       } else if (a.hammer != null) { const dur = typeof a.hammer === "number" && a.hammer > 0 ? a.hammer : ACT.T.hammer;
-        R.acts.push({ kind: "hammer", t0: T, t1: T + dur, at: R.at }); drop(R, "light", T + 0.4); T += dur;   // the install light goes into the box
+        if (a.at != null && String(a.at) !== R.at) { drop(R, "light", T); continue; }   // FR131: it builds only the box it names, once it got there (wifi: no line there)
+        const b = boxAt(R.at), c = b ? middle(b) : null, lit = !!(R.items.light && R.items.light.some((v) => v[1] == null));
+        if (c && R.spot) turn(R, T, c.x - R.spot.x);   // it faces the box it builds
+        let li = null;
+        if (lit && c && R.spot) {   // FR131: the install light goes from its hand into the middle of the box first
+          li = instOf(R, "light"); const w = track(li), t1 = T + ACT.T.give;
+          delete R.inst.light; drop(R, "light", T); wMove(li, T, T, [hand(R, "light")]); wMove(li, T, t1, [c]); w.vis.push([T, null]); w.sc.push([T, 1], [t1, 1.3]);
+          T = t1;
+        } else if (lit) drop(R, "light", T + 0.4);
+        const t0 = T, t1 = T + dur, blows = [];   // the hammer comes down 0.15 s into every swing; each blow builds the box a ring further out of the light
+        for (let k = 0; t0 + 0.15 + k * ACT.BLOW <= t1 - 0.6 + 1e-9; k++) blows.push(+(t0 + 0.15 + k * ACT.BLOW).toFixed(4));
+        R.acts.push({ kind: "hammer", t0, t1, at: R.at, c, blows });
+        if (li) { const w = track(li); for (const t of blows) w.sc.push([t, 1.3], [t + 0.06, 1.75], [t + 0.3, 1.3]);   // the light flares with every blow…
+          w.sc.push([blows.length ? blows[blows.length - 1] + 0.3 : t0, 1.3], [t1 - 0.05, 0.3]); w.vis[w.vis.length - 1][1] = t1; }   // …and sinks into the finished box
+        T = t1;
       } else if (a.appear != null) { const b = boxAt(String(a.appear)); if (!b || R.pts.length) continue;   // FR129: it comes out of a box (Yoshi, out of the Tailscale cloud)
         R.spot = middle(b); R.pts.push(R.spot); R.kf.push([0, 0]); R.op.push([T, 0], [T + ACT.T.scene, 1]); T += ACT.T.scene;
       } else if (a.vanish && R.pts.length) { R.op.push([T, 1], [T + ACT.T.scene, 0]); R.gone = true; T += ACT.T.scene;   // …and goes back in
@@ -1182,12 +1196,14 @@
         const h = lock ? null : holder(into), b = !lock && !h ? boxAt(into) : null;
         const to = lock ? sc.g[k].lock : h ? { x: h.at.x, y: h.at.y + sc.inside.filter((v) => v.k === into && v.off == null).length * 8 } : b ? middle(b) : null;
         if (!to) continue;
-        const inst = instOf(R, id), w = track(inst), t1 = T + (lock ? 0.5 : 0.6);
-        delete R.inst[id]; turn(R, T, to.x - R.spot.x); drop(R, id, T); wMove(inst, T, T, [hand(R, id)]); w.vis.push([T, null]); w.sc.push([T, 1]);
-        wMove(inst, T, t1, [to]);
+        const keep = a.copy === true && !lock;   // FR132: {"copy": true} — a copy comes off what it holds and goes there; the runner keeps its own
+        const inst = keep ? newInst(id) : instOf(R, id), w = track(inst), t0 = T + (keep ? 0.2 : 0), t1 = T + (lock ? 0.5 : keep ? 0.8 : 0.6);
+        if (!keep) { delete R.inst[id]; drop(R, id, T); }
+        turn(R, T, to.x - R.spot.x); wMove(inst, T, T, [hand(R, id)]); w.vis.push([T, null]); w.sc.push(...(keep ? [[T, 0.6], [t0, 1]] : [[T, 1]]));
+        wMove(inst, t0, t1, [to]);
         if (lock) { w.sc.push([t1, 0.8]); w.rot.push([t1, 0], [T + ACT.T.put, 90]); sc.lock[k] = inst; T += ACT.T.put; }
-        else if (h) { const s = inScale(id, h.safe); w.sc.push([t1, s]); w.vis[w.vis.length - 1][1] = t1; sc.inside.push({ id, k: into, inst, on: t1, off: null, x: to.x, y: to.y, s }); T += ACT.T.putIn; }
-        else { w.sc.push([t1, 0.3]); w.vis[w.vis.length - 1][1] = t1; T += ACT.T.putIn; }   // FR130: into a box — it goes in and is kept there
+        else if (h) { const s = inScale(id, h.safe); w.sc.push([t1, s]); w.vis[w.vis.length - 1][1] = t1; sc.inside.push({ id, k: into, inst, on: t1, off: null, x: to.x, y: to.y, s }); T += keep ? ACT.T.copy : ACT.T.putIn; }
+        else { w.sc.push([t1, 0.3]); w.vis[w.vis.length - 1][1] = t1; T += keep ? ACT.T.copy : ACT.T.putIn; }   // FR130: into a box — it goes in and is kept there
       } else if (sc && (a.open != null || a.close != null) && ["A", "B"].includes(a.open != null ? a.open : a.close)) {   // the door swings open / shut; a key in its lock goes with it
         const k = a.open != null ? a.open : a.close, q = sc.g[k], opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close;
         sc.doors[k].push([T, opening ? 1 : SCENE.OPEN], [T + d, opening ? SCENE.OPEN : 1]);
@@ -1263,13 +1279,24 @@
       else if (it.vault) { el("rect", { x: -14, y: -12, width: 28, height: 24, rx: 3, fill: "#2d333b", stroke: it.color, "stroke-width": 1.5 }, g);   // FR130: locked with the KeePass logo
         const src = imgSrc("img:" + it.vault); if (src) el("image", { href: src, x: -9, y: -9, width: 18, height: 18 }, g); else el("circle", { r: 4, fill: "#facc15" }, g); }
       const label = it.text || (plain ? null : it.tag);
-      if (label) { const t = el("text", { x: 0, y: it.text ? 3.5 : -12, "text-anchor": "middle", fill: it.color }, g);
-        Object.assign(t.style, { fontSize: "10px", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" }); t.textContent = label; }
+      if (label) { const t = el("text", { x: 0, y: it.text ? 3.5 : -12, "text-anchor": "middle", fill: it.color }, g), ls = label.split("\n");
+        Object.assign(t.style, { fontSize: "10px", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" });
+        if (ls.length === 1) t.textContent = label;   // FR132: more lines stack upwards, the last one where a single line would be
+        else ls.forEach((l, i) => { el("tspan", { x: 0, y: 3.5 - (ls.length - 1 - i) * 11 }, t).textContent = l; }); }
       return g; };
+    let nBuild = 0;
     for (const A of P.actors) for (const a of A.acts) {   // world-fixed things first (under the runners): the build cover
       if (a.kind === "hammer") { const n = a.at && node(a.at), b = n && boxOf[a.at] && anchorBox(n, boxOf[a.at]); if (!b) continue;
-        const c = el("rect", { x: f(b.x - 2), y: f(b.y - 2), width: f(b.w + 4), height: f(b.h + 4), fill: (S.data.meta && S.data.meta.background) || "#0b0e14" }, G);   // the box is built bottom-up
-        anim(c, { attributeName: "height", values: `${f(b.h + 4)};${f(b.h + 4)};0;0`, keyTimes: `0;${tk(a.t0)};${tk(a.t1 - 0.3)};1` });
+        // FR131: the box is built up out of the light in its middle — a hole in the cover opens there, a ring wider with every blow
+        const x = b.x - 2, y = b.y - 2, w = b.w + 4, h = b.h + 4, c = a.c || { x: b.x + b.w / 2, y: b.y + b.h / 2 }, nb = a.blows.length;
+        const Rm = Math.max(...[[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => Math.hypot(px - c.x, py - c.y))) + 1, id = "actbuild" + nBuild++;
+        const M = el("mask", { id, maskUnits: "userSpaceOnUse", x: f(x), y: f(y), width: f(w), height: f(h) }, G);
+        el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: "#fff" }, M);
+        const hole = el("circle", { cx: f(c.x), cy: f(c.y), r: 0, fill: "#000" }, M), rk = [[0, 0], [a.t0, 0]];
+        if (nb) a.blows.forEach((t, i) => rk.push([t, f(Rm * i / nb)], [t + 0.12, f(Rm * (i + 1) / nb)])); else rk.push([Math.max(a.t0, a.t1 - 0.3), f(Rm)]);
+        const rv = keyed(rk);
+        anim(hole, { attributeName: "r", values: rv.map((v) => v[1]).join(";"), keyTimes: rv.map((v) => tk(v[0])).join(";") });
+        el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", mask: `url(#${id})` }, G);
       }
     }
     const sc = P.scene;
@@ -1292,7 +1319,7 @@
         const dk = keyed(sc.doors[k]);
         if (varies(dk)) anim(D, { attributeName: "transform", type: "scale", values: dk.map((v) => `${f(v[1])} 1`).join(";"), keyTimes: dk.map((v) => tk(v[0])).join(";") });
       }
-      const SH = g.S;   // FR129: the shelf — a frame with three boards, and what stands on them
+      const SH = g.S;   // FR129: the shelf — a frame with its boards (FR132: two), and what stands on them
       el("rect", { x: f(SH.x), y: f(SH.y), width: SH.w, height: SH.h, fill: "#2b1d12", stroke: "#8b5a2b", "stroke-width": 1.5 }, SG);
       for (let i = 1; i <= SCENE.S.rows.length; i++) el("line", { x1: f(SH.x), y1: f(SH.y + SH.rh * i), x2: f(SH.x + SH.w), y2: f(SH.y + SH.rh * i), stroke: "#8b5a2b", "stroke-width": 2.5 }, SG);
       for (const v of sc.inside) if (v.k.startsWith("S.")) fadeIv(look(SG, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);
@@ -1333,10 +1360,11 @@
       for (const id in A.items) fadeIv(look(H, id, ACT_ITEMS[id].dx, ACT_ITEMS[id].dy, 1, false), A.items[id]);
       for (const [text, t0, t1] of A.pops) { const t = el("text", { x: 0, y: -46, "text-anchor": "middle", fill: "#3fb950", opacity: 0 }, H);
         Object.assign(t.style, { fontSize: "12px", fontWeight: "700", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" }); t.textContent = text; fadeIv(t, [[t0, t1]]); }
-      for (const a of A.acts) if (a.kind === "hammer") {   // the hammer swings in its right hand
-        const hg = el("g", { transform: "translate(9 -16)", opacity: 0 }, H); fadeIv(hg, [[a.t0, a.t1]]);
-        el("use", { href: "#ic-hammer", x: -3, y: -19, width: 22, height: 22 }, hg).style.color = "#c9d1d9";
-        el("animateTransform", { attributeName: "transform", type: "rotate", additive: "sum", values: "0;-60;0", keyTimes: "0;0.45;1", dur: "0.45s", repeatCount: "indefinite" }, hg);
+      for (const a of A.acts) if (a.kind === "hammer") {   // FR131: a real hammer in its right hand (it turns with the sprite): down fast, up slowly, a blow every BLOW s
+        const hg = el("g", { transform: "translate(9 -16)", opacity: 0 }, FL); fadeIv(hg, [[a.t0, a.t1]]);
+        el("use", { href: "#ic-claw-hammer", x: -11, y: -18.33, width: 22, height: 22 }, hg);
+        el("animateTransform", { attributeName: "transform", type: "rotate", additive: "sum", values: "-25;70;-25", keyTimes: "0;0.3;1", dur: ACT.BLOW + "s",
+          begin: f(S.stepT0 + a.t0) + "s", repeatCount: "indefinite" }, hg);
       }
     }
     if (sc) for (const [text, x, y, t0, t1] of sc.pops) { const t = el("text", { x: f(x), y: f(y), "text-anchor": "middle", fill: "#3fb950", opacity: 0 }, G);   // a sign above a safe

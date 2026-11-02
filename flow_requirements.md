@@ -1237,6 +1237,45 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   where your computer is a box around the server); Mario carries the address along it and puts it into the phone.
   **5 friend:** as before (the lookup, visitors at the gates). The static SVG's legend now also stays above the highest
   line. Verified as FR129, plus frames of the vault being filled and carried home and of the share line.
+- **FR131. In step 1 the light goes into the laptop, which is hammered and built up out of it; a real hammer.** (User: *I
+  want the light in step 1 install to go from Mario towards the middle of the SelfPrivacy laptop, which then is hammered
+  and built up from the light. I want the hammer icon to be an actual hammer icon.*) **The light:** where Mario hammers,
+  the install light leaves his hand and floats into the middle of the box (`ACT.T.give`, 0.7 s, growing a little), and he
+  turns to face the box. **The build:** the box is no longer uncovered bottom-up — the cover gets a round hole around the
+  light (an SVG mask, `actbuild<n>`) that widens a ring with every hammer blow until the box is whole; the light flares
+  at every blow and sinks into the finished box. The hammer comes down 0.15 s into every swing, a swing every
+  `ACT.BLOW` (0.5 s); blows land until 0.6 s before the end, so the light has time to sink. **The hammer:** a new filled
+  claw hammer (`ic-claw-hammer`: wooden handle with a darker grip, steel head, claw), held in the right hand and turning
+  with the sprite, down fast and up slowly; its swing starts with the hammering, so the blows and the growing hole stay
+  in step. The toolbar's 🔨 *fix position everywhere* button keeps its outline `ic-hammer`. **The box it builds:** the
+  hammer names it (`{"hammer": 3, "at": "server"}`) and builds only once the runner got there — in the wifi view no line
+  takes Mario to the server, so nothing is built there (before, it hid and rebuilt *Your computer*). Verified:
+  `parity_steps.py` (now also compares when every runner animation begins, and checks the wifi install step),
+  `ui_steps.py`, line + book parity, overlap scan, all views open; editor and static-SVG frames of the light flying in,
+  the blows, the growing hole and the finished laptop looked at (cable, USB), and of the wifi view.
+- **FR132. A two-board shelf you can read; a copy of the IP goes on it first; the IP is shown as a number.** (User: *the
+  shelf already contains "relay ip …" — it should not; it should have only 2 shelves, not 3. When Mario arrives there it
+  should first store a copy of the ip address below in the shelf, then go to the first locker. "Your selfprivacy IP
+  address" should become "Your selfprivacy IP address: 192.42.69.314", so people understand it is an IP address. The
+  vaults should move one vault width to the right. The text on the shelf should be larger, so it is more readable; the
+  closet should be bigger; the hostname stored on the shelf should be bigger too.*) **The shelf** has two boards
+  (`S.top`, `S.bottom`) and is 114 × 72 (was 60 × 66, three boards); what stands on it is drawn at 0.8× (was 0.36×) and
+  stands just above its board. It ends left of the pipe from the internet (the ledge now runs to x + 284; the pipe is at
+  ≈ 304). **The safes** sit one safe width (44) further right, and so do the spots where a runner works them; the fire
+  bowl stays where it was. **Tailscale's relay address is gone** from the shelf and from the things a runner can carry
+  (`relayip`). **Step 1:** once the scene is up, Mario first walks to the shelf and puts a **copy** of the IP on the
+  bottom board (`{"put": "ip", "in": "S.bottom", "copy": true}` — a copy comes off what he holds and flies there; he
+  keeps his own, 1.2 s), then goes to safe A; the domain goes on the top board as before; back at the server the IP goes
+  back into it (`{"put": "ip", "in": "server"}`). The caption adds that Tailscale keeps a copy of the IP. **The IP**
+  reads *Your SelfPrivacy IP address:* / *192.42.69.314* — a text may have more lines (`\n`): they stack upwards, the
+  last one where a single line would be. Carried, the IP sits highest (dy −74), the domain under it (−60), the KeePass
+  vault lower (−40), so all three labels stay apart. **Step 2:** Yoshi takes the domain and the IP off the shelf and
+  writes them in; the caption says the name points to Tailscale's relay, which passes visitors on to your server (the
+  book's entry still names the relay's address). Verified: `parity_steps.py` (12 step views, every runner animation the
+  same), the scene's 75 shapes and texts (two-line IP included) the same in the editor and the static SVG, `ui_steps.py`,
+  line + book parity, overlap scan, `./dash setups --check`, all views open; frames of the copy going onto the shelf, the
+  safes, the domain on the top board, Mario walking down with three labels, the IP going back into the server, Yoshi at
+  the shelf and writing the book (cable, VM) looked at.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

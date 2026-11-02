@@ -1073,23 +1073,23 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 
 
 # ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
-ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26,   # px/s · s — mirrors flow.js ACT
-       "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
+ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26, "BLOW": 0.5,   # px/s · s — mirrors flow.js ACT
+       "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "give": 0.7, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
              "throw": 1.0, "copy": 1.2, "write": 6.0}}
 ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
     "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
     "idkey":   {"icon": "key", "color": "#3fb950", "dx": -14, "dy": -32, "tag": "own key"},
     "light":   {"light": True, "color": "#fff3a0", "dx": 14, "dy": -32},
-    "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -44},   # FR130: a small safe locked with the KeePass logo, above its head
-    "ip":      {"text": "your SelfPrivacy IP address", "color": "#9aa3ad", "dx": 0, "dy": -58},
-    "relayip": {"text": "relay ip 98.76.54.32", "color": "#9aa3ad", "dx": 0, "dy": -58},   # FR129: Tailscale's own address — what its phonebook gets
-    "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -70},
+    "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -40},   # FR130: a small safe locked with the KeePass logo, above its head
+    "ip":      {"text": "Your SelfPrivacy IP address:\n192.42.69.314", "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR132: two lines, the last one at dy
+    "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -60},
 }
 ACTORS = ["mario", "yoshi"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
-# FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with three boards) — mirrors flow.js SCENE
-SCENE = {"x0": -84, "x1": 240, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w": 44, "h": 52, "inset": 5, "lock": 17},
-         "A": {"x": -28, "hinge": "l", "mark": -44}, "B": {"x": 34, "hinge": "r", "mark": 93}, "F": {"x": -68},
-         "S": {"x": 170, "w": 60, "h": 66, "mark": 150, "rows": ["top", "mid", "bottom"]}, "IN": {"safe": 0.22, "shelf": 0.36, "icon": 0.8}}
+# FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with two boards) — mirrors flow.js SCENE
+# FR132: the safes a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304)
+SCENE = {"x0": -84, "x1": 284, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w": 44, "h": 52, "inset": 5, "lock": 17},
+         "A": {"x": 16, "hinge": "l", "mark": 0}, "B": {"x": 78, "hinge": "r", "mark": 137}, "F": {"x": -68},
+         "S": {"x": 160, "w": 114, "h": 72, "mark": 148, "rows": ["top", "bottom"]}, "IN": {"safe": 0.22, "shelf": 0.8, "icon": 0.8}}
 _num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)   # JS typeof v === "number"
 _r1 = lambda v: int(v * 10 + 0.5) / 10   # tenths, halves up (v ≥ 0) — flow.js r1
 _dist = lambda p, q: ((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) ** 0.5
@@ -1119,7 +1119,7 @@ def scene_geo(O):   # where the ledge, the safes, the fire bowl and the shelf ar
     rh = sh["h"] / len(sh["rows"])
     g["S"] = {"x": x, "y": y, "w": sh["w"], "h": sh["h"], "rh": rh, "mark": (O[0] + sh["mark"], top)}
     for i, r in enumerate(sh["rows"]):   # where a thing stands on that board
-        g["S." + r] = (x + sh["w"] / 2, y + rh * i + rh / 2 + 4)
+        g["S." + r] = (x + sh["w"] / 2, y + rh * (i + 1) - 7)   # (just above it)
     return g
 
 
@@ -1212,7 +1212,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         kf_add(w, t1, w["d"])
 
     def holder(k):   # inside a safe, or on a shelf board
-        if not sc or not (k in ("A", "B") or re.fullmatch(r"S\.(top|mid|bottom)", k)):
+        if not sc or not (k in ("A", "B") or (k[:2] == "S." and k[2:] in SCENE["S"]["rows"])):
             return None
         return {"at": sc["g"][k]["inside"], "safe": True} if k in ("A", "B") else {"at": sc["g"][k], "safe": False}
     in_scale = lambda i, safe: (SCENE["IN"]["safe"] if safe else SCENE["IN"]["shelf"]) if ACT_ITEMS[i].get("text") else SCENE["IN"]["icon"]
@@ -1271,9 +1271,39 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             T += ACT["T"]["pop"]
         elif a.get("hammer") is not None:
             dur = a["hammer"] if _num(a["hammer"]) and a["hammer"] > 0 else ACT["T"]["hammer"]
-            R["acts"].append({"kind": "hammer", "t0": T, "t1": T + dur, "at": R["at"]})
-            drop(R, "light", T + 0.4)   # the install light goes into the box
-            T += dur
+            if a.get("at") is not None and str(a["at"]) != R["at"]:   # FR131: it builds only the box it names, once it got there (wifi: no line there)
+                drop(R, "light", T)
+                continue
+            b = box_at(R["at"]) if R["at"] else None
+            c = middle(b) if b else None
+            lit = any(v[1] is None for v in R["items"].get("light", []))
+            if c and R["spot"]:   # it faces the box it builds
+                turn(R, T, c[0] - R["spot"][0])
+            li = None
+            if lit and c and R["spot"]:   # FR131: the install light goes from its hand into the middle of the box first
+                li = inst_of(R, "light")
+                w, t1 = track(li), T + ACT["T"]["give"]
+                R["inst"].pop("light", None)
+                drop(R, "light", T)
+                w_move(li, T, T, [hand(R, "light")])
+                w_move(li, T, t1, [c])
+                w["vis"].append([T, None])
+                w["sc"] += [[T, 1], [t1, 1.3]]
+                T = t1
+            elif lit:
+                drop(R, "light", T + 0.4)
+            t0, t1, blows, k = T, T + dur, [], 0   # the hammer comes down 0.15 s into every swing; each blow builds the box a ring further out of the light
+            while t0 + 0.15 + k * ACT["BLOW"] <= t1 - 0.6 + 1e-9:
+                blows.append(float(_f4(t0 + 0.15 + k * ACT["BLOW"])))
+                k += 1
+            R["acts"].append({"kind": "hammer", "t0": t0, "t1": t1, "at": R["at"], "c": c, "blows": blows})
+            if li:
+                w = track(li)
+                for t in blows:   # the light flares with every blow…
+                    w["sc"] += [[t, 1.3], [t + 0.06, 1.75], [t + 0.3, 1.3]]
+                w["sc"] += [[blows[-1] + 0.3 if blows else t0, 1.3], [t1 - 0.05, 0.3]]   # …and sinks into the finished box
+                w["vis"][-1][1] = t1
+            T = t1
         elif a.get("appear") is not None:   # FR129: it comes out of a box (Yoshi, out of the Tailscale cloud)
             b = box_at(str(a["appear"]))
             if not b or R["pts"]:
@@ -1314,15 +1344,17 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             to = sc["g"][k]["lock"] if lock else (h["at"][0], h["at"][1] + len([v for v in sc["inside"] if v["k"] == into and v["off"] is None]) * 8) if h else middle(b) if b else None
             if not to:
                 continue
-            inst = inst_of(R, i)
-            w, t1 = track(inst), T + (0.5 if lock else 0.6)
-            R["inst"].pop(i, None)
+            keep = a.get("copy") is True and not lock   # FR132: {"copy": true} — a copy comes off what it holds and goes there; the runner keeps its own
+            inst = new_inst(i) if keep else inst_of(R, i)
+            w, t0, t1 = track(inst), T + (0.2 if keep else 0), T + (0.5 if lock else 0.8 if keep else 0.6)
+            if not keep:
+                R["inst"].pop(i, None)
+                drop(R, i, T)
             turn(R, T, to[0] - R["spot"][0])
-            drop(R, i, T)
             w_move(inst, T, T, [hand(R, i)])
             w["vis"].append([T, None])
-            w["sc"].append([T, 1])
-            w_move(inst, T, t1, [to])
+            w["sc"] += [[T, 0.6], [t0, 1]] if keep else [[T, 1]]
+            w_move(inst, t0, t1, [to])
             if lock:
                 w["sc"].append([t1, 0.8])
                 w["rot"] += [[t1, 0], [T + ACT["T"]["put"], 90]]
@@ -1333,11 +1365,11 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                 w["sc"].append([t1, s])
                 w["vis"][-1][1] = t1
                 sc["inside"].append({"id": i, "k": into, "inst": inst, "on": t1, "off": None, "x": to[0], "y": to[1], "s": s})
-                T += ACT["T"]["putIn"]
+                T += ACT["T"]["copy"] if keep else ACT["T"]["putIn"]
             else:   # FR130: into a box — it goes in and is kept there
                 w["sc"].append([t1, 0.3])
                 w["vis"][-1][1] = t1
-                T += ACT["T"]["putIn"]
+                T += ACT["T"]["copy"] if keep else ACT["T"]["putIn"]
         elif sc and (a.get("open") if a.get("open") is not None else a.get("close")) in ("A", "B"):   # the door swings open / shut; a key in its lock goes with it
             opening = a.get("open") is not None
             k = a["open"] if opening else a["close"]
@@ -1521,19 +1553,36 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             src = images.get(it["vault"])
             o.append(f'<image href="{html.escape(src, quote=True)}" x="-9" y="-9" width="18" height="18"/>' if src else '<circle r="4" fill="#facc15"/>')
         label = it.get("text") or (None if plain else it.get("tag"))
-        if label:
-            o.append(f'<text x="0" y="{3.5 if it.get("text") else -12}" text-anchor="middle" fill="{it["color"]}" font-size="10"{HALO}>{html.escape(label)}</text>')
+        if label:   # FR132: more lines stack upwards, the last one where a single line would be
+            ls = label.split("\n")
+            body = html.escape(label) if len(ls) == 1 else "".join(f'<tspan x="0" y="{_f4(3.5 - (len(ls) - 1 - j) * 11)}">{html.escape(l)}</tspan>' for j, l in enumerate(ls))
+            o.append(f'<text x="0" y="{3.5 if it.get("text") else -12}" text-anchor="middle" fill="{it["color"]}" font-size="10"{HALO}>{body}</text>')
         o.append(a + "</g>")
         return "".join(o)
     o = ['<g class="actor" pointer-events="none" font-family="ui-sans-serif, system-ui, sans-serif"><style>@media (prefers-reduced-motion: reduce){.actor{display:none}}</style>']
+    n_build = 0
     for A in P["actors"]:   # world-fixed things first (under the runners): the build cover
         for a in A["acts"]:
             if a["kind"] == "hammer":
                 b = anchor_of(a["at"]) if a.get("at") else None
                 if not b:
                     continue
-                o.append(f'<rect x="{_f4(b[0] - 2)}" y="{_f4(b[1] - 2)}" width="{_f4(b[2] + 4)}" height="{_f4(b[3] + 4)}" fill="{bg}">'   # the box is built bottom-up
-                         + anim(attributeName="height", values=f"{_f4(b[3] + 4)};{_f4(b[3] + 4)};0;0", keyTimes=f"0;{tk(a['t0'])};{tk(a['t1'] - 0.3)};1") + "</rect>")
+                # FR131: the box is built up out of the light in its middle — a hole in the cover opens there, a ring wider with every blow
+                x, y, w, h = b[0] - 2, b[1] - 2, b[2] + 4, b[3] + 4
+                c, nb = a.get("c") or (b[0] + b[2] / 2, b[1] + b[3] / 2), len(a["blows"])
+                Rm = max(_dist(c, q) for q in ((x, y), (x + w, y), (x, y + h), (x + w, y + h))) + 1
+                mid, n_build = f"actbuild{n_build}", n_build + 1
+                rk = [[0, 0], [a["t0"], 0]]
+                if nb:
+                    for i, t in enumerate(a["blows"]):
+                        rk += [[t, Rm * i / nb], [t + 0.12, Rm * (i + 1) / nb]]
+                else:
+                    rk.append([max(a["t0"], a["t1"] - 0.3), Rm])
+                rv = keyed(rk)
+                box = f'x="{_f4(x)}" y="{_f4(y)}" width="{_f4(w)}" height="{_f4(h)}"'
+                o.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" {box}><rect {box} fill="#fff"/><circle cx="{_f4(c[0])}" cy="{_f4(c[1])}" r="0" fill="#000">'
+                         + anim(attributeName="r", values=";".join(_f4(v[1]) for v in rv), keyTimes=";".join(tk(v[0]) for v in rv)) + "</circle></mask>")
+                o.append(f'<rect {box} fill="{bg}" mask="url(#{mid})"/>')
     sc = P["scene"]
     if sc:   # FR128 / FR129: the ledge, the safes, the fire bowl and the shelf — they fade in when the scene starts and out when it ends
         g, s = sc["g"], SCENE["safe"]
@@ -1564,7 +1613,7 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
                      f'<path d="M {_f4(kx - 1.8)} {_f4(ky + 1)} L {_f4(kx + 1.8)} {_f4(ky + 1)} L {_f4(kx + 3)} {_f4(ky + 9)} L {_f4(kx - 3)} {_f4(ky + 9)} Z" fill="#facc15"/>'
                      + (anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} 1" for v in dk), keyTimes=";".join(tk(v[0]) for v in dk)) if varies(dk) else "")
                      + "</g></g>")
-        SH = g["S"]   # FR129: the shelf — a frame with three boards, and what stands on them
+        SH = g["S"]   # FR129: the shelf — a frame with its boards (FR132: two), and what stands on them
         o.append(f'<rect x="{_f4(SH["x"])}" y="{_f4(SH["y"])}" width="{SH["w"]}" height="{SH["h"]}" fill="#2b1d12" stroke="#8b5a2b" stroke-width="1.5"/>')
         for i in range(1, len(SCENE["S"]["rows"]) + 1):
             o.append(f'<line x1="{_f4(SH["x"])}" y1="{_f4(SH["y"] + SH["rh"] * i)}" x2="{_f4(SH["x"] + SH["w"])}" y2="{_f4(SH["y"] + SH["rh"] * i)}" stroke="#8b5a2b" stroke-width="2.5"/>')
@@ -1618,16 +1667,18 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             o.append("<g>" + anim(attributeName="transform", type="scale", values=";".join(f"{v[1]} 1" for v in fv), keyTimes=";".join(tk(v[0]) for v in fv), calcMode="discrete"))
         else:
             o.append('<g transform="scale(-1 1)">' if fv and fv[0][1] == -1 else "<g>")
-        o.append(f'<use href="#ic-{A["who"]}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}"/></g>')
+        o.append(f'<use href="#ic-{A["who"]}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}"/>')
+        for a in A["acts"]:
+            if a["kind"] == "hammer":   # FR131: a real hammer in its right hand (it turns with the sprite): down fast, up slowly, a blow every BLOW s
+                o.append('<g transform="translate(9 -16)" opacity="0">' + fade_iv([[a["t0"], a["t1"]]])
+                         + '<use href="#ic-claw-hammer" x="-11" y="-18.33" width="22" height="22"/>'
+                         f'<animateTransform attributeName="transform" type="rotate" additive="sum" values="-25;70;-25" keyTimes="0;0.3;1" dur="{ACT["BLOW"]:g}s"'
+                         f' begin="{_f4(a["t0"])}s" repeatCount="indefinite"/></g>')
+        o.append("</g>")
         for i, ivs in A["items"].items():
             o.append(look(i, ACT_ITEMS[i]["dx"], ACT_ITEMS[i]["dy"], 1, False, ivs=ivs))
         for text, t0, t1 in A["pops"]:
             o.append(f'<text x="0" y="-46" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
-        for a in A["acts"]:
-            if a["kind"] == "hammer":   # the hammer swings in its right hand
-                o.append('<g transform="translate(9 -16)" opacity="0">' + fade_iv([[a["t0"], a["t1"]]])
-                         + '<use href="#ic-hammer" x="-3" y="-19" width="22" height="22" style="color:#c9d1d9"/>'
-                         '<animateTransform attributeName="transform" type="rotate" additive="sum" values="0;-60;0" keyTimes="0;0.45;1" dur="0.45s" repeatCount="indefinite"/></g>')
         o.append("</g></g>")
     if sc:
         for text, x, y, t0, t1 in sc["pops"]:   # a sign above a safe
