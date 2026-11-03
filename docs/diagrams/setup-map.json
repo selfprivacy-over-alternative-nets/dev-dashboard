@@ -847,6 +847,24 @@
       "so": -322.5,
       "ss": -60,
       "to": "friend"
+    },
+    {
+      "_H": true,
+      "color": "#8b949e",
+      "from": "backupdev",
+      "id": "e_backup",
+      "kind": "pipe",
+      "label": "",
+      "role": "tunnel",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "to": "inet"
     }
   ],
   "meta": {
@@ -1001,6 +1019,41 @@
             "tailscale": []
           }
         }
+      },
+      {
+        "default": "first",
+        "id": "scenario",
+        "label": "Scenario",
+        "options": [
+          {
+            "label": "First install",
+            "value": "first"
+          },
+          {
+            "label": "Reinstall",
+            "value": "reinstall"
+          },
+          {
+            "label": "Restore a backup",
+            "value": "restore"
+          }
+        ],
+        "optionsWhen": {
+          "reach": {
+            "tailscale": [
+              "first",
+              "reinstall",
+              "restore"
+            ]
+          }
+        },
+        "sameLayout": [
+          [
+            "first",
+            "reinstall",
+            "restore"
+          ]
+        ]
       }
     ],
     "view": {
@@ -1907,7 +1960,7 @@
       "color": "red",
       "h": 275,
       "hideIn": [
-        "method=cable;net=0a;reach=tailscale"
+        "method=cable;net=0a;reach=tailscale;scenario=first"
       ],
       "icon": "warn",
       "id": "tslife",
@@ -1921,6 +1974,25 @@
       "w": 280,
       "x": 50,
       "y": 215
+    },
+    {
+      "color": "green",
+      "h": 167,
+      "icon": "laptop",
+      "id": "backupdev",
+      "label": "SelfPrivacy\nbackup device",
+      "nodeType": "device",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "w": 137,
+      "x": 1000,
+      "y": -10
     }
   ],
   "steps": [
@@ -1956,6 +2028,9 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "Make a Tailscale account"
@@ -2094,6 +2169,9 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "Install, then register at Tailscale"
@@ -2153,6 +2231,9 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "Tailscale writes the name in its phonebook"
@@ -2200,6 +2281,9 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "Keep a copy of the server's own key"
@@ -2227,6 +2311,9 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "Send your friend the link"
@@ -2323,10 +2410,448 @@
       "showWhen": {
         "reach": [
           "tailscale"
+        ],
+        "scenario": [
+          "first"
         ]
       },
       "title": "A friend opens the link",
       "visitors": true
+    },
+    {
+      "caption": "You install again. The one-time auth key was used up by the first install, so you get a new one from Tailscale.",
+      "id": "tsr0",
+      "label": "new key",
+      "play": [
+        {
+          "run": "e4"
+        },
+        {
+          "get": "key"
+        },
+        {
+          "pop": "new key ✓"
+        },
+        {
+          "back": true,
+          "run": "e4"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "inet",
+        "relayTS",
+        "e_ts_run",
+        "e4"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Get a new auth key"
+    },
+    {
+      "caption": "Tailscale still has your old machine: its name and its IP address are still in the closet. They go out first (remove the old machine in Tailscale's admin console), else the new server would get the name selfprivacy-1. Then it registers as before and gets the same name back.",
+      "id": "tsr1",
+      "label": "install again",
+      "play": [
+        {
+          "get": [
+            "key",
+            "light"
+          ]
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "get": "ip"
+        },
+        {
+          "run": "e_ts_up"
+        },
+        {
+          "scene": {
+            "A": "idkey",
+            "B": [
+              "domain",
+              "domain"
+            ],
+            "S.bottom": "oldip",
+            "S.top": "olddomain"
+          }
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "fire": true
+        },
+        {
+          "from": "S.top",
+          "take": "olddomain"
+        },
+        {
+          "in": "F",
+          "throw": "olddomain"
+        },
+        {
+          "from": "S.bottom",
+          "take": "oldip"
+        },
+        {
+          "in": "F",
+          "throw": "oldip"
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "copy": true,
+          "in": "S.bottom",
+          "put": "ip"
+        },
+        {
+          "walk": "A"
+        },
+        {
+          "in": "A.lock",
+          "put": "key"
+        },
+        {
+          "open": "A"
+        },
+        {
+          "fire": true
+        },
+        {
+          "from": "A.lock",
+          "take": "key"
+        },
+        {
+          "in": "F",
+          "throw": "key"
+        },
+        {
+          "from": "A",
+          "take": "idkey"
+        },
+        {
+          "close": "A"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "in": "B.lock",
+          "put": "idkey"
+        },
+        {
+          "open": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "in": "S.top",
+          "put": "domain"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "from": "B.lock",
+          "take": "idkey"
+        },
+        {
+          "close": "B"
+        },
+        {
+          "walk": "O"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up"
+        },
+        {
+          "in": "server",
+          "put": "ip"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "e_ts_up"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Clean out the old machine, then register again"
+    },
+    {
+      "caption": "Tailscale's helper writes your name in its phonebook again. It points to Tailscale's relay, which now passes visitors on to your new server.",
+      "id": "tsr2",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayTS",
+          "who": "yoshi"
+        },
+        {
+          "walk": "S",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.top",
+          "take": "domain",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.bottom",
+          "take": "ip",
+          "who": "yoshi"
+        },
+        {
+          "walk": "O",
+          "who": "yoshi"
+        },
+        {
+          "scene": false
+        },
+        {
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "tsbook"
+        },
+        {
+          "back": true,
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        }
+      ],
+      "show": [
+        "tsbook",
+        "e3"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Tailscale writes the name again"
+    },
+    {
+      "caption": "Your SelfPrivacy server makes a backup, and you lock a copy of its own key in a KeePass vault (planned: round0 R2). Both go through Tailscale over the internet to your SelfPrivacy backup device, which keeps them on its screen.",
+      "id": "tsb0",
+      "label": "backup",
+      "play": [
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "appear": "server"
+        },
+        {
+          "from": "server",
+          "get": "backup"
+        },
+        {
+          "get": "vault"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "copy": "idkey",
+          "from": "server",
+          "in": "vault"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "run": "e_ts_up"
+        },
+        {
+          "run": "e_ts_run"
+        },
+        {
+          "back": true,
+          "run": "e_backup"
+        },
+        {
+          "in": "backupdev",
+          "put": "backup",
+          "screen": "left"
+        },
+        {
+          "in": "backupdev",
+          "put": "vault",
+          "screen": "right"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "e_ts_up",
+        "relayTS",
+        "e_ts_run",
+        "inet",
+        "backupdev",
+        "e_backup"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Back up to your backup device"
+    },
+    {
+      "caption": "Then disaster: your server burns down (or it is stolen, or it breaks). What it held is now only on your backup device.",
+      "id": "tsb1",
+      "label": "fire",
+      "play": [
+        {
+          "burn": "server"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Your server is lost"
+    },
+    {
+      "caption": "You install again, from the backup device: the install light, the backup and the KeePass vault go back to where the server stood. The server is built up again and gets its data back from the backup and its own key from KeePass, so Tailscale knows it as the same machine: the same name and address, nothing to clean out.",
+      "id": "tsb2",
+      "label": "restore",
+      "play": [
+        {
+          "from": "backupdev",
+          "get": "light"
+        },
+        {
+          "from": "backupdev",
+          "get": "backup"
+        },
+        {
+          "from": "backupdev",
+          "get": "vault"
+        },
+        {
+          "run": "e_backup"
+        },
+        {
+          "back": true,
+          "run": "e_ts_run"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up"
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "backup"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "from": "vault",
+          "take": "idkey"
+        },
+        {
+          "in": "server",
+          "put": "idkey"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Restore from the backup"
     }
   ]
 }

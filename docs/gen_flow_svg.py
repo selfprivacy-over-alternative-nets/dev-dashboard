@@ -1081,18 +1081,22 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 # ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
 ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26, "BLOW": 0.5,   # px/s · s — mirrors flow.js ACT
        "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "give": 0.7, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
-             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6}}
+             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6, "burn": 3.2}}
 ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
     "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
     "idkey":   {"icon": "key", "color": "#3fb950", "dx": -14, "dy": -32, "tag": "own key"},
-    "light":   {"light": True, "color": "#fff3a0", "dx": 14, "dy": -32},
+    "light":   {"light": True, "color": "#fff3a0", "dx": 20, "dy": -32},   # (FR140: right of the vault above its head)
     "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -40},   # FR130: a small safe locked with the KeePass logo, above its head
     "ip":      {"text": "Your SelfPrivacy IP address:\n192.42.69.314", "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR132: two lines, the last one at dy
     "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -60},
     "answer":  {"book": True, "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR136: the address a book gives for a name — its text comes from the book's entry
     "jitsi":   {"img": "jitsi", "color": "#4aa3ff", "dx": 0, "dy": -40, "tag": "Jitsi call"},   # FR136: the call — the Jitsi Meet logo on a blue badge
+    "backup":  {"icon": "backup", "color": "#58a6ff", "dx": -24, "dy": -18},   # FR140: your server's SelfPrivacy backup (low on its left, clear of the vault)
+    "olddomain": {"text": "old: selfprivacy.tail1234.ts.net", "color": "#8b949e", "dx": 0, "dy": -60},   # FR139: the old machine's name, still at Tailscale
+    "oldip":   {"text": "old machine's IP address:\n192.42.69.314", "color": "#8b949e", "dx": 0, "dy": -100},   # FR139: …and its address (above your own IP)
 }
 VAULT = {"w": 34, "h": 28, "inset": 3, "lock": 14, "IN": {"x": -2, "y": 0, "s": 0.7}}   # FR135: the KeePass vault — mirrors flow.js VAULT
+BURN_FLAMES = [(-0.34, 0.65, 0), (-0.17, 0.85, 0.3), (0, 1, 0.55), (0.17, 0.85, 0.15), (0.34, 0.65, 0.45)]   # FR140 — mirrors flow.js BURN_FLAMES
 ACTORS = ["mario", "yoshi", "jazz"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
 # FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with two boards) — mirrors flow.js SCENE
 # FR132: the safes a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304)
@@ -1102,6 +1106,18 @@ SCENE = {"x0": -84, "x1": 284, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w":
 _num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)   # JS typeof v === "number"
 _r1 = lambda v: int(v * 10 + 0.5) / 10   # tenths, halves up (v ≥ 0) — flow.js r1
 _dist = lambda p, q: ((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) ** 0.5
+
+
+def _kv_at(kv, t):   # FR139: a key-framed value at t (linear, held at the ends) — mirrors flow.js kvAt
+    v = 0
+    for i, (a, x) in enumerate(kv):
+        if a > t:
+            if i:
+                b, y = kv[i - 1]
+                v = float(_f4(y + (x - y) * (t - b) / (a - b))) if a > b else x
+            return v
+        v = x
+    return v
 
 
 def _f3(v):   # a number the way flow.js writes +v.toFixed(3) (FR129)
@@ -1136,7 +1152,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
     by = {e["id"]: e for e in edges}
     st0 = (start or {}).get("actors") or {}
     T = ACT["FADE"] if first or not st0.get("mario") else 0.0
-    W, writes, ACTS = {}, [], {}
+    W, writes, ACTS, burns = {}, [], {}, []
     reads, shown, texts = [], [], dict((start or {}).get("texts") or {})   # FR136: books looked up, things shown on boxes, texts from books
     sc, n_inst = None, [0]
 
@@ -1437,8 +1453,10 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             d = ACT["T"]["open"] if opening else ACT["T"]["close"]
             R["doors"].setdefault(i, []).extend([[T, 1 if opening else SCENE["OPEN"]], [T + d, SCENE["OPEN"] if opening else 1]])
             T += d
-        elif sc and a.get("fire"):   # a fire starts in the bowl
-            sc["fire"] += [[T, 0], [T + ACT["T"]["fire"], 1]]
+        elif sc and a.get("fire"):   # a fire starts in the bowl (FR139: one still burning goes on)
+            v = _kv_at(sc["fire"], T)
+            sc["fire"] = [k_ for k_ in sc["fire"] if k_[0] <= T]
+            sc["fire"] += [[T, v], [T + ACT["T"]["fire"], 1]]
             T += ACT["T"]["fire"]
         elif a.get("take") is not None and a["take"] in ACT_ITEMS and R["spot"] and ACT_ITEMS.get(str(a.get("from") or ""), {}).get("vault"):   # FR138: out of the vault it holds (over the runner)
             box = str(a["from"])
@@ -1505,6 +1523,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                 u = j / 8
                 arc.append((frm[0] + (to[0] - frm[0]) * u, frm[1] + (to[1] - frm[1]) * u - 160 * u * (1 - u)))
             w_move(inst, T, t1, arc)
+            sc["fire"] = [k_ for k_ in sc["fire"] if k_[0] <= t1]   # (FR139: a second throw flares it again)
             sc["fire"] += [[t1, 1], [t1 + 0.15, 1.5], [t1 + 0.5, 1], [t1 + 1.5, 1], [t1 + 2.5, 0]]
             T += ACT["T"]["throw"]
         elif a.get("copy") is not None and a["copy"] in ACT_ITEMS and str(a.get("in") or "") in ACT_ITEMS and R["spot"]:   # FR130: a copy comes out of a box into what the runner holds (the vault)
@@ -1610,10 +1629,15 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             w["vis"].append([T, None])
             shown.append({"id": i, "at": str(a["at"]), "x": to[0], "y": to[1], "s": s})
             T += ACT["T"]["show"] + 0.2
+        elif a.get("burn") is not None:   # FR140: a box burns down — flames over it, and it is gone
+            if not box_at(str(a["burn"])):
+                continue
+            burns.append({"at": str(a["burn"]), "t0": T, "t1": T + ACT["T"]["burn"]})
+            T += ACT["T"]["burn"]
         elif _num(a.get("wait")):
             T += max(0, a["wait"])
     all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
-    if not all_ and not sc and not stored:   # (no runner, no scene and nothing stored on a screen)
+    if not all_ and not sc and not stored and not burns:   # (no runner, no scene and nothing stored on a screen)
         return None   # no runner and no scene in this step
     if _num(step.get("dur")):   # standing time
         T = max(T, step["dur"])
@@ -1628,7 +1652,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         T += ACT["FADE"]
         for R in all_:
             R["kf"].append([T, R["dist"]])
-    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored,
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored, "burns": burns,
            "end": {"actors": {}, "scene": None, "texts": texts, "stored": [{k: v[k] for k in ("id", "at", "x", "y", "s", "inside")} for v in stored if v["off"] is None]},
            "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
                        "items": R["items"], "doors": R["doors"], "inside": R["inside"], "face": R["face"], "op": R["op"]} for R in all_]}
@@ -1751,6 +1775,18 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
                 o.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" {box}><rect {box} fill="#fff"/><circle cx="{_f4(c[0])}" cy="{_f4(c[1])}" r="0" fill="#000">'
                          + anim(attributeName="r", values=";".join(_f4(v[1]) for v in rv), keyTimes=";".join(tk(v[0]) for v in rv)) + "</circle></mask>")
                 o.append(f'<rect {box} fill="{bg}" mask="url(#{mid})"/>')
+    for bn in P.get("burns") or []:   # FR140: flames over the box, which goes
+        b = anchor_of(bn["at"])
+        if not b:
+            continue
+        ck = keyed([[0, 0], [bn["t0"] + 1.0, 0], [bn["t0"] + 2.2, 1]])
+        o.append(f'<rect x="{_f4(b[0] - 2)}" y="{_f4(b[1] - 2)}" width="{_f4(b[2] + 4)}" height="{_f4(b[3] + 4)}" fill="{bg}" opacity="0">'
+                 + anim(attributeName="opacity", values=";".join(_f4(v[1]) for v in ck), keyTimes=";".join(tk(v[0]) for v in ck)) + "</rect>")
+        fk = keyed([[0, 0], [bn["t0"], 0], [bn["t0"] + 0.6, 1], [bn["t0"] + 1.4, 1.2], [bn["t1"] - 0.8, 1], [bn["t1"], 0]])
+        fs = b[3] * 0.85 / 12
+        o.append(f'<g transform="translate({_f4(b[0] + b[2] / 2)} {_f4(b[1] + b[3])})"><g transform="scale(0)">'
+                 + anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in fk), keyTimes=";".join(tk(v[0]) for v in fk))
+                 + "".join(flame_svg(dx * b[2], 0, fs * k_, ph) for dx, k_, ph in BURN_FLAMES) + "</g></g>")
     for v in P.get("stored") or []:   # FR138: what lies on a screen
         o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
     sc = P["scene"]

@@ -1073,20 +1073,24 @@
   /* ---------- FR124: step mode — the view told step by step, acted out by a runner (mirrored in gen_flow_svg.py) ---------- */
   const ACT = { V: 240, FADE: 0.4, HOP: 0.32, MIN: 1.2, MAX: 5, STAND: 8, WALK: 0.6, SIZE: 26, BLOW: 0.5,   // px/s · s (a run lasts 1.2–5 s, a walk at least 0.6 s;
     T: { get: 0.9, pop: 0.9, hammer: 3, give: 0.7, scene: 0.4, unscene: 0.3, put: 0.8, putIn: 0.7, open: 0.6, close: 0.5, fire: 0.8, take: 0.6, unlock: 0.5,   // a step without
-      throw: 1.0, copy: 1.2, write: 6.0, hand: 0.8, show: 0.6 } };   // a script lasts its dur, else STAND; FR131: a hammer blow every BLOW s)
+      throw: 1.0, copy: 1.2, write: 6.0, hand: 0.8, show: 0.6, burn: 3.2 } };   // a script lasts its dur, else STAND; FR131: a hammer blow every BLOW s)
   const ACT_ITEMS = {   // what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top)
     key:     { icon: "key", color: "#f97316", dx: -14, dy: -32, tag: "auth key" },
     idkey:   { icon: "key", color: "#3fb950", dx: -14, dy: -32, tag: "own key" },
-    light:   { light: true, color: "#fff3a0", dx: 14, dy: -32 },
+    light:   { light: true, color: "#fff3a0", dx: 20, dy: -32 },   // (FR140: right of the vault above its head)
     vault:   { vault: "keepass", color: "#c9d1d9", dx: 0, dy: -40 },   // FR130: a small safe locked with the KeePass logo, above its head
     ip:      { text: "Your SelfPrivacy IP address:\n192.42.69.314", color: "#9aa3ad", dx: 0, dy: -74 },   // FR132: two lines, the last one at dy
     domain:  { text: "selfprivacy.tail1234.ts.net", color: "#f97316", dx: 0, dy: -60 },
     answer:  { book: true, color: "#9aa3ad", dx: 0, dy: -74 },   // FR136: the address a book gives for a name — its text comes from the book's entry
     jitsi:   { img: "jitsi", color: "#4aa3ff", dx: 0, dy: -40, tag: "Jitsi call" },   // FR136: the call — the Jitsi Meet logo on a blue badge
+    backup:  { icon: "backup", color: "#58a6ff", dx: -24, dy: -18 },   // FR140: your server's SelfPrivacy backup (low on its left, clear of the vault)
+    olddomain: { text: "old: selfprivacy.tail1234.ts.net", color: "#8b949e", dx: 0, dy: -60 },   // FR139: the old machine's name, still at Tailscale
+    oldip:   { text: "old machine's IP address:\n192.42.69.314", color: "#8b949e", dx: 0, dy: -100 },   // FR139: …and its address (above your own IP)
   };
   // FR135: the KeePass vault — a small safe (size, door inset), its door hinged left and locked with the KeePass logo (lock = the
   // logo's size); IN = where a thing lies inside it and how small (mirrored in docs/gen_flow_svg.py VAULT)
   const VAULT = { w: 34, h: 28, inset: 3, lock: 14, IN: { x: -2, y: 0, s: 0.7 } };
+  const BURN_FLAMES = [[-0.34, 0.65, 0], [-0.17, 0.85, 0.3], [0, 1, 0.55], [0.17, 0.85, 0.15], [0.34, 0.65, 0.45]];   // FR140: x (of the width), size, flicker phase
   const ACTORS = ["mario", "yoshi", "jazz"];   // FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
   // FR128 / FR129: the scene the runners work in — a brick ledge above the box where it starts (Tailscale), the fire bowl, two safes
   // side by side (a gap between them) and a shelf with two boards; geometry relative to the spot it started on (mirrored in
@@ -1097,7 +1101,9 @@
   const SCENE = { x0: -84, x1: 284, top: -72, h: 12, OPEN: -0.35, safe: { w: 44, h: 52, inset: 5, lock: 17 },
     A: { x: 16, hinge: "l", mark: 0 }, B: { x: 78, hinge: "r", mark: 137 }, F: { x: -68 },
     S: { x: 160, w: 114, h: 72, mark: 148, rows: ["top", "bottom"] }, IN: { safe: 0.22, shelf: 0.8, icon: 0.8 } };
-  const r1 = (v) => Math.floor(v * 10 + 0.5) / 10;   // tenths, halves up (Python: math.floor(v * 10 + 0.5) / 10)
+  const r1 = (v) => Math.floor(v * 10 + 0.5) / 10;
+  const kvAt = (kv, t) => { let v = 0; for (let i = 0; i < kv.length; i++) { const [a, x] = kv[i]; if (a > t) { if (i) { const [b, y] = kv[i - 1];   // FR139: a key-framed value at t
+    v = a > b ? +(y + (x - y) * (t - b) / (a - b)).toFixed(4) : x; } return v; } v = x; } return v; };   // tenths, halves up (Python: math.floor(v * 10 + 0.5) / 10)
   function sceneGeo(O) {   // where the ledge, the safes (keyhole, keyhole of the open door, inside, where to stand), the fire bowl and the shelf are
     const s = SCENE.safe, top = O.y + SCENE.top, g = { O, top, x0: O.x + SCENE.x0, x1: O.x + SCENE.x1, fire: { x: O.x + SCENE.F.x, y: top } };
     for (const k of ["A", "B"]) {
@@ -1120,7 +1126,7 @@
   function actorPlan(step, epoly, start, first, last, boxAt, screenAt) {
     const edgeOf = (id) => S.data.edges.find((e) => e.id === id), st0 = (start && start.actors) || {};
     let T = first || !st0.mario ? ACT.FADE : 0, sc = null, nInst = 0;
-    const W = {}, writes = [], ACTS = {}, reads = [], shown = [], texts = { ...((start && start.texts) || {}) };   // FR136: books looked up, things shown on boxes, texts from books
+    const W = {}, writes = [], ACTS = {}, reads = [], shown = [], burns = [], texts = { ...((start && start.texts) || {}) };   // FR136: books looked up, things shown on boxes, texts from books
     const carry = (R, id, on) => { const l = R.items[id] = R.items[id] || []; if (!l.some((v) => v[1] == null)) l.push([on, null]); };   // (already holding it: nothing changes)
     const drop = (R, id, off) => { const iv = R.items[id] && R.items[id].find((v) => v[1] == null); if (iv) iv[1] = off; };
     const actor = (who) => {   // a runner: where it is, its path, what it holds, which way it faces, when it shows
@@ -1241,7 +1247,8 @@
                  && (R.items[a.open != null ? a.open : a.close] || []).some((v) => v[1] == null)) {   // FR135: the door of the vault it holds swings open / shut
         const id = a.open != null ? a.open : a.close, opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close, l = R.doors[id] = R.doors[id] || [];
         l.push([T, opening ? 1 : SCENE.OPEN], [T + d, opening ? SCENE.OPEN : 1]); T += d;
-      } else if (sc && a.fire) { sc.fire.push([T, 0], [T + ACT.T.fire, 1]); T += ACT.T.fire;   // a fire starts in the bowl
+      } else if (sc && a.fire) { const v = kvAt(sc.fire, T); sc.fire = sc.fire.filter((k) => k[0] <= T);   // a fire starts in the bowl (FR139: one still burning goes on)
+        sc.fire.push([T, v], [T + ACT.T.fire, 1]); T += ACT.T.fire;
       } else if (a.take != null && ACT_ITEMS[a.take] && R.spot && (ACT_ITEMS[String(a.from || "")] || {}).vault) {   // FR138: out of the vault it holds (over the runner)
         const box = String(a.from), v = (R.inside[box] || []).find((x) => x.id === a.take && x.off == null); if (!v) continue;
         const h = hand(R, box), inst = newInst(a.take), w = track(inst), t1 = T + ACT.T.take; v.off = T; w.over = true;
@@ -1262,7 +1269,7 @@
         delete R.inst[id]; turn(R, T, to.x - R.spot.x); drop(R, id, T); wMove(inst, T, T, [from]); w.vis.push([T, T + ACT.T.throw]); w.sc.push([T, 1], [t1, 1], [T + ACT.T.throw, 0.3]);
         for (let j = 1; j <= 8; j++) { const u = j / 8; arc.push({ x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u - 160 * u * (1 - u) }); }
         wMove(inst, T, t1, arc);
-        sc.fire.push([t1, 1], [t1 + 0.15, 1.5], [t1 + 0.5, 1], [t1 + 1.5, 1], [t1 + 2.5, 0]);
+        sc.fire = sc.fire.filter((k) => k[0] <= t1); sc.fire.push([t1, 1], [t1 + 0.15, 1.5], [t1 + 0.5, 1], [t1 + 1.5, 1], [t1 + 2.5, 0]);   // (FR139: a second throw flares it again)
         T += ACT.T.throw;
       } else if (a.copy != null && ACT_ITEMS[a.copy] && ACT_ITEMS[String(a.in || "")] && R.spot) {   // FR130: a copy comes out of a box into what the runner holds (the vault)
         const b = boxAt(String(a.from || "")); if (!b) continue;
@@ -1299,14 +1306,16 @@
         if (held) { delete R.inst[id]; turn(R, T, to.x - R.spot.x); drop(R, id, T); wMove(inst, T, T, [hand(R, id)]); wMove(inst, T, T + ACT.T.show, [to]); w.sc.push([T, 1], [T + ACT.T.show, s]); }
         else { wMove(inst, T, T, [to]); w.sc.push([T, 0.3], [T + ACT.T.show, s]); }
         w.vis.push([T, null]); shown.push({ id, at: String(a.at), x: to.x, y: to.y, s }); T += ACT.T.show + 0.2;
+      } else if (a.burn != null) { if (!boxAt(String(a.burn))) continue;   // FR140: a box burns down — flames over it, and it is gone
+        burns.push({ at: String(a.burn), t0: T, t1: T + ACT.T.burn }); T += ACT.T.burn;
       } else if (typeof a.wait === "number") T += Math.max(0, a.wait);
     }
     const all = ACTORS.map((who) => ACTS[who]).filter((R) => R && R.pts.length);
-    if (!all.length && !sc && !stored.length) return null;   // no runner, no scene and nothing stored on a screen in this step
+    if (!all.length && !sc && !stored.length && !burns.length) return null;   // no runner, no scene and nothing stored on a screen in this step
     if (typeof step.dur === "number") T = Math.max(T, step.dur); else if (!(step.play || []).length) T = Math.max(T, ACT.STAND);   // standing time
     for (const R of all) R.kf.push([T, R.dist]);
     if (last) { for (const R of all) if (!R.gone) R.op.push([T, 1], [T + ACT.FADE, 0]); T += ACT.FADE; for (const R of all) R.kf.push([T, R.dist]); }
-    const out = { T, W, scene: sc, writes, reads, texts, last, stored, end: { actors: {}, scene: null, texts, stored: stored.filter((v) => v.off == null).map((v) => ({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside })) },
+    const out = { T, W, scene: sc, writes, reads, texts, last, stored, burns, end: { actors: {}, scene: null, texts, stored: stored.filter((v) => v.off == null).map((v) => ({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside })) },
       actors: all.map((R) => ({ who: R.who, pts: R.pts, L: polyLen(R.pts), kf: R.kf, runs: R.runs, acts: R.acts, pops: R.pops, items: R.items, doors: R.doors, inside: R.inside, face: R.face, op: R.op })) };
     for (const R of all) if (!R.gone) out.end.actors[R.who] = { spot: R.spot, at: R.at, face: R.facing, items: Object.keys(R.items).filter((id) => R.items[id].some((v) => v[1] == null)) };
     if (sc && sc.t1 == null) out.end.scene = { O: sc.g.O, inside: sc.inside.filter((v) => v.off == null).map((v) => ({ id: v.id, k: v.k, x: v.x, y: v.y, s: v.s })) };
@@ -1370,6 +1379,15 @@
         anim(hole, { attributeName: "r", values: rv.map((v) => v[1]).join(";"), keyTimes: rv.map((v) => tk(v[0])).join(";") });
         el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", mask: `url(#${id})` }, G);
       }
+    }
+    for (const bn of P.burns || []) { const n = node(bn.at), b = n && boxOf[bn.at] && anchorBox(n, boxOf[bn.at]); if (!b) continue;   // FR140: flames over the box, which goes
+      const c = el("rect", { x: f(b.x - 2), y: f(b.y - 2), width: f(b.w + 4), height: f(b.h + 4), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", opacity: 0 }, G);
+      const ck = keyed([[0, 0], [bn.t0 + 1.0, 0], [bn.t0 + 2.2, 1]]);
+      anim(c, { attributeName: "opacity", values: ck.map((v) => v[1]).join(";"), keyTimes: ck.map((v) => tk(v[0])).join(";") });
+      const FS = el("g", { transform: "scale(0)" }, el("g", { transform: `translate(${f(b.x + b.w / 2)} ${f(b.y + b.h)})` }, G));
+      const fk = keyed([[0, 0], [bn.t0, 0], [bn.t0 + 0.6, 1], [bn.t0 + 1.4, 1.2], [bn.t1 - 0.8, 1], [bn.t1, 0]]), fs = b.h * 0.85 / 12;
+      anim(FS, { attributeName: "transform", type: "scale", values: fk.map((v) => `${f(v[1])} ${f(v[1])}`).join(";"), keyTimes: fk.map((v) => tk(v[0])).join(";") });
+      for (const [dx, k, ph] of BURN_FLAMES) flame(FS, f(dx * b.w), 0, f(fs * k), ph);
     }
     for (const v of P.stored || []) fadeIv(look(G, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);   // FR138: what lies on a screen
     const sc = P.scene;

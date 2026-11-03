@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cable duct variations</title>
+<style>
+  :root { --bg: #0b0e14; --panel: #11151c; --border: #2a313c; --fg: #c9d1d9; --dim: #8b949e; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-size: 17px; margin: 18px 16px 4px; }
+  p { margin: 0 16px 10px; color: var(--dim); max-width: 900px; }
+  .legend { margin: 0 16px 14px; color: var(--dim); font-size: 12px; line-height: 1.6; }
+  .legend b { color: var(--fg); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; padding: 0 16px 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; }
+  .card .desc { color: var(--dim); font-size: 11px; min-height: 28px; margin-bottom: 4px; }
+  .card h2 { font-size: 13px; font-weight: 500; margin: 2px 0 5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card h2 b { color: #f0b429; font-size: 14px; margin-right: 5px; }
+  svg { display: block; width: 100%; height: auto; background: var(--bg); border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>20 variations on #96 — cable duct with the moulded boot</h1>
+<p>Same tunnel, same route, same moulded-boot plug (from the photo) on every one; only the duct changes. #1 is #96 as it was. Tell Claude the number you like.</p>
+<div class="grid" id="grid"></div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const shade = (hex, f) => { const m = hex.replace("#", ""); const h = (v) => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+  return "#" + h(parseInt(m.slice(0, 2), 16)) + h(parseInt(m.slice(2, 4), 16)) + h(parseInt(m.slice(4, 6), 16)); };
+const D = (pts) => "M " + pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ");
+const OL = "#0a140a";
+
+/* ---------- geometry on orthogonal polylines ---------- */
+const dirs = (P) => P.slice(1).map((q, i) => { const L = Math.hypot(q.x - P[i].x, q.y - P[i].y) || 1; return { x: (q.x - P[i].x) / L, y: (q.y - P[i].y) / L }; });
+const lenOf = (P) => P.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - P[i].x, q.y - P[i].y), 0);
+function offset(P, o) {   // mitred parallel polyline at distance o (left normal)
+  const d = dirs(P), n = (v) => ({ x: -v.y, y: v.x });
+  return P.map((p, i) => {
+    const a = d[Math.max(0, i - 1)], b = d[Math.min(d.length - 1, i)], na = n(a), nb = n(b);
+    if (i === 0) return { x: p.x + nb.x * o, y: p.y + nb.y * o };
+    if (i === P.length - 1 || Math.abs(na.x - nb.x) + Math.abs(na.y - nb.y) < 1e-6) return { x: p.x + na.x * o, y: p.y + na.y * o };
+    return { x: p.x + (na.x + nb.x) * o, y: p.y + (na.y + nb.y) * o };
+  });
+}
+function at(P, s) {   // point + tangent + normal at distance s along P
+  const d = dirs(P); let acc = 0;
+  for (let i = 0; i < d.length; i++) { const L = Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y);
+    if (s <= acc + L || i === d.length - 1) { const t = Math.min(L, Math.max(0, s - acc)); return { x: P[i].x + d[i].x * t, y: P[i].y + d[i].y * t, t: d[i], n: { x: -d[i].y, y: d[i].x }, s }; }
+    acc += L; }
+}
+const sample = (P, step) => { const out = [], T = lenOf(P); for (let s = 0; s <= T + 1e-6; s += step) out.push(at(P, s)); return out; };
+const wave = (P, amp, period, phase = 0, step = 1.5) => sample(P, step).map((q) => { const o = amp * Math.sin(q.s / period * 2 * Math.PI + phase); return { x: q.x + q.n.x * o, y: q.y + q.n.y * o }; });
+function part(P, from, to) {   // the stretch of P between distances from..to
+  const out = []; let acc = 0;
+  for (let i = 1; i < P.length; i++) { const A = P[i - 1], B = P[i], l = Math.hypot(B.x - A.x, B.y - A.y), a = Math.max(from, acc), b = Math.min(to, acc + l);
+    if (b > a) { const f = (s) => ({ x: A.x + (B.x - A.x) * (s - acc) / l, y: A.y + (B.y - A.y) * (s - acc) / l }); if (!out.length) out.push(f(a)); out.push(f(b)); }
+    acc += l; }
+  return out;
+}
+const trim = (P, len) => part(P, len, lenOf(P) - len);
+
+/* ---------- shared pieces ---------- */
+function tunnel(g, P, W) {
+  el("path", { d: D(P), fill: "none", stroke: OL, "stroke-width": W + 6, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(P), fill: "none", stroke: "#eab308", "stroke-width": W, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(offset(P, -W * 0.3)), fill: "none", stroke: shade("#eab308", 1.55), "stroke-width": W * 0.18 }, g);
+  el("path", { d: D(offset(P, W * 0.3)), fill: "none", stroke: shade("#eab308", 0.5), "stroke-width": W * 0.18 }, g);
+}
+const stroke = (g, P, c, w, extra = {}) => el("path", { d: D(P), fill: "none", stroke: c, "stroke-width": w, "stroke-linejoin": "round", ...extra }, g);
+function tube(g, J, R, c, op = 0.35) {   // a round see-through jacket: fill, two edges, highlight, shadow
+  stroke(g, J, c, 2 * R, { "stroke-opacity": op });
+  for (const s of [-1, 1]) stroke(g, offset(J, s * R), shade(c, 0.6), 2.2);
+  stroke(g, offset(J, -0.55 * R), shade(c, 1.7), 0.16 * R, { "stroke-opacity": 0.6, "stroke-linecap": "round" });
+  stroke(g, offset(J, 0.6 * R), shade(c, 0.45), 0.14 * R, { "stroke-opacity": 0.5 });
+}
+const across = (g, q, w, c, sw, extra = {}) => el("line", { x1: q.x - q.n.x * w, y1: q.y - q.n.y * w, x2: q.x + q.n.x * w, y2: q.y + q.n.y * w, stroke: c, "stroke-width": sw, ...extra }, g);
+
+/* ---------- 5 plug forms (P = tip, u = out of the cable, n = across) ---------- */
+function plugBase(g, P, u, R) {
+  const n = { x: -u.y, y: u.x }, pt = (a, b) => ({ x: P.x - u.x * a + n.x * b, y: P.y - u.y * a + n.y * b });
+  const poly = (pts, attrs) => el("polygon", { points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" "), ...attrs }, g);
+  const line = (a1, b1, a2, b2, col, w) => { const A = pt(a1, b1), B = pt(a2, b2); return el("line", { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: col, "stroke-width": w }, g); };
+  const contacts = (from, to, span, col = "#d4a72c") => { for (let k = 0; k < 8; k++) { const b = (-span + k * span * 2 / 7) * R; line(from * R, b, to * R, b, col, Math.max(0.8, 0.09 * R)); } };
+  return { pt, poly, line, contacts };
+}
+const PLUG_LEN = 3.2;   // × R: every plug form fits in this length from the tip
+const PAIRS = ["#f0883e", "#e6edf3", "#3fb950", "#58a6ff", "#e6edf3", "#a0652a", "#e6edf3", "#f0883e"];
+const BOOT = 
+  ["moulded boot (photo)", (g, P, u, R, c) => { const { pt, poly, line, contacts } = plugBase(g, P, u, R);
+    // ribbed moulded boot: tapers from the cable to the head, grip ribs across it
+    poly([pt(3.2 * R, -0.95 * R), pt(3.2 * R, 0.95 * R), pt(2.5 * R, 1.3 * R), pt(1.5 * R, 1.35 * R), pt(1.5 * R, -1.35 * R), pt(2.5 * R, -1.3 * R)], { fill: c, stroke: OL, "stroke-width": 1.2 });
+    for (let k = 0; k < 5; k++) { const a = (2.45 + k * 0.15) * R, w = 1.3 - k * 0.07; line(a, -w * R, a, w * R, shade(c, 0.6), 0.07 * R); }
+    line(1.95 * R, -1.25 * R, 1.95 * R, 1.25 * R, shade(c, 1.35), 0.12 * R);   // moulding highlight
+    poly([pt(1.5 * R, -1.25 * R), pt(1.5 * R, 1.25 * R), pt(1.15 * R, 1.25 * R), pt(1.15 * R, -1.25 * R)], { fill: shade(c, 0.85), "fill-opacity": 0.85, stroke: OL, "stroke-width": 1 });   // tinted collar
+    line(1.15 * R, -1.25 * R, 1.15 * R, 1.25 * R, "#111", 0.18 * R);   // dark band
+    poly([pt(1.1 * R, -1.25 * R), pt(1.1 * R, 1.25 * R), pt(0, 1.25 * R), pt(0, -1.25 * R)], { fill: "#eef3f7", "fill-opacity": 0.75, stroke: OL, "stroke-width": 1.2 });   // clear head
+    PAIRS.forEach((w, k) => { const b = (-0.88 + k * 0.25) * R; line(1.05 * R, b, 0.55 * R, b, w, 0.12 * R); });   // the 8 coloured wires inside
+    contacts(0.05, 0.45, 0.88); }]
+
+/* ---------- 20 variations on #96: the cable duct (J = path between the plugs, R = radius, c = colour) ---------- */
+const H = 1.15;   // duct half-width ÷ R
+function duct(g, J, R, c, o = {}) {   // the #96 base: square trunking, see-through fill, two walls
+  const w = (o.w || H) * R;
+  stroke(g, J, o.fill || c, 2 * w, { "stroke-opacity": o.op ?? 0.22, "stroke-linejoin": o.round ? "round" : "miter" });
+  for (const s of [-1, 1]) stroke(g, offset(J, s * w), o.wall || shade(c, 0.6), o.wallW || 2.5, { "stroke-linejoin": o.round ? "round" : "miter" });
+  return w;
+}
+const screws = (g, J, R, c, side = -0.85, step = 3) => sample(J, step * R).forEach((q) => el("circle", { cx: q.x + q.n.x * side * R, cy: q.y + q.n.y * side * R, r: 0.13 * R, fill: shade(c, 1.6) }, g));
+const rectAt = (g, q, along, acrossW, attrs) => { const hz = Math.abs(q.t.x) > Math.abs(q.t.y);
+  return el("rect", { x: q.x - (hz ? along : acrossW) / 2, y: q.y - (hz ? acrossW : along) / 2, width: hz ? along : acrossW, height: hz ? acrossW : along, ...attrs }, g); };
+const DUCTS = [
+  ["#96 as is", "the original: see-through duct, lid line, screws", (g, J, R, c) => { duct(g, J, R, c); stroke(g, offset(J, -0.5 * R), shade(c, 1.4), 1, { "stroke-opacity": 0.6 }); screws(g, J, R, c); }],
+  ["Snap-on lid", "a lid clipped on: one bright lid edge and clip tabs", (g, J, R, c) => { const w = duct(g, J, R, c);
+    stroke(g, offset(J, -w + 2.5), shade(c, 1.6), 2.2); sample(J, 2.4 * R).forEach((q) => rectAt(g, { ...q, x: q.x - q.n.x * w, y: q.y - q.n.y * w }, 0.6 * R, 0.35 * R, { fill: shade(c, 1.3) })); }],
+  ["Slotted panel duct", "control-cabinet wiring duct: finger slots along both walls", (g, J, R, c) => { const w = duct(g, J, R, c, { op: 0.15 });
+    sample(J, 0.7 * R).forEach((q) => { for (const s of [-1, 1]) { const a = { x: q.x + q.n.x * s * w, y: q.y + q.n.y * s * w };
+      el("line", { x1: a.x, y1: a.y, x2: a.x - q.n.x * s * 0.45 * R, y2: a.y - q.n.y * s * 0.45 * R, stroke: shade(c, 0.6), "stroke-width": 0.3 * R }, g); } }); }],
+  ["Mounting tabs", "duct screwed to the wall: tabs sticking out with a screw each", (g, J, R, c) => { const w = duct(g, J, R, c);
+    sample(J, 3.2 * R).forEach((q, i) => { const s = i % 2 ? 1 : -1, p = { ...q, x: q.x + q.n.x * s * (w + 0.4 * R), y: q.y + q.n.y * s * (w + 0.4 * R) };
+      rectAt(g, p, 0.9 * R, 0.8 * R, { fill: shade(c, 0.8), stroke: shade(c, 0.5), rx: 0.15 * R });
+      el("circle", { cx: p.x, cy: p.y, r: 0.15 * R, fill: shade(c, 1.6) }, g); }); }],
+  ["Rounded trunking", "softer: rounded corners, a highlight and a shadow edge", (g, J, R, c) => { const w = duct(g, J, R, c, { round: true, op: 0.28 });
+    stroke(g, offset(J, -0.7 * R), shade(c, 1.7), 0.18 * R, { "stroke-opacity": 0.6, "stroke-linecap": "round" });
+    stroke(g, offset(J, 0.75 * R), shade(c, 0.4), 0.18 * R, { "stroke-opacity": 0.5 }); }],
+  ["Elbow cover", "a separate corner piece covers the bend", (g, J, R, c) => { const w = duct(g, J, R, c);
+    stroke(g, offset(J, -0.5 * R), shade(c, 1.4), 1, { "stroke-opacity": 0.6 });
+    const L = lenOf(J), k = J.slice(1, -1)[0]; if (!k) return;
+    let acc = 0, s0 = 0; for (let i = 1; i < J.length - 1; i++) { acc += Math.hypot(J[i].x - J[i - 1].x, J[i].y - J[i - 1].y); s0 = acc; break; }
+    const P = part(J, Math.max(0, s0 - 1.6 * R), Math.min(L, s0 + 1.6 * R));
+    stroke(g, P, shade(c, 0.85), 2 * w + 5, { "stroke-linejoin": "miter", "stroke-opacity": 0.9 });
+    stroke(g, P, c, 2 * w - 3, { "stroke-linejoin": "miter", "stroke-opacity": 0.5 }); }],
+  ["Clear duct", "almost invisible fill, crisp double walls: the tunnel shows best", (g, J, R, c) => { const w = duct(g, J, R, c, { op: 0.06, wallW: 1.6 });
+    for (const s of [-1, 1]) stroke(g, offset(J, s * (w - 3)), shade(c, 1.3), 1, { "stroke-opacity": 0.7, "stroke-linejoin": "miter" }); }],
+  ["End caps", "the duct ends in capped pieces before the plugs", (g, J, R, c) => { const w = duct(g, J, R, c); screws(g, J, R, c);
+    for (const q of [at(J, 0.35 * R), at(J, lenOf(J) - 0.35 * R)]) rectAt(g, q, 0.7 * R, 2 * w + 4, { fill: shade(c, 0.75), stroke: shade(c, 0.45), "stroke-width": 1.2 }); }],
+  ["Floor cover", "a floor cable protector: wide ramp with sloped sides", (g, J, R, c) => { const w = duct(g, J, R, c, { w: 1.6, op: 0.25 });
+    for (const s of [-1, 1]) stroke(g, offset(J, s * 1.05 * R), shade(c, 1.3), 1.2, { "stroke-linejoin": "miter" });
+    sample(J, 0.5 * R).forEach((q) => { for (const s of [-1, 1]) { const a = { x: q.x + q.n.x * s * 1.15 * R, y: q.y + q.n.y * s * 1.15 * R };
+      el("line", { x1: a.x, y1: a.y, x2: a.x + q.n.x * s * 0.4 * R, y2: a.y + q.n.y * s * 0.4 * R, stroke: shade(c, 0.6), "stroke-width": 1 }, g); } }); }],
+  ["Ribbed duct", "ridges across the lid", (g, J, R, c) => { const w = duct(g, J, R, c); sample(J, 0.55 * R).forEach((q) => across(g, q, w, shade(c, 1.3), 0.12 * R, { "stroke-opacity": 0.6 })); }],
+  ["Ladder tray", "an open metal cable ladder: two rails and rungs", (g, J, R, c) => { const w = H * R;
+    for (const s of [-1, 1]) stroke(g, offset(J, s * w), shade(c, 0.7), 0.35 * R, { "stroke-linejoin": "miter" });
+    sample(J, 1.1 * R).forEach((q) => across(g, q, w, shade(c, 0.9), 0.22 * R)); }],
+  ["Mesh tray", "a wire-mesh basket tray: a grid of thin wires", (g, J, R, c) => { const w = duct(g, J, R, c, { op: 0.05, wallW: 2 });
+    for (const o of [-0.6, 0, 0.6]) stroke(g, offset(J, o * R), shade(c, 1.2), 0.8, { "stroke-opacity": 0.7, "stroke-linejoin": "miter" });
+    sample(J, 0.7 * R).forEach((q) => across(g, q, w, shade(c, 1.2), 0.8, { "stroke-opacity": 0.7 })); }],
+  ["Labelled \"LAN\"", "a printed label strip along the lid", (g, J, R, c) => { const w = duct(g, J, R, c);
+    const id = "lp" + Math.random().toString(36).slice(2); el("path", { id, d: D(offset(J, -0.65 * R)), fill: "none" }, g);
+    const t = el("text", { "font-size": 0.5 * R, fill: shade(c, 1.8), "font-family": "ui-monospace, monospace", "letter-spacing": 2 }, g);
+    el("textPath", { href: "#" + id }, t).textContent = "LAN · LAN · LAN · LAN · LAN · LAN · LAN"; }],
+  ["Jointed lengths", "duct made of lengths with joiner pieces", (g, J, R, c) => { const w = duct(g, J, R, c); stroke(g, offset(J, -0.5 * R), shade(c, 1.4), 1, { "stroke-opacity": 0.6 });
+    sample(J, 2.6 * R).slice(1).forEach((q) => rectAt(g, q, 0.5 * R, 2 * w + 5, { fill: shade(c, 0.8), stroke: shade(c, 0.45) })); }],
+  ["Two compartments", "a divided duct: a divider wall next to the tunnel", (g, J, R, c) => { const w = duct(g, J, R, c, { w: 1.5 });
+    stroke(g, offset(J, 1.0 * R), shade(c, 0.6), 1.8, { "stroke-linejoin": "miter" });
+    stroke(g, offset(J, 1.25 * R), "#58a6ff", 0.25 * R, { "stroke-opacity": 0.7, "stroke-linejoin": "miter" }); }],
+  ["Bevelled 3-D", "a solid-looking profile: lit top wall, dark bottom wall", (g, J, R, c) => { const w = duct(g, J, R, c, { op: 0.3 });
+    stroke(g, offset(J, -w + 2), shade(c, 1.8), 2.5, { "stroke-linejoin": "miter" }); stroke(g, offset(J, w - 2), shade(c, 0.35), 3, { "stroke-linejoin": "miter" }); }],
+  ["Vent slots", "slotted lid: a row of vent slots down the middle", (g, J, R, c) => { const w = duct(g, J, R, c);
+    stroke(g, offset(J, -0.55 * R), shade(c, 0.45), 0.25 * R, { "stroke-dasharray": `${0.6 * R} ${0.35 * R}`, "stroke-opacity": 0.8 }); }],
+  ["Saddle clips", "duct held by saddle clips over it", (g, J, R, c) => { const w = duct(g, J, R, c);
+    sample(J, 3 * R).slice(1).forEach((q) => { across(g, q, w + 0.35 * R, "#c9d1d9", 0.35 * R); for (const s of [-1, 1]) el("circle", { cx: q.x + q.n.x * s * (w + 0.35 * R), cy: q.y + q.n.y * s * (w + 0.35 * R), r: 0.18 * R, fill: "#2d333b" }, g); }); }],
+  ["Skirting trunking", "skirting-board style: a thick base wall and a moulded profile", (g, J, R, c) => { const w = duct(g, J, R, c);
+    stroke(g, offset(J, w - 2), shade(c, 0.45), 0.4 * R, { "stroke-linejoin": "miter" });
+    for (const o of [-0.7, -0.45]) stroke(g, offset(J, o * R), shade(c, 1.5), 1, { "stroke-opacity": 0.7, "stroke-linejoin": "miter" }); }],
+  ["Lid open", "the lid hinged open to one side, showing the tunnel inside", (g, J, R, c) => { const w = duct(g, J, R, c, { op: 0.12 });
+    const lid = offset(J, -(w + 0.9 * R)); stroke(g, lid, c, 0.9 * R, { "stroke-opacity": 0.5, "stroke-linejoin": "miter" });
+    stroke(g, offset(lid, -0.45 * R), shade(c, 0.6), 1.5, { "stroke-linejoin": "miter" }); stroke(g, offset(lid, 0.45 * R), shade(c, 0.6), 1.5, { "stroke-linejoin": "miter" }); }],
+];
+const PALETTE = ["#a371f7", "#a371f7", "#a371f7", "#a371f7", "#a371f7", "#e5e7eb", "#a371f7", "#8b949e", "#2d333b", "#a371f7", "#9aa4b0", "#9aa4b0", "#a371f7", "#e5e7eb", "#a371f7", "#a371f7", "#3b82f6", "#e5e7eb", "#e5e7eb", "#a371f7"];
+const grid = document.getElementById("grid");
+DUCTS.forEach(([name, desc, form], i) => {
+  const c = PALETTE[i], card = document.createElement("div"); card.className = "card";
+  card.innerHTML = `<h2><b>${i + 1}</b>${name}</h2><div class="desc">${desc}</div>`;
+  const svg = el("svg", { viewBox: "0 0 300 270" }); card.appendChild(svg); grid.appendChild(card);
+  el("rect", { x: 30, y: 8, width: 64, height: 40, rx: 6, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  el("rect", { x: 228, y: 202, width: 62, height: 44, rx: 6, fill: "#14181f", stroke: "#6e7681", "stroke-width": 3 }, svg);
+  const P = [{ x: 62, y: 48 }, { x: 62, y: 196 }, { x: 228, y: 196 }], W = 22, R = 16;
+  tunnel(svg, P, W);
+  const S = trim(P, 4), J = trim(S, PLUG_LEN * R), g = el("g", {}, svg);
+  form(g, J, R, c);
+  const end = (A, B) => { const L = Math.hypot(A.x - B.x, A.y - B.y); return [A, { x: (A.x - B.x) / L, y: (A.y - B.y) / L }]; };
+  BOOT[1](g, ...end(S[0], S[1]), R, c); BOOT[1](g, ...end(S[S.length - 1], S[S.length - 2]), R, c);
+});
+</script>
+</body>
+</html>

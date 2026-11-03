@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cable forms</title>
+<style>
+  :root { --bg: #0b0e14; --panel: #11151c; --border: #2a313c; --fg: #c9d1d9; --dim: #8b949e; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-size: 17px; margin: 18px 16px 4px; }
+  p { margin: 0 16px 10px; color: var(--dim); max-width: 900px; }
+  .legend { margin: 0 16px 14px; color: var(--dim); font-size: 12px; line-height: 1.6; }
+  .legend b { color: var(--fg); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 0 16px 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; }
+  .card h2 { font-size: 12px; font-weight: 500; margin: 2px 0 5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card h2 b { color: #f0b429; font-size: 14px; margin-right: 5px; }
+  svg { display: block; width: 100%; height: auto; background: var(--bg); border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>100 LAN-cable forms around the tunnel</h1>
+<p>20 cable shapes × 5 plug shapes. Every one wraps the same yellow tunnel on the same route (a straight run, a bend, a plug at each end). <b>#1 copies the photo</b> (round cable, ribbed moulded boot, coloured collar, clear head with the coloured wires). Tell Claude the number you like — or "cable form X with plug Y".</p>
+<div class="legend" id="legend"></div>
+<div class="grid" id="grid"></div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const shade = (hex, f) => { const m = hex.replace("#", ""); const h = (v) => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+  return "#" + h(parseInt(m.slice(0, 2), 16)) + h(parseInt(m.slice(2, 4), 16)) + h(parseInt(m.slice(4, 6), 16)); };
+const D = (pts) => "M " + pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ");
+const OL = "#0a140a";
+
+/* ---------- geometry on orthogonal polylines ---------- */
+const dirs = (P) => P.slice(1).map((q, i) => { const L = Math.hypot(q.x - P[i].x, q.y - P[i].y) || 1; return { x: (q.x - P[i].x) / L, y: (q.y - P[i].y) / L }; });
+const lenOf = (P) => P.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - P[i].x, q.y - P[i].y), 0);
+function offset(P, o) {   // mitred parallel polyline at distance o (left normal)
+  const d = dirs(P), n = (v) => ({ x: -v.y, y: v.x });
+  return P.map((p, i) => {
+    const a = d[Math.max(0, i - 1)], b = d[Math.min(d.length - 1, i)], na = n(a), nb = n(b);
+    if (i === 0) return { x: p.x + nb.x * o, y: p.y + nb.y * o };
+    if (i === P.length - 1 || Math.abs(na.x - nb.x) + Math.abs(na.y - nb.y) < 1e-6) return { x: p.x + na.x * o, y: p.y + na.y * o };
+    return { x: p.x + (na.x + nb.x) * o, y: p.y + (na.y + nb.y) * o };
+  });
+}
+function at(P, s) {   // point + tangent + normal at distance s along P
+  const d = dirs(P); let acc = 0;
+  for (let i = 0; i < d.length; i++) { const L = Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y);
+    if (s <= acc + L || i === d.length - 1) { const t = Math.min(L, Math.max(0, s - acc)); return { x: P[i].x + d[i].x * t, y: P[i].y + d[i].y * t, t: d[i], n: { x: -d[i].y, y: d[i].x }, s }; }
+    acc += L; }
+}
+const sample = (P, step) => { const out = [], T = lenOf(P); for (let s = 0; s <= T + 1e-6; s += step) out.push(at(P, s)); return out; };
+const wave = (P, amp, period, phase = 0, step = 1.5) => sample(P, step).map((q) => { const o = amp * Math.sin(q.s / period * 2 * Math.PI + phase); return { x: q.x + q.n.x * o, y: q.y + q.n.y * o }; });
+function part(P, from, to) {   // the stretch of P between distances from..to
+  const out = []; let acc = 0;
+  for (let i = 1; i < P.length; i++) { const A = P[i - 1], B = P[i], l = Math.hypot(B.x - A.x, B.y - A.y), a = Math.max(from, acc), b = Math.min(to, acc + l);
+    if (b > a) { const f = (s) => ({ x: A.x + (B.x - A.x) * (s - acc) / l, y: A.y + (B.y - A.y) * (s - acc) / l }); if (!out.length) out.push(f(a)); out.push(f(b)); }
+    acc += l; }
+  return out;
+}
+const trim = (P, len) => part(P, len, lenOf(P) - len);
+
+/* ---------- shared pieces ---------- */
+function tunnel(g, P, W) {
+  el("path", { d: D(P), fill: "none", stroke: OL, "stroke-width": W + 6, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(P), fill: "none", stroke: "#eab308", "stroke-width": W, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(offset(P, -W * 0.3)), fill: "none", stroke: shade("#eab308", 1.55), "stroke-width": W * 0.18 }, g);
+  el("path", { d: D(offset(P, W * 0.3)), fill: "none", stroke: shade("#eab308", 0.5), "stroke-width": W * 0.18 }, g);
+}
+const stroke = (g, P, c, w, extra = {}) => el("path", { d: D(P), fill: "none", stroke: c, "stroke-width": w, "stroke-linejoin": "round", ...extra }, g);
+function tube(g, J, R, c, op = 0.35) {   // a round see-through jacket: fill, two edges, highlight, shadow
+  stroke(g, J, c, 2 * R, { "stroke-opacity": op });
+  for (const s of [-1, 1]) stroke(g, offset(J, s * R), shade(c, 0.6), 2.2);
+  stroke(g, offset(J, -0.55 * R), shade(c, 1.7), 0.16 * R, { "stroke-opacity": 0.6, "stroke-linecap": "round" });
+  stroke(g, offset(J, 0.6 * R), shade(c, 0.45), 0.14 * R, { "stroke-opacity": 0.5 });
+}
+const across = (g, q, w, c, sw, extra = {}) => el("line", { x1: q.x - q.n.x * w, y1: q.y - q.n.y * w, x2: q.x + q.n.x * w, y2: q.y + q.n.y * w, stroke: c, "stroke-width": sw, ...extra }, g);
+
+/* ---------- 20 cable forms (drawn on the jacket path J between the plugs) ---------- */
+const FORMS = [
+  ["Round jacket", (g, J, R, c) => tube(g, J, R, c)],
+  ["Flat ribbon", (g, J, R, c) => { stroke(g, J, c, 2 * R, { "stroke-opacity": 0.28 });
+    for (const s of [-1, 1]) stroke(g, offset(J, s * R), shade(c, 0.6), 1.6);
+    for (const o of [-0.62, -0.2, 0.2, 0.62]) stroke(g, offset(J, o * R), shade(c, 1.4), 0.12 * R, { "stroke-opacity": 0.7 }); }],
+  ["Coiled spring", (g, J, R, c) => { stroke(g, J, c, 2 * R, { "stroke-opacity": 0.1 });
+    stroke(g, wave(J, R, 0.9 * R, Math.PI / 2, 1), shade(c, 0.55), 0.3 * R);
+    stroke(g, wave(J, R, 0.9 * R, -Math.PI / 2, 1), c, 0.3 * R); }],
+  ["Slack meander", (g, J, R, c) => stroke(g, wave(J, 0.75 * R, 4.5 * R), c, 0.75 * R, { "stroke-opacity": 0.75, "stroke-linecap": "round" })],
+  ["Slack loop", (g, J, R, c) => { tube(g, J, R, c); const q = at(J, lenOf(J) * 0.3), r = 1.7 * R, cx = q.x - q.n.x * (R + r * 0.9), cy = q.y - q.n.y * (R + r * 0.9);
+    el("circle", { cx, cy, r, fill: "none", stroke: c, "stroke-opacity": 0.5, "stroke-width": 0.9 * R }, g);
+    el("circle", { cx, cy, r, fill: "none", stroke: shade(c, 0.6), "stroke-width": 1.5 }, g); }],
+  ["Braided nylon", (g, J, R, c) => { tube(g, J, R, c, 0.25);
+    sample(J, 0.55 * R).forEach((q, i) => { const s = i % 2 ? 1 : -1, a = { x: q.x - q.n.x * R + q.t.x * s * 0.3 * R, y: q.y - q.n.y * R + q.t.y * s * 0.3 * R };
+      el("line", { x1: a.x, y1: a.y, x2: q.x + q.n.x * R - q.t.x * s * 0.3 * R, y2: q.y + q.n.y * R - q.t.y * s * 0.3 * R, stroke: i % 2 ? c : shade(c, 0.55), "stroke-width": 0.16 * R, "stroke-opacity": 0.8 }, g); }); }],
+  ["Corrugated", (g, J, R, c) => { tube(g, J, R, c, 0.2); sample(J, 0.45 * R).forEach((q) => across(g, q, R * 1.05, shade(c, 1.2), 0.14 * R, { "stroke-opacity": 0.75 })); }],
+  ["Segmented", (g, J, R, c) => { stroke(g, J, c, 2 * R, { "stroke-opacity": 0.4, "stroke-dasharray": `${1.5 * R} ${0.3 * R}` });
+    stroke(g, J, shade(c, 0.5), 2 * R + 3, { "stroke-opacity": 0.5, "stroke-dasharray": `${0.3 * R} ${1.5 * R}`, "stroke-dashoffset": 0.3 * R }); }],
+  ["Zip-tied", (g, J, R, c) => { tube(g, J, R, c); for (const f of [0.22, 0.5, 0.78]) { const q = at(J, lenOf(J) * f);
+    across(g, q, 1.25 * R, "#1c2128", 0.3 * R); const h = { x: q.x + q.n.x * 1.25 * R, y: q.y + q.n.y * 1.25 * R };
+    el("rect", { x: h.x - 0.28 * R, y: h.y - 0.28 * R, width: 0.56 * R, height: 0.56 * R, fill: "#1c2128", stroke: "#3a414b" }, g); } }],
+  ["Twisted pair", (g, J, R, c) => { for (const ph of [0, Math.PI]) stroke(g, wave(J, 0.6 * R, 3 * R, ph, 1), ph ? c : shade(c, 0.6), 0.55 * R, { "stroke-opacity": 0.75, "stroke-linecap": "round" }); }],
+  ["Spiral wrap", (g, J, R, c) => { stroke(g, J, c, 2 * R, { "stroke-opacity": 0.08 });
+    sample(J, 0.8 * R).forEach((q) => el("line", { x1: q.x - q.n.x * R - q.t.x * 0.35 * R, y1: q.y - q.n.y * R - q.t.y * 0.35 * R, x2: q.x + q.n.x * R + q.t.x * 0.35 * R, y2: q.y + q.n.y * R + q.t.y * 0.35 * R,
+      stroke: c, "stroke-width": 0.32 * R, "stroke-linecap": "round", "stroke-opacity": 0.85 }, g)); }],
+  ["Coiled bundle", (g, J, R, c) => { tube(g, J, R, c); const q = at(J, lenOf(J) * 0.5);
+    for (let k = 0; k < 3; k++) el("ellipse", { cx: q.x + q.n.x * 2.4 * R, cy: q.y + q.n.y * 2.4 * R, rx: 1.5 * R + k * 0.18 * R, ry: 1.0 * R + k * 0.12 * R, fill: "none", stroke: k % 2 ? c : shade(c, 0.65), "stroke-width": 0.4 * R, "stroke-opacity": 0.85 }, g); }],
+  ["Spring strain-relief", (g, J, R, c) => { tube(g, J, R, c); const L = lenOf(J);
+    for (const [a, b] of [[0, 2.2 * R], [L - 2.2 * R, L]]) stroke(g, wave(part(J, a, b), 1.15 * R, 0.5 * R, 0, 0.8), shade(c, 1.3), 0.18 * R); }],
+  ["Ferrite bead", (g, J, R, c) => { tube(g, J, R, c); const q = at(J, lenOf(J) * 0.82), hz = Math.abs(q.t.x) > Math.abs(q.t.y), l = 2.2 * R, w = 2.9 * R;
+    el("rect", { x: q.x - (hz ? l : w) / 2, y: q.y - (hz ? w : l) / 2, width: hz ? l : w, height: hz ? w : l, rx: 0.5 * R, fill: "#2b3038", "fill-opacity": 0.8, stroke: "#5a636e", "stroke-width": 1.5 }, g);
+    across(g, at(J, lenOf(J) * 0.82 - 0.6 * R), 1.45 * R, "#6e7681", 0.12 * R); }],
+  ["Siamese twin", (g, J, R, c) => { for (const s of [-1, 1]) { const T = offset(J, s * 0.5 * R); stroke(g, T, c, 0.95 * R, { "stroke-opacity": 0.35 });
+    for (const t of [-1, 1]) stroke(g, offset(T, t * 0.48 * R), shade(c, 0.6), 1.2); } }],
+  ["Stitched flat", (g, J, R, c) => { stroke(g, J, c, 2 * R, { "stroke-opacity": 0.25 }); for (const s of [-1, 1]) stroke(g, offset(J, s * R), shade(c, 0.6), 1.6);
+    for (const s of [-1, 1]) stroke(g, offset(J, s * 0.72 * R), shade(c, 1.6), 1.2, { "stroke-dasharray": `${0.3 * R} ${0.25 * R}` }); }],
+  ["Armoured", (g, J, R, c) => { stroke(g, J, "#9aa4b0", 2 * R, { "stroke-opacity": 0.15 });
+    for (const s of [-1, 1]) stroke(g, offset(J, s * R), "#9aa4b0", 2);
+    sample(J, 0.6 * R).forEach((q) => { const p = (k, b) => `${(q.x + q.t.x * k * R + q.n.x * b * R).toFixed(1)},${(q.y + q.t.y * k * R + q.n.y * b * R).toFixed(1)}`;
+      el("polyline", { points: `${p(-0.3, -0.95)} ${p(0.25, 0)} ${p(-0.3, 0.95)}`, fill: "none", stroke: "#c9d1d9", "stroke-width": 0.12 * R, "stroke-opacity": 0.75 }, g); }); }],
+  ["Beaded", (g, J, R, c) => { stroke(g, J, c, 1.2 * R, { "stroke-opacity": 0.2 });
+    sample(J, 2.3 * R).forEach((q) => { el("circle", { cx: q.x, cy: q.y, r: 1.05 * R, fill: c, "fill-opacity": 0.28, stroke: shade(c, 0.6), "stroke-width": 1.5 }, g);
+      el("circle", { cx: q.x - 0.4 * R, cy: q.y - 0.4 * R, r: 0.18 * R, fill: "#ffffff", "fill-opacity": 0.45 }, g); }); }],
+  ["Knot", (g, J, R, c) => { tube(g, J, R, c); const q = at(J, lenOf(J) * 0.3), r = 1.15 * R, cx = q.x + q.n.x * 0.2 * R, cy = q.y + q.n.y * 0.2 * R, hz = Math.abs(q.t.x) > 0.5;
+    el("ellipse", { cx: cx - q.t.x * 0.5 * R, cy: cy - q.t.y * 0.5 * R, rx: hz ? r * 1.2 : r * 0.9, ry: hz ? r * 0.9 : r * 1.2, fill: "none", stroke: c, "stroke-width": 0.75 * R, "stroke-opacity": 0.75 }, g);
+    el("ellipse", { cx: cx + q.t.x * 0.6 * R, cy: cy + q.t.y * 0.6 * R, rx: hz ? r : r * 0.8, ry: hz ? r * 0.8 : r, fill: "none", stroke: shade(c, 0.65), "stroke-width": 0.6 * R, "stroke-opacity": 0.8 }, g); }],
+  ["Cable duct", (g, J, R, c) => { stroke(g, J, c, 2.3 * R, { "stroke-opacity": 0.22, "stroke-linejoin": "miter" });
+    for (const s of [-1, 1]) stroke(g, offset(J, s * 1.15 * R), shade(c, 0.6), 2.5, { "stroke-linejoin": "miter" });
+    stroke(g, offset(J, -0.5 * R), shade(c, 1.4), 1, { "stroke-opacity": 0.6 });
+    sample(J, 3 * R).forEach((q) => el("circle", { cx: q.x - q.n.x * 0.85 * R, cy: q.y - q.n.y * 0.85 * R, r: 0.13 * R, fill: shade(c, 1.6) }, g)); }],
+];
+
+/* ---------- 5 plug forms (P = tip, u = out of the cable, n = across) ---------- */
+function plugBase(g, P, u, R) {
+  const n = { x: -u.y, y: u.x }, pt = (a, b) => ({ x: P.x - u.x * a + n.x * b, y: P.y - u.y * a + n.y * b });
+  const poly = (pts, attrs) => el("polygon", { points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" "), ...attrs }, g);
+  const line = (a1, b1, a2, b2, col, w) => { const A = pt(a1, b1), B = pt(a2, b2); return el("line", { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: col, "stroke-width": w }, g); };
+  const contacts = (from, to, span, col = "#d4a72c") => { for (let k = 0; k < 8; k++) { const b = (-span + k * span * 2 / 7) * R; line(from * R, b, to * R, b, col, Math.max(0.8, 0.09 * R)); } };
+  return { pt, poly, line, contacts };
+}
+const PLUG_LEN = 3.2;   // × R: every plug form fits in this length from the tip
+const PAIRS = ["#f0883e", "#e6edf3", "#3fb950", "#58a6ff", "#e6edf3", "#a0652a", "#e6edf3", "#f0883e"];
+const PLUGS = [
+  ["moulded boot (photo)", (g, P, u, R, c) => { const { pt, poly, line, contacts } = plugBase(g, P, u, R);
+    // ribbed moulded boot: tapers from the cable to the head, grip ribs across it
+    poly([pt(3.2 * R, -0.95 * R), pt(3.2 * R, 0.95 * R), pt(2.5 * R, 1.3 * R), pt(1.5 * R, 1.35 * R), pt(1.5 * R, -1.35 * R), pt(2.5 * R, -1.3 * R)], { fill: c, stroke: OL, "stroke-width": 1.2 });
+    for (let k = 0; k < 5; k++) { const a = (2.45 + k * 0.15) * R, w = 1.3 - k * 0.07; line(a, -w * R, a, w * R, shade(c, 0.6), 0.07 * R); }
+    line(1.95 * R, -1.25 * R, 1.95 * R, 1.25 * R, shade(c, 1.35), 0.12 * R);   // moulding highlight
+    poly([pt(1.5 * R, -1.25 * R), pt(1.5 * R, 1.25 * R), pt(1.15 * R, 1.25 * R), pt(1.15 * R, -1.25 * R)], { fill: shade(c, 0.85), "fill-opacity": 0.85, stroke: OL, "stroke-width": 1 });   // tinted collar
+    line(1.15 * R, -1.25 * R, 1.15 * R, 1.25 * R, "#111", 0.18 * R);   // dark band
+    poly([pt(1.1 * R, -1.25 * R), pt(1.1 * R, 1.25 * R), pt(0, 1.25 * R), pt(0, -1.25 * R)], { fill: "#eef3f7", "fill-opacity": 0.75, stroke: OL, "stroke-width": 1.2 });   // clear head
+    PAIRS.forEach((w, k) => { const b = (-0.88 + k * 0.25) * R; line(1.05 * R, b, 0.55 * R, b, w, 0.12 * R); });   // the 8 coloured wires inside
+    contacts(0.05, 0.45, 0.88); }],
+  ["clear RJ45 + latch", (g, P, u, R, c) => { const { pt, poly, contacts } = plugBase(g, P, u, R);
+    poly([pt(3.2 * R, -0.85 * R), pt(3.2 * R, 0.85 * R), pt(1.7 * R, 1.15 * R), pt(1.7 * R, -1.15 * R)], { fill: shade(c, 0.7), stroke: OL, "stroke-width": 1.2 });
+    poly([pt(1.7 * R, -1.2 * R), pt(1.7 * R, 1.2 * R), pt(0, 1.2 * R), pt(0, -1.2 * R)], { fill: "#e6edf3", "fill-opacity": 0.8, stroke: OL, "stroke-width": 1.2 });
+    poly([pt(1.6 * R, 1.2 * R), pt(0.5 * R, 1.2 * R), pt(0.75 * R, 1.55 * R), pt(1.5 * R, 1.45 * R)], { fill: "#e6edf3", "fill-opacity": 0.9, stroke: OL, "stroke-width": 1 });
+    contacts(0.12, 0.75, 0.84); }],
+  ["snagless hood", (g, P, u, R, c) => { const { pt, poly, contacts } = plugBase(g, P, u, R);
+    poly([pt(1.4 * R, -1.2 * R), pt(1.4 * R, 1.2 * R), pt(0, 1.2 * R), pt(0, -1.2 * R)], { fill: "#e6edf3", "fill-opacity": 0.8, stroke: OL, "stroke-width": 1.2 });
+    poly([pt(3.2 * R, -0.95 * R), pt(3.2 * R, 0.95 * R), pt(1.2 * R, 1.3 * R), pt(0.55 * R, 1.75 * R), pt(0.45 * R, 1.25 * R), pt(1.2 * R, -1.3 * R)], { fill: c, stroke: OL, "stroke-width": 1.2 });
+    contacts(0.12, 0.7, 0.84); }],
+  ["shielded metal", (g, P, u, R, c) => { const { pt, poly, line, contacts } = plugBase(g, P, u, R);
+    poly([pt(3.2 * R, -0.85 * R), pt(3.2 * R, 0.85 * R), pt(1.7 * R, 1.1 * R), pt(1.7 * R, -1.1 * R)], { fill: "#1c2128", stroke: OL, "stroke-width": 1.2 });
+    poly([pt(1.7 * R, -1.2 * R), pt(1.7 * R, 1.2 * R), pt(0, 1.2 * R), pt(0, -1.2 * R)], { fill: "#aeb8c2", stroke: OL, "stroke-width": 1.2 });
+    for (const b of [-0.8, 0.8]) line(1.5 * R, b * R, 0.4 * R, b * R, "#e6edf3", 0.14 * R);
+    contacts(0.05, 0.35, 0.7, "#7d6a2a"); }],
+  ["crimp only (DIY)", (g, P, u, R, c) => { const { pt, poly, line, contacts } = plugBase(g, P, u, R);
+    poly([pt(2.0 * R, -1.05 * R), pt(2.0 * R, 1.05 * R), pt(1.75 * R, 1.05 * R), pt(1.75 * R, -1.05 * R)], { fill: "#9aa4b0", stroke: OL, "stroke-width": 1 });
+    poly([pt(1.75 * R, -1.2 * R), pt(1.75 * R, 1.2 * R), pt(0, 1.2 * R), pt(0, -1.2 * R)], { fill: "#e6edf3", "fill-opacity": 0.6, stroke: OL, "stroke-width": 1.2 });
+    PAIRS.forEach((w, k) => { const b = (-0.88 + k * 0.25) * R; line(1.7 * R, b, 0.8 * R, b, w, 0.1 * R); });
+    contacts(0.08, 0.5, 0.84); }],
+];
+const COLOURS = ["#3b82f6", "#e5484d", "#3fb950", "#8b949e", "#e5e7eb", "#2d333b", "#f97316", "#a371f7", "#14b8a6", "#ec4899"];
+
+const legend = document.getElementById("legend");
+legend.innerHTML = "<b>Cable forms</b> (one row each): " + FORMS.map(([n], i) => `${i * 5 + 1}–${i * 5 + 5} ${n}`).join(" · ") +
+  "<br><b>Plug forms</b> (column): " + PLUGS.map(([n], i) => `${i + 1}. ${n}`).join(" · ");
+const grid = document.getElementById("grid");
+FORMS.forEach(([fname, form], fi) => PLUGS.forEach(([pname, plug], pi) => {
+  const num = fi * 5 + pi + 1, c = COLOURS[(fi * 3 + pi) % COLOURS.length];
+  const card = document.createElement("div"); card.className = "card";
+  card.innerHTML = `<h2><b>${num}</b>${fname} · ${pname}</h2>`;
+  const svg = el("svg", { viewBox: "0 0 300 270" }); card.appendChild(svg); grid.appendChild(card);
+  el("rect", { x: 30, y: 8, width: 64, height: 40, rx: 6, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  el("rect", { x: 228, y: 202, width: 62, height: 44, rx: 6, fill: "#14181f", stroke: "#6e7681", "stroke-width": 3 }, svg);
+  const P = [{ x: 62, y: 48 }, { x: 62, y: 196 }, { x: 228, y: 196 }], W = 22, R = 16;
+  tunnel(svg, P, W);
+  const S = trim(P, 4), J = trim(S, PLUG_LEN * R), g = el("g", {}, svg);
+  form(g, J, R, c);
+  const end = (A, B) => { const L = Math.hypot(A.x - B.x, A.y - B.y); return [A, { x: (A.x - B.x) / L, y: (A.y - B.y) / L }]; };
+  plug(g, ...end(S[0], S[1]), R, c); plug(g, ...end(S[S.length - 1], S[S.length - 2]), R, c);
+}));
+</script>
+</body>
+</html>

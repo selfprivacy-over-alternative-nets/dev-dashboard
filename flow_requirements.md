@@ -1165,7 +1165,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   under the icon's outline so the frame stays crisp; the picture is kept in the diagram like FR114's uploaded ones
   (`meta.images.selfprivacy` = the logo shrunk to 448 × 264, 64 colours, PNG, 23 KB). Both renderers; it shows wherever
   the server is a pictogram (every view, incl. the VM views inside *Your computer*), and in step mode it appears with
-  the server as the runner builds it. Set by `handover17-checks/fr127_screen_apply.py`. Verified: the picture's spot
+  the server as the runner builds it. Set by `checks/fr127_screen_apply.py`. Verified: the picture's spot
   is the same in the editor and the SVG in 11 views (`parity_lines.py`), close-up and the build in step 1 looked at.
 - **FR128. Step 1 at Tailscale: two safes, a fire and real keys; a pause that stops at once; ⏪ / ⏩.** (User: *instead
   of Mario carrying "my ip", make it carry <your SelfPrivacy IP address>. Ensure the pause button actually pauses the
@@ -1199,7 +1199,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   moves the story 2 s back / ahead, holding plays it backwards / fast forward at 4× (after 0.25 s); across steps — back
   into the previous step (at the story's start it stops), ahead into the next one, round from step 3 to step 0; a step's
   end is the next step's start. The texts the runner carries use the diagram's font. Set by
-  `handover17-checks/fr124_steps_apply.py`. Verified: `parity_steps.py` (all 36 animations of step 1 the same in the
+  `checks/fr124_steps_apply.py`. Verified: `parity_steps.py` (all 36 animations of step 1 the same in the
   editor and the SVG, in the box, USB and VM views), `ui_steps.py` (⏸ freezes at once and stays frozen, ⏪ / ⏩ clicks =
   2 s, held ≈ 4×, into step 0 and back, stops at the start, goes round from step 3), line + book parity, overlap scan,
   all views open; frames of the whole scene looked at (key into the lock, door open with the key, fire, the throw,
@@ -1338,7 +1338,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   comes out into Jazz's hand (`answer` — its text is the book's own, *ip 98.76.54.32*). Then back over the internet,
   `e_ts_run` to Tailscale and down the tunnel `e_ts_up` to your server; the address goes in, the call shows up on the
   server (`{"show": "jitsi", "at": "server"}` — the Jitsi Meet icon from the user, drawn white on a blue badge, kept as
-  `meta.images.jitsi` by `handover17-checks/fr136_jitsi_apply.py`; it stays there); Jazz takes a copy (`{"get": "jitsi",
+  `meta.images.jitsi` by `checks/fr136_jitsi_apply.py`; it stays there); Jazz takes a copy (`{"get": "jitsi",
   "from": "server"}`, tag *Jitsi call*) back up the tunnel, through Tailscale and the internet to the phone, where it shows
   up too (`{"show": "jitsi", "at": "friend"}`). Jazz replaces the book's white / gray lights in that step, and in a story
   step the tunnel's gate light is left out too (Jazz takes your friend's way); the stranger still bounces off the shut
@@ -1377,6 +1377,47 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   true}`); then Jazz makes the call; Mario fades out at Your computer at the story's end. Verified: `parity_steps.py`
   (steps 3–5 in the box, USB, wifi and VM views), `ui_steps.py`, line + book parity, overlap scan, all views open;
   frames of the vault landing on the screen, still there in steps 4–5, and of Mario running home looked at.
+- **FR139. A Scenario toggle for the Tailscale story; scenario "Reinstall": the old machine goes out of the closet first.**
+  (User, on branch `reinstall-and-backup-restore`: *add the scenario: you install again even though Tailscale already has
+  the previous machine registered, so it first should clean out the old machine (data) from the closet at Tailscale.*)
+  **The toggle:** `meta.toggles` gains `scenario` — *First install* (`first`, the default) · *Reinstall* · *Restore a
+  backup* — offered only in Tailscale views (elsewhere the group says *— n/a* and the hash has no `scenario`). The three
+  share one layout (`sameLayout`), so a Tailscale view's key ends in `;scenario=first` for all three: the note hidden in
+  cable/0a (`tslife`) now has that key and stays hidden in every scenario. The six first-install steps are
+  `"scenario": ["first"]`; each scenario is its own story (step by step from its own step 0). **Reinstall**
+  (`fr139_scenarios_apply.py`, run after `fr124_steps_apply.py`; the install steps are copied from the first install, so
+  they follow it): **0 new key** — the one-time key was used up, Mario gets a new one at Tailscale; **1 install again** —
+  as the first install, but at Tailscale the closet still holds the old machine: its name (*old:
+  selfprivacy.tail1234.ts.net*) on the top board and its IP address on the bottom one. Mario lights the fire and throws
+  both in, one after the other, then registers as before (caption: remove the old machine in Tailscale's admin console,
+  else the new server would get the name *selfprivacy-1*; then it gets the same name back); **2 phonebook** — the helper
+  writes the name again. The engine: a fire that is still burning keeps burning when it is lit again, and a second throw
+  flares it again (key frames never go back in time).
+- **FR140. Scenario "Restore a backup": a backup device above the internet, the server burns down, a restore from the
+  backup.** (User: *you restore from a backup. Draw a 3rd laptop icon above "the internet" called "SelfPrivacy backup
+  device". Make Mario get a backup icon from the SelfPrivacy "your new private server" laptop and carry that through
+  Tailscale to the internet cloud to the backup laptop. He brings the KeePass vault (again made at the server) and stores
+  that stuff on the screen of the backup laptop. Then, when the restore starts, show the SelfPrivacy laptop burn into
+  flames, and restart the process, except Mario gets the light from the backup laptop along with the backup database and
+  the SelfPrivacy backup.*) **The box:** `backupdev`, a green laptop (*SelfPrivacy backup device*, "free & in your own
+  hands") above the internet, left of your friend's lookup line; its pipe `e_backup` leaves its right side and goes into
+  the internet's left (`_H`), clear of its label; both only in the restore scenario. **The backup:** a new icon
+  `ic-backup` (a database with a circular arrow, drawn here in the icons' own style rather than taken from an image
+  search), carried low on Mario's left so the vault above his head doesn't hide it. **0 backup:** Mario runs the netboot
+  cable to the server, a backup comes out of it (`{"get": "backup", "from": "server"}` — out of the box itself), he fills
+  a KeePass vault with a copy of the server's own key (open · copy · close, FR135), runs through Tailscale (`e_ts_up`,
+  `e_ts_run`) and up the backup pipe, and puts the backup on the left half of the backup laptop's screen and the vault on
+  the right half (FR138 — they stay there). **1 fire:** `{"burn": "server"}` — flames grow over the server laptop, it
+  fades away, the flames die down; its spot stays empty. **2 restore:** the install light comes out of the backup laptop,
+  copies of the backup and of the vault (with the key in it) come off its screen — the originals stay; Mario runs back
+  the same way to where the server stood, the server is hammered up out of the light (FR131), the backup goes in, the key
+  comes out of the vault (`{"take": "idkey", "from": "vault"}`) into the server, and the vault is shut: the same machine
+  for Tailscale, the same name and address, nothing to clean out (the key backup is planned, round0 R2). The light now
+  rides a little further right (`dx` 20) so it shows beside the vault. Verified: `parity_steps.py` (all three scenarios,
+  box / USB / wifi / VM views), `parity_lines.py` (the restore views' pipe), `parity_phonebook.py`, `ui_steps.py`, the new
+  `ui_scenarios.py` (the toggle only in Tailscale views, hash, each scenario's first caption, the backup device only when
+  restoring, the hidden note hidden in all three), overlap scan, all views open; frames of the closet being cleaned out,
+  the backup and vault reaching the backup laptop's screen, the server burning, and the restore looked at.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
