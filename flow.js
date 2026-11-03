@@ -23,7 +23,7 @@
   };
   const COLOR_KEYS = Object.keys(PALETTE);
   const ICONS = ["laptop", "server", "router", "cloud", "phone", "usb", "ethernet", "wifi", "safe", "relay",
-    "tor", "onion", "gear", "block", "pipe", "gate", "warn", "tag", "cart", "tornode", "doc", "port", "barrier"];
+    "tor", "onion", "gear", "block", "pipe", "gate", "warn", "tag", "cart", "tornode", "doc", "port", "barrier", "key", "mario", "yoshi", "jazz"];
   const EDGE_KINDS = ["plain", "cable", "wifi", "usb", "lan", "internet", "tunnel", "tor"];
 
   const $ = (id) => document.getElementById(id);
@@ -35,6 +35,8 @@
     sel: null, selEdge: null,
     undo: [], redo: [], base: null, saved: null, pendingEdit: false,   // FR97 history (snapshots of S.data)
     toggle: {},                       // active toggle state {toggleId: value}
+    step: null,                       // FR124: the active step of this view's story (null = the whole view)
+    play: true, stepT0: 0, stepDur: 0, playTimer: null,   // FR125: steps play one after another; when the current one started (SVG seconds) and how long it runs
     view: { x: 40, y: 40, k: 1 },
     mode: "idle", pending: null, drag: null, panStart: null, resize: null, draw: null, rubber: null, ctrl: false,
   };
@@ -137,7 +139,19 @@
   // and deleting — keys use the group's first value, new items get the whole group — so only their own lines differ.
   const sameGroup = (t, v) => (Array.isArray(t.sameLayout) && t.sameLayout.find((g) => g.includes(v))) || null;
   const viewKey = (st = S.toggle) => toggles().filter((t) => st[t.id] != null).map((t) => `${t.id}=${(sameGroup(t, st[t.id]) || [st[t.id]])[0]}`).join(";");
-  const visible = (o) => whenMatches(o.showWhen) && !(Array.isArray(o.hideIn) && o.hideIn.includes(viewKey()));
+  const visible = (o) => whenMatches(o.showWhen) && !(Array.isArray(o.hideIn) && o.hideIn.includes(viewKey())) && inStep(o);
+  // FR124: step mode — the d.steps whose showWhen matches are this view's story; step i shows only the union of the
+  // `show` lists (box + line ids) of steps 0…i. null = the whole view. An item made while a step is on joins that step.
+  const stepsNow = () => (S.data && Array.isArray(S.data.steps) ? S.data.steps.filter((s) => whenMatches(s.showWhen)) : []);
+  const stepShown = (i) => { const set = new Set(); stepsNow().slice(0, i + 1).forEach((s) => (s.show || []).forEach((id) => set.add(id))); return set; };
+  const inStep = (o) => S.step == null || !stepsNow().length || stepShown(S.step).has(o.id);
+  // FR126: visitors at the router's gates (FR118's light in through the route, the stranger bounced by the fire wall) only
+  // in a step that says someone comes in (`visitors: true`); in the whole view always
+  const visitorsNow = () => { const s = S.step != null && stepsNow()[S.step]; return !s || !!s.visitors; };
+  function clampStep() { const n = stepsNow().length; if (S.step == null) return; S.step = n ? Math.min(Math.max(0, S.step | 0), n - 1) : null; }
+  function stepAdopt(id) { const s = S.step != null && stepsNow()[S.step]; if (s && !(s.show || []).includes(id)) (s.show = s.show || []).push(id); }
+  function stepForget(id) { for (const s of (S.data && S.data.steps) || []) if (Array.isArray(s.show)) s.show = s.show.filter((x) => x !== id); }
+  let NEW_SET = null;   // FR125: while a step is starting, the ids it adds to the picture (they fade in)
   const thisViewWhen = () => { const w = {}; for (const t of toggles()) if (S.toggle[t.id] != null) w[t.id] = [...(sameGroup(t, S.toggle[t.id]) || [S.toggle[t.id]])]; return Object.keys(w).length ? w : null; };
   const activeContainerOf = (n) => (n.container && whenMatches(n.containerWhen)) ? n.container : null;
 
@@ -200,9 +214,12 @@
   function applyView() { gViewport.setAttribute("transform", `translate(${S.view.x},${S.view.y}) scale(${S.view.k})`);
     rememberView();
     if (S.selEdge && S.data) updateEdgePanel(); }   // zoom/pan/fit: the arrow box follows its arrow (FR78)
+  const SMIL = { animate: 1, animateMotion: 1, animateTransform: 1, set: 1 };
+  let STEP_BEGIN = null;   // FR126: with a step on, its loops (phonebook, gates, USB stick) start when the step starts, not with the page
   function el(name, attrs, parent) {
     const e = document.createElementNS(SVGNS, name);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (STEP_BEGIN && SMIL[name] && !(attrs && "begin" in attrs)) e.setAttribute("begin", STEP_BEGIN);
     if (parent) parent.appendChild(e); return e;
   }
   function isContainer(n) { return S.data.nodes.some((k) => visible(k) && activeContainerOf(k) === n.id); }
@@ -559,6 +576,7 @@
     return { s, x: b.x + (b.w - s) / 2, y, ty: y + s + 16 };
   }
   const ICON_BOX = {};   // FR92: icon → [x, y, w, h] of its drawn glyph in the 24×24 grid (data-bbox in icons.svg)
+  const ICON_SCREEN = {};   // FR127: icon → [x, y, w, h] of its screen in the 24×24 grid (data-screen in icons.svg; the laptop)
   // FR114: an icon is a sprite name, or "img:<key>" = an uploaded picture kept in the diagram (meta.images[key] = data URL / link)
   const imgSrc = (icon) => /^img:/.test(icon || "") ? (((S.data && S.data.meta && S.data.meta.images) || {})[icon.slice(4)] || null) : null;
   function drawIcon(g, icon, x, y, s, color) {
@@ -572,6 +590,11 @@
   // node's colour (= its cost: red bought · orange a company you depend on · green free), the badge (n.badge: "snail" =
   // slow, you edit it by hand · "bolt" = fast, your server updates it) on its outer corner, the label below.
   const PB = { W: 110, H: 78, T: 9, U: 1.6 };   // page size (book units) · one lookup (s) · the server's update before it (s)
+  const IP_RE = /\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}/i;   // FR122: an IPv4 or an IPv6 address
+  // FR122: the entry text, per view: n.entryWhen = { toggle: { value: "entry" } } (like optionsWhen), else n.entry
+  const entryOf = (n) => { const w = n.entryWhen || {};
+    for (const t in w) if (typeof (w[t] || {})[S.toggle[t]] === "string") return w[t][S.toggle[t]];
+    return String(n.entry || ""); };
   function bookGeom(n, b) {   // the CLOSED book, centred above the label (lines attach to it)
     const lh = String(n.label || "").split("\n").filter((l) => l).length * 15, h = Math.max(30, b.h - lh - (lh ? 6 : 0));
     const s = Math.min(h / (PB.H + 7), b.w / (2 * (PB.W + 5))), w = (PB.W + 5) * s, bh = (PB.H + 7) * s;
@@ -579,9 +602,16 @@
   }
   function bookLights(n, B, epoly) {   // FR121: the lines n.lights names, oriented far end → book (in) or book → far end (out)
     const L = n.lights || {};
-    const ride = (id, inward) => { const e = id && S.data.edges.find((x) => x.id === id), p = e && epoly[id];
-      if (!p || p.length < 2 || (e.from !== n.id && e.to !== n.id)) return null;   // gone, hidden, or not at this book
-      return { poly: (e.to === n.id) === inward ? p : p.slice().reverse(), far: e.from === n.id ? e.to : e.from }; };
+    // FR122: a light may ride a CHAIN of lines (an id list, far end → book for ask/update, book → far end for answer), each
+    // joined to the next at a shared box — e.g. your friend's pipe to the internet, then the internet's line to the book
+    const ride = (ids, inward) => { const list = [].concat(ids || []); if (!list.length) return null;
+      let at = n.id, pts = [];
+      for (const id of inward ? list.slice().reverse() : list) {   // walk outward from the book
+        const e = S.data.edges.find((x) => x.id === id), p = e && epoly[id];
+        if (!p || p.length < 2 || (e.from !== at && e.to !== at)) return null;   // gone, hidden, or not joined to the last one
+        pts = pts.concat(e.from === at ? p : p.slice().reverse()); at = e.from === at ? e.to : e.from;
+      }
+      return { poly: inward ? pts.reverse() : pts, far: at }; };
     const ask = ride(L.ask, true), answer = ride(L.answer, false), update = ride(L.update, true);
     let dir = 1;   // 1 = spine left, opens to the left; -1 = spine right — the cover opens toward the line the question comes in on
     if (ask) { const sd = sideOf(ask.poly[ask.poly.length - 1], B); dir = sd === "e" ? -1 : sd === "w" ? 1 : ask.poly[0].x > B.x + B.w / 2 ? -1 : 1; }
@@ -864,9 +894,11 @@
     el("path", { d: "M0 0 C-2 0 -2.5 -2 -2 -3.5 C-1.5 -4.5 -0.5 -5 0 -7 C0.5 -5 2 -4.5 2 -3 C2.5 -1.5 1.5 0 0 0 Z", fill: "#fde047" }, f);
     el("animateTransform", { attributeName: "transform", type: "scale", values: "1 1;1.12 0.88;0.92 1.12;1 1", dur: "0.8s", begin: begin + "s", repeatCount: "indefinite" }, f);
   }
-  function gatehouseGates(rid, list) {   // the fire wall + port barrier over the pipes, and the moving lights
+  function gatehouseGates(rid, list, quiet, story) {   // the fire wall + port barrier over the pipes, and the moving lights (quiet = shut and still, FR126;
+    // story = a step of the view's story: the server's call out over a tunnel isn't shown again, FR134)
     const { e, poly } = list[0], gh = GH[e.id], W = gateWins(gh), G = W.G, F = W.fire, P = W.port, ports = ghPorts(list), row = gateMode(e) === "row";
     const g = el("g", { class: "edge gatehouse" + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, gNodes);
+    if (NEW_SET && NEW_SET.has(rid)) g.classList.add("stepnew");   // FR125: the gates fade in with their router
     // 🔥 the fire wall: bricks with flames, sliding down into the floor to open (clipped to its window)
     const clip = el("clipPath", { id: "ghc-" + rid }, g); el("rect", { x: F.x + 1, y: F.y + 1, width: F.w - 2, height: F.h - 2 }, clip);
     const wg = el("g", {}, el("g", { "clip-path": `url(#ghc-${rid})` }, g)), bw = F.w - 4, bh = F.h - 4, rh = bh / 6;
@@ -885,6 +917,7 @@
       for (const f of [0.32, 0.55, 0.78]) el("rect", { x: P.x + P.w * f, y: hy - P.w * 0.1, width: P.w * 0.1, height: P.w * 0.2, fill: "#0b0e14" }, arm);
       el("circle", { cx: hx, cy: hy, r: P.w * 0.075, fill: "#0b0e14" }, g);
     }
+    if (quiet) return;   // FR126: nobody comes in in this step — no lights, the gates stay shut
     // the moving lights (your friend's request · a request at a shut gate)
     const pw = e.pw || 22, R1 = pw * 0.45, R2 = pw * 0.22, d = "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), L = polyLen(poly) || 1;
     const light = () => { const lg = el("g", { class: "gh-anim", "pointer-events": "none" }, g); el("circle", { r: R1, fill: "#ffffff", opacity: 0.3 }, lg); el("circle", { r: R2, fill: "#ffffff" }, lg); return lg; };
@@ -907,9 +940,11 @@
       ghAnim(b, { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: "0;0.54;0.56;0.72;0.78;1" }); red(b, 0.67);
       cross(polyAt(poly, dF + gap), 0.68);
     } else {   // a tunnel: your server calls out over the gates, your friend comes back in on that line — nothing opens
-      const a = light();
-      ghAnim(a, { path: d, keyPoints: "0;0;1;1;1;0;0", keyTimes: "0;0.04;0.26;0.3;0.34;0.58;1", calcMode: "linear" });
-      ghAnim(a, { attributeName: "opacity", values: "0;1;1;0;0;1;1;0;0", keyTimes: "0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1" });
+      if (!story) {   // FR134 / FR136: in a story step neither — a runner (Jazz) takes your friend's way through the tunnel
+        const a = light();
+        ghAnim(a, { path: d, keyPoints: "0;0;1;1;1;0;0", keyTimes: "0;0.04;0.26;0.3;0.34;0.58;1", calcMode: "linear" });
+        ghAnim(a, { attributeName: "opacity", values: "0;1;1;0;0;1;1;0;0", keyTimes: "0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1" });
+      }
       const fr = [{ x: gh.mq, y: G.rowY }, { x: gh.mp, y: G.rowY }], Lr = Math.abs(gh.mq - gh.mp) || 1;   // a stranger at the front door
       const fS = f3((Math.abs(gh.mq - F.cx) - gap) / Lr), fSb = f3((Math.abs(gh.mq - F.cx) - gap - 40) / Lr), b = light();
       ghAnim(b, { path: `M ${fr[0].x} ${fr[0].y} L ${fr[1].x} ${fr[1].y}`, keyPoints: `0;0;${fS};${fSb};${fSb}`, keyTimes: "0;0.66;0.79;0.86;1", calcMode: "linear" });
@@ -924,12 +959,14 @@
   function drawPhonebook(g, n, B, col, lt, under, over) {
     const { W, H } = PB, D = lt.dir, s = B.s, DARK = "#0a140a", PAGE = "#f6f1e3", INK = "#1f2328", BAR = "#d6cfbd", EDGE = "#b9b2a2", GRAY = "#9aa3ad";
     const INSIDE = shade(col, 0.7), BAND = shade(col, 1.3), CY = H / 2 - 3, MONO = "ui-monospace, monospace";
-    const lines = String(n.entry || "").split("\n"), url = lines[0] || "", host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-    const ip = (lines.slice(1).join(" ").match(/\d{1,3}(\.\d{1,3}){3}/) || ["?"])[0];
+    const lines = entryOf(n).split("\n"), url = lines[0] || "", host = url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const ip = (lines.slice(1).join(" ").match(IP_RE) || ["?"])[0];
     const off = lt.update ? PB.U : 0, T = PB.T + off, k = (d) => +((off + d * PB.T) / T).toFixed(4);   // demo fraction → this loop
     const keys = (kv) => { const v = [...(off ? [[0, kv[0][1]]] : []), ...kv.map(([d, x]) => [k(d), x])];
       return { keyTimes: v.map((p) => p[0]).join(";"), values: v.map((p) => p[1]).join(";") }; };
-    const anim = (p, a) => el(a.path ? "animateMotion" : a.type ? "animateTransform" : "animate", { dur: T + "s", repeatCount: "indefinite", ...a }, p);
+    const wr = lt.write, once = lt.write || lt.read;   // FR129: written by a runner in this step — the book plays once, from then (no update light: the runner brings the entry); FR136: or read
+    const anim = lt.still ? () => null : (p, a) => el(a.path ? "animateMotion" : a.type ? "animateTransform" : "animate", { dur: T + "s",   // FR136: still = shut, nothing moves
+      ...(once ? { repeatCount: "1", fill: "freeze", begin: +(S.stepT0 + once.t).toFixed(3) + "s" } : { repeatCount: "indefinite" }), ...a }, p);
     const fade = (p, kv) => anim(p, { attributeName: "opacity", ...keys(kv) });
     const pathOf = (pts) => "M " + pts.map((q) => `${q.x} ${q.y}`).join(" L ");
     const motion = (p, pts, kv) => { const q = keys(kv); anim(p, { path: pathOf(pts), keyPoints: q.values, keyTimes: q.keyTimes, calcMode: "linear" }); };
@@ -964,6 +1001,20 @@
     txt(root, pl0 + 19, 30, host, { fontSize: fs + "px", fill: INK, fontFamily: MONO });
     txt(root, pl0 + 19, 42, "ip " + ip, { fontSize: fs + "px", fill: INK, fontFamily: MONO, fontWeight: 700 });
     const hit = el("circle", { cx: pl0 + 12, cy: 27, r: 9, fill: "#ffffff", stroke: INK, "stroke-width": 1, opacity: 0, class: "pb-anim" }, root);   // the white light, landed
+    if (wr) {   // FR129: the entry is written while the book is open — a pencil goes along each line, a page-coloured cover slides off behind it
+      const f3 = (v) => +v.toFixed(3), x0 = pl0 + 19, w1 = Math.min(W - 24, host.length * 0.6 * fs), w2 = Math.min(W - 24, (ip.length + 3) * 0.6 * fs);
+      for (const [y0, d0, d1] of [[19, 0.42, 0.48], [31, 0.48, 0.54]]) {
+        const m = R(root, pl0 + 15, y0, W - 20, 13, { fill: PAGE, class: "pb-anim" });
+        anim(m, { attributeName: "x", ...keys([[0, f3(pl0 + 15)], [d0, f3(pl0 + 15)], [d1, f3(pl0 + W - 5)], [1, f3(pl0 + W - 5)]]) });
+        anim(m, { attributeName: "width", ...keys([[0, W - 20], [d0, W - 20], [d1, 0], [1, 0]]) });
+      }
+      const pen = el("g", { class: "pb-anim", opacity: 0 }, root);
+      el("path", { d: "M 0 0 L 2 -5 L 11 -14 L 14 -11 L 5 -2 Z", fill: "#facc15", stroke: DARK, "stroke-width": 0.8 }, pen);
+      el("path", { d: "M 11 -14 L 13 -16 L 16 -13 L 14 -11 Z", fill: "#f472b6", stroke: DARK, "stroke-width": 0.8 }, pen);
+      anim(pen, { attributeName: "transform", type: "translate", ...keys([[0, `${f3(x0)} 28`], [0.42, `${f3(x0)} 28`], [0.48, `${f3(x0 + w1)} 28`],
+        [0.485, `${f3(x0)} 40`], [0.54, `${f3(x0 + w2)} 40`], [1, `${f3(x0 + w2)} 40`]]) });
+      fade(pen, [[0, 0], [0.41, 0], [0.42, 1], [0.54, 1], [0.56, 0], [1, 0]]);
+    }
     for (const [i, l] of [[3, "P"], [2, "H"], [1, "A"]]) turn(i, "closed", (f) => { page(f, pl0, l); rows(f, pl0, ROWS); });
     turn(0, "closed", cover);
     turn(0, "open", (f) => R(f, X(-W - 5, W + 5), -3, W + 5, H + 7, { rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 }));
@@ -981,10 +1032,14 @@
     }
     // found: the white light's address matches an ip
     fade(hl, [[0, 0], [0.40, 0], [0.42, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
-    fade(hit, [[0, 0], [0.39, 0], [0.40, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
-    anim(hit, { attributeName: "r", ...keys([[0, 9], [0.39, 9], [0.42, 3.4], [1, 3.4]]) });
+    if (lt.ask) {   // FR124: the landed light only when someone looks the name up
+      fade(hit, [[0, 0], [0.39, 0], [0.40, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
+      anim(hit, { attributeName: "r", ...keys([[0, 9], [0.39, 9], [0.42, 3.4], [1, 3.4]]) });
+    }
     const cap = txt(root, 0, -24, "", { fontSize: "12px" }, { "text-anchor": "middle", opacity: 0, class: "pb-anim" });
-    for (const [t, fill] of [["✓ ", "#3fb950"], [url, "#ffffff"], [" matches ", "#8b949e"], ["ip " + ip, GRAY]]) el("tspan", { fill }, cap).textContent = t;
+    const capT = lt.ask || lt.read ? [["✓ ", "#3fb950"], [url, "#ffffff"], [" matches ", "#8b949e"], ["ip " + ip, GRAY]]   // FR124: no lookup → the entry was written
+      : [["✎ ", "#f97316"], [url, "#ffffff"], [" → ", "#8b949e"], ["ip " + ip, GRAY], [" written", "#8b949e"]];
+    for (const [t, fill] of capT) el("tspan", { fill }, cap).textContent = t;
     fade(cap, [[0, 0], [0.41, 0], [0.43, 1], [0.62, 1], [0.65, 0], [1, 0]]);
     // the lights ride the lines (diagram units): under the book coming in, over everything going out
     const light = (p, c, tag) => { const lg = el("g", { class: "pb-anim", opacity: 0, "pointer-events": "none" }, p);
@@ -1015,13 +1070,452 @@
     }
   }
 
+  /* ---------- FR124: step mode — the view told step by step, acted out by a runner (mirrored in gen_flow_svg.py) ---------- */
+  const ACT = { V: 240, FADE: 0.4, HOP: 0.32, MIN: 1.2, MAX: 5, STAND: 8, WALK: 0.6, SIZE: 26, BLOW: 0.5,   // px/s · s (a run lasts 1.2–5 s, a walk at least 0.6 s;
+    T: { get: 0.9, pop: 0.9, hammer: 3, give: 0.7, scene: 0.4, unscene: 0.3, put: 0.8, putIn: 0.7, open: 0.6, close: 0.5, fire: 0.8, take: 0.6, unlock: 0.5,   // a step without
+      throw: 1.0, copy: 1.2, write: 6.0, hand: 0.8, show: 0.6, burn: 3.2 } };   // a script lasts its dur, else STAND; FR131: a hammer blow every BLOW s)
+  const ACT_ITEMS = {   // what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top)
+    key:     { icon: "key", color: "#f97316", dx: -14, dy: -32, tag: "auth key" },
+    idkey:   { icon: "key", color: "#3fb950", dx: -14, dy: -32, tag: "own key" },
+    light:   { light: true, color: "#fff3a0", dx: 20, dy: -32 },   // (FR140: right of the vault above its head)
+    vault:   { vault: "keepass", color: "#c9d1d9", dx: 0, dy: -40 },   // FR130: a small safe locked with the KeePass logo, above its head
+    ip:      { text: "Your SelfPrivacy IP address:\n192.42.69.314", color: "#9aa3ad", dx: 0, dy: -74 },   // FR132: two lines, the last one at dy
+    domain:  { text: "selfprivacy.tail1234.ts.net", color: "#f97316", dx: 0, dy: -60 },
+    answer:  { book: true, color: "#9aa3ad", dx: 0, dy: -74 },   // FR136: the address a book gives for a name — its text comes from the book's entry
+    jitsi:   { img: "jitsi", color: "#4aa3ff", dx: 0, dy: -40, tag: "Jitsi call" },   // FR136: the call — the Jitsi Meet logo on a blue badge
+    backup:  { icon: "backup", color: "#58a6ff", dx: -24, dy: -18 },   // FR140: your server's SelfPrivacy backup (low on its left, clear of the vault)
+    olddomain: { text: "old: selfprivacy.tail1234.ts.net", color: "#8b949e", dx: 0, dy: -60 },   // FR139: the old machine's name, still at Tailscale
+    oldip:   { text: "old machine's IP address:\n192.42.69.314", color: "#8b949e", dx: 0, dy: -100 },   // FR139: …and its address (above your own IP)
+  };
+  // FR135: the KeePass vault — a small safe (size, door inset), its door hinged left and locked with the KeePass logo (lock = the
+  // logo's size); IN = where a thing lies inside it and how small (mirrored in docs/gen_flow_svg.py VAULT)
+  const VAULT = { w: 34, h: 28, inset: 3, lock: 14, IN: { x: -2, y: 0, s: 0.7 } };
+  const BURN_FLAMES = [[-0.34, 0.65, 0], [-0.17, 0.85, 0.3], [0, 1, 0.55], [0.17, 0.85, 0.15], [0.34, 0.65, 0.45]];   // FR140: x (of the width), size, flicker phase
+  const ACTORS = ["mario", "yoshi", "jazz"];   // FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
+  // FR128 / FR129: the scene the runners work in — a brick ledge above the box where it starts (Tailscale), the fire bowl, two safes
+  // side by side (a gap between them) and a shelf with two boards; geometry relative to the spot it started on (mirrored in
+  // docs/gen_flow_svg.py SCENE): the ledge (x range, top, height); a safe (size, door inset, keyhole height); per safe its left edge,
+  // hinge side and where a runner stands to work it; the fire bowl; the shelf (left edge, size, where to stand, its boards); how
+  // small things are inside a safe / on a board. OPEN = the door's x-scale when open (swung out past its hinge). FR132: the safes
+  // a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304).
+  const SCENE = { x0: -84, x1: 284, top: -72, h: 12, OPEN: -0.35, safe: { w: 44, h: 52, inset: 5, lock: 17 },
+    A: { x: 16, hinge: "l", mark: 0 }, B: { x: 78, hinge: "r", mark: 137 }, F: { x: -68 },
+    S: { x: 160, w: 114, h: 72, mark: 148, rows: ["top", "bottom"] }, IN: { safe: 0.22, shelf: 0.8, icon: 0.8 } };
+  const r1 = (v) => Math.floor(v * 10 + 0.5) / 10;
+  const kvAt = (kv, t) => { let v = 0; for (let i = 0; i < kv.length; i++) { const [a, x] = kv[i]; if (a > t) { if (i) { const [b, y] = kv[i - 1];   // FR139: a key-framed value at t
+    v = a > b ? +(y + (x - y) * (t - b) / (a - b)).toFixed(4) : x; } return v; } v = x; } return v; };   // tenths, halves up (Python: math.floor(v * 10 + 0.5) / 10)
+  function sceneGeo(O) {   // where the ledge, the safes (keyhole, keyhole of the open door, inside, where to stand), the fire bowl and the shelf are
+    const s = SCENE.safe, top = O.y + SCENE.top, g = { O, top, x0: O.x + SCENE.x0, x1: O.x + SCENE.x1, fire: { x: O.x + SCENE.F.x, y: top } };
+    for (const k of ["A", "B"]) {
+      const x = O.x + SCENE[k].x, y = top - s.h, dw = s.w - 2 * s.inset, hx = SCENE[k].hinge === "l" ? x + s.inset : x + s.inset + dw, lock = { x: x + s.w / 2, y: y + s.lock };
+      g[k] = { x, y, hx, dw, lock, open: { x: hx + SCENE.OPEN * (lock.x - hx), y: lock.y }, inside: { x: x + s.w / 2, y: y + s.h / 2 + 3 }, mark: { x: O.x + SCENE[k].mark, y: top } };
+    }
+    const sh = SCENE.S, x = O.x + sh.x, y = top - sh.h, rh = sh.h / sh.rows.length;
+    g.S = { x, y, w: sh.w, h: sh.h, rh, mark: { x: O.x + sh.mark, y: top } };
+    sh.rows.forEach((r, i) => { g["S." + r] = { x: x + sh.w / 2, y: y + rh * (i + 1) - 7 }; });   // where a thing stands on that board (just above it)
+    return g;
+  }
+  // The plan of one step: per runner its path (runs and walks joined end to end; between two lines it walks across the box), the
+  // key frames [time, distance] it moves between (equal distances = standing), what it carries when ([on, off] intervals), which
+  // way it faces, when it shows, the signs it holds up and what it does where (hammer at a box); the scene; the things away from
+  // the runners (into a keyhole, a safe, a shelf, the fire, a box, and back), each copy a track of its own; and which books get
+  // written when. FR125: it starts where the step before ended (`start` = {actors: {who: {spot, at, items, face}}, scene}), so
+  // one step's end state is the next one's start state; mario fades in only at the story's first step (or with nothing to follow
+  // on from), every runner fades out only at its last step; a step without a script lasts its `dur`. The plan runs ONCE
+  // (repeatCount 1, frozen at its end); the next step takes over from there.
+  function actorPlan(step, epoly, start, first, last, boxAt, screenAt) {
+    const edgeOf = (id) => S.data.edges.find((e) => e.id === id), st0 = (start && start.actors) || {};
+    let T = first || !st0.mario ? ACT.FADE : 0, sc = null, nInst = 0;
+    const W = {}, writes = [], ACTS = {}, reads = [], shown = [], burns = [], texts = { ...((start && start.texts) || {}) };   // FR136: books looked up, things shown on boxes, texts from books
+    const carry = (R, id, on) => { const l = R.items[id] = R.items[id] || []; if (!l.some((v) => v[1] == null)) l.push([on, null]); };   // (already holding it: nothing changes)
+    const drop = (R, id, off) => { const iv = R.items[id] && R.items[id].find((v) => v[1] == null); if (iv) iv[1] = off; };
+    const actor = (who) => {   // a runner: where it is, its path, what it holds, which way it faces, when it shows
+      if (ACTS[who]) return ACTS[who];
+      const s0 = st0[who], fc = s0 && s0.face ? s0.face : 1;
+      const R = ACTS[who] = { who, pts: [], kf: [], dist: 0, runs: [], acts: [], pops: [], items: {}, inst: {}, doors: {}, inside: {}, spot: null, at: null, facing: fc, face: [[0, fc]], op: [[0, s0 ? 1 : 0]], gone: false };
+      if (s0) { R.spot = s0.spot; R.at = s0.at; R.pts.push(s0.spot); R.kf.push([0, 0]); for (const id of s0.items) carry(R, id, 0); }
+      return R; };
+    const turn = (R, t, dx) => { if (Math.abs(dx) <= 1) return; const v = dx > 0 ? 1 : -1; if (v === R.facing) return;   // it faces where it goes or works
+      R.facing = v; const l = R.face[R.face.length - 1]; if (l[0] === t) l[1] = v; else R.face.push([t, v]); };
+    const goTo = (R, q, dur) => { R.kf.push([T, R.dist]); turn(R, T, q.x - R.spot.x); const L = Math.hypot(q.x - R.spot.x, q.y - R.spot.y);
+      R.pts.push(q); R.runs.push([T, T + dur]); T += dur; R.dist += L; R.kf.push([T, R.dist]); R.spot = q; };
+    const hand = (R, id) => ({ x: R.spot.x + ACT_ITEMS[id].dx, y: R.spot.y + ACT_ITEMS[id].dy });
+    const track = (inst) => W[inst] = W[inst] || { id: inst.split("#")[0], pts: [], kf: [], d: 0, vis: [], sc: [], rot: [] };
+    const newInst = (id) => id + "#" + (++nInst);
+    const instOf = (R, id) => R.inst[id] || (R.inst[id] = newInst(id));   // the copy the runner holds (a new one when it got it by `get`)
+    const kfAdd = (w, t, d) => { const l = w.kf[w.kf.length - 1]; if (!l || l[0] !== t || l[1] !== d) w.kf.push([t, d]); };
+    const wMove = (inst, t0, t1, path) => { const w = track(inst);   // the thing goes from where it is along the path, between t0 and t1
+      if (!w.pts.length) { w.pts.push(path[0]); kfAdd(w, t0, 0); path = path.slice(1); }
+      kfAdd(w, t0, w.d);
+      for (const q of path) { const p = w.pts[w.pts.length - 1], L = Math.hypot(q.x - p.x, q.y - p.y); if (L > 0) { w.d += L; w.pts.push(q); } }
+      kfAdd(w, t1, w.d); };
+    const holder = (k) => !sc || !(k === "A" || k === "B" || (k.startsWith("S.") && SCENE.S.rows.includes(k.slice(2)))) ? null   // inside a safe, or on a shelf board
+      : k === "A" || k === "B" ? { at: sc.g[k].inside, safe: true } : { at: sc.g[k], safe: false };
+    const inScale = (id, safe) => ACT_ITEMS[id].text ? (safe ? SCENE.IN.safe : SCENE.IN.shelf) : SCENE.IN.icon;
+    const middle = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    // FR138: things stored on a box's screen (the vault on Your computer, the backup + vault on the backup laptop) stay there,
+    // into the next steps; a copy can be got off them (`get` … `from`), a vault with what lies in it
+    const stored = ((start && start.stored) || []).map((v) => ({ ...v, on: 0, off: null }));
+    for (const v of stored) shown.push({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside });
+    const itemSize = (id) => ACT_ITEMS[id].vault ? [VAULT.w, VAULT.h] : ACT_ITEMS[id].text ? [60, 12] : [18, 18];
+    const slotOn = (r, slot, id) => {   // a place on a screen: the middle, or its left / right half; the thing made to fit it
+      const half = slot === "left" || slot === "right", w = half ? r.w / 2 : r.w, [iw, ih] = itemSize(id);
+      return { x: r.x + (slot === "left" ? w / 2 : slot === "right" ? r.w - w / 2 : r.w / 2), y: r.y + r.h / 2, s: +Math.min(0.9 * w / iw, 0.85 * r.h / ih).toFixed(4) }; };
+    if (start && start.scene) {   // FR129: the scene the step before left standing — as it was, the doors shut, the fire out
+      sc = { g: sceneGeo(start.scene.O), t0: 0, fadeIn: false, t1: null, doors: { A: [], B: [] }, lock: {}, fire: [], pops: [],
+        inside: start.scene.inside.map((v) => ({ id: v.id, k: v.k, inst: null, on: 0, off: null, x: v.x, y: v.y, s: v.s })) };
+    }
+    for (const id in st0) actor(id);   // the runners the step before left standing
+    for (const a of step.play || []) {
+      const R = actor(ACTORS.includes(a.who) ? a.who : "mario");
+      if (a.run != null) {   // one line id, or alternatives (the first one drawn in this view wins: e_cable / e_usb)
+        const e = [].concat(a.run).map(edgeOf).find((x) => x && epoly[x.id] && epoly[x.id].length >= 2); let p = e && epoly[e.id]; if (!p) continue;
+        p = a.back ? p.slice().reverse() : p;
+        let L = polyLen(p), seq = p;
+        if (!R.pts.length) { R.pts.push(...p); R.kf.push([0, 0], [T, 0]); if (T > ACT.FADE) R.op.push([T - ACT.FADE, 0]); R.op.push([T, 1]); }   // it fades in where it starts
+        else { const q = R.pts[R.pts.length - 1], gap = Math.hypot(p[0].x - q.x, p[0].y - q.y); R.kf.push([T, R.dist]);
+          if (gap > 0.5) { R.pts.push(p[0]); L += gap; seq = [q, ...p]; } R.pts.push(...p.slice(1)); }
+        const dur = Math.min(ACT.MAX, Math.max(ACT.MIN, r1(L / ACT.V)));
+        for (let j = 1, c = 0; j < seq.length; j++) {   // each stretch that goes left or right turns it that way
+          turn(R, T + (L ? c / L : 0) * dur, seq[j].x - seq[j - 1].x); c += Math.hypot(seq[j].x - seq[j - 1].x, seq[j].y - seq[j - 1].y); }
+        R.runs.push([T, T + dur]); T += dur; R.dist += L; R.kf.push([T, R.dist]);
+        R.spot = p[p.length - 1]; R.at = a.back ? e.from : e.to;
+      } else if (a.get != null && a.from != null) {   // FR136: a copy of what is shown on a box comes off it into its hand
+        const id = String(a.get); let v = R.spot && ACT_ITEMS[id] && shown.find((x) => x.id === id && x.at === String(a.from));
+        if (!v && R.spot && ACT_ITEMS[id]) { const b = boxAt(String(a.from)); if (b) v = { ...middle(b), s: 0.3 }; }   // FR138: out of the box itself (the light, the backup)
+        if (!v) continue;
+        if (v.inside && v.inside.length) R.inside[id] = v.inside.map((x) => ({ id: x, on: T + ACT.T.show, off: null }));   // FR138: the vault's copy holds what the vault holds
+        const inst = newInst(id), w = track(inst), t1 = T + ACT.T.show; turn(R, T, v.x - R.spot.x);
+        wMove(inst, T, T, [{ x: v.x, y: v.y }]); wMove(inst, T, t1, [hand(R, id)]); w.vis.push([T, t1]); w.sc.push([T, v.s], [t1, 1]);
+        carry(R, id, t1); R.inst[id] = inst; T = t1 + 0.2;
+      } else if (a.get != null) { for (const id of [].concat(a.get)) if (ACT_ITEMS[id]) carry(R, id, T); T += ACT.T.get;
+      } else if (a.pop != null) {
+        if (sc && (a.at === "A" || a.at === "B")) { const q = sc.g[a.at]; sc.pops.push([String(a.pop), q.x + SCENE.safe.w / 2, q.y - 28, T, T + ACT.T.pop]); }   // above a safe
+        else R.pops.push([String(a.pop), T, T + ACT.T.pop]);
+        T += ACT.T.pop;
+      } else if (a.hammer != null) { const dur = typeof a.hammer === "number" && a.hammer > 0 ? a.hammer : ACT.T.hammer;
+        if (a.at != null && String(a.at) !== R.at) { drop(R, "light", T); continue; }   // FR131: it builds only the box it names, once it got there (wifi: no line there)
+        const b = boxAt(R.at), c = b ? middle(b) : null, lit = !!(R.items.light && R.items.light.some((v) => v[1] == null));
+        if (c && R.spot) turn(R, T, c.x - R.spot.x);   // it faces the box it builds
+        let li = null;
+        if (lit && c && R.spot) {   // FR131: the install light goes from its hand into the middle of the box first
+          li = instOf(R, "light"); const w = track(li), t1 = T + ACT.T.give;
+          delete R.inst.light; drop(R, "light", T); wMove(li, T, T, [hand(R, "light")]); wMove(li, T, t1, [c]); w.vis.push([T, null]); w.sc.push([T, 1], [t1, 1.3]);
+          T = t1;
+        } else if (lit) drop(R, "light", T + 0.4);
+        const t0 = T, t1 = T + dur, blows = [];   // the hammer comes down 0.15 s into every swing; each blow builds the box a ring further out of the light
+        for (let k = 0; t0 + 0.15 + k * ACT.BLOW <= t1 - 0.6 + 1e-9; k++) blows.push(+(t0 + 0.15 + k * ACT.BLOW).toFixed(4));
+        R.acts.push({ kind: "hammer", t0, t1, at: R.at, c, blows });
+        if (li) { const w = track(li); for (const t of blows) w.sc.push([t, 1.3], [t + 0.06, 1.75], [t + 0.3, 1.3]);   // the light flares with every blow…
+          w.sc.push([blows.length ? blows[blows.length - 1] + 0.3 : t0, 1.3], [t1 - 0.05, 0.3]); w.vis[w.vis.length - 1][1] = t1; }   // …and sinks into the finished box
+        T = t1;
+      } else if (a.appear != null) { const b = boxAt(String(a.appear)); if (!b || R.pts.length) continue;   // FR129: it comes out of a box (Yoshi, out of the Tailscale cloud)
+        R.spot = middle(b); R.pts.push(R.spot); R.kf.push([0, 0]); R.op.push([T, 0], [T + ACT.T.scene, 1]); T += ACT.T.scene;
+      } else if (a.vanish && R.pts.length) { R.op.push([T, 1], [T + ACT.T.scene, 0]); R.gone = true; T += ACT.T.scene;   // …and goes back in
+      } else if (a.scene === false) { if (sc && sc.t1 == null) sc.t1 = T + 0.6; T += ACT.T.unscene;   // FR129: the scene fades away
+      } else if (a.scene && R.spot) {   // FR128: the ledge, the safes, the fire bowl and the shelf appear here, holding what the script says
+        sc = { g: sceneGeo({ x: R.spot.x, y: R.spot.y }), t0: T, fadeIn: true, t1: null, doors: { A: [], B: [] }, lock: {}, fire: [], pops: [], inside: [] };
+        for (const k in a.scene) { const h = holder(k), ids = [].concat(a.scene[k]).filter((id) => ACT_ITEMS[id]); if (!h) continue;
+          ids.forEach((id, i) => sc.inside.push({ id, k, inst: null, on: T, off: null, x: h.at.x, y: h.at.y + (i - (ids.length - 1) / 2) * 8, s: inScale(id, h.safe) })); }
+        T += ACT.T.scene;
+      } else if (sc && ["O", "A", "B", "S"].includes(a.walk) && R.spot) {   // to a safe or the shelf, or back down to where the scene started
+        const q = a.walk === "O" ? sc.g.O : a.walk === "S" ? sc.g.S.mark : sc.g[a.walk].mark;
+        goTo(R, { x: q.x, y: q.y }, Math.max(ACT.WALK, r1(Math.hypot(q.x - R.spot.x, q.y - R.spot.y) / ACT.V)));
+      } else if (a.put != null && ACT_ITEMS[a.put] && R.spot) {   // into a keyhole ("A.lock"), a safe or onto a shelf board ("B", "S.top"), or into a box ("server")
+        const id = a.put, into = String(a.in || ""), [k, part] = into.split("."), lock = part === "lock" && sc && (k === "A" || k === "B");
+        const h = lock ? null : holder(into), b = !lock && !h ? boxAt(into) : null;
+        const scr = b && a.screen && screenAt ? screenAt(into) : null, slot = scr ? slotOn(scr, a.screen, id) : null;   // FR138: onto its screen, to stay
+        const to = lock ? sc.g[k].lock : h ? { x: h.at.x, y: h.at.y + sc.inside.filter((v) => v.k === into && v.off == null).length * 8 } : slot ? { x: slot.x, y: slot.y } : b ? middle(b) : null;
+        if (!to) continue;
+        const keep = a.copy === true && !lock;   // FR132: {"copy": true} — a copy comes off what it holds and goes there; the runner keeps its own
+        const inst = keep ? newInst(id) : instOf(R, id), w = track(inst), t0 = T + (keep ? 0.2 : 0), t1 = T + (lock ? 0.5 : keep ? 0.8 : 0.6);
+        if (!keep) { delete R.inst[id]; drop(R, id, T); }
+        turn(R, T, to.x - R.spot.x); wMove(inst, T, T, [hand(R, id)]); w.vis.push([T, null]); w.sc.push(...(keep ? [[T, 0.6], [t0, 1]] : [[T, 1]]));
+        wMove(inst, t0, t1, [to]);
+        if (lock) { w.sc.push([t1, 0.8]); w.rot.push([t1, 0], [T + ACT.T.put, 90]); sc.lock[k] = inst; T += ACT.T.put; }
+        else if (h) { const s = inScale(id, h.safe); w.sc.push([t1, s]); w.vis[w.vis.length - 1][1] = t1; sc.inside.push({ id, k: into, inst, on: t1, off: null, x: to.x, y: to.y, s }); T += keep ? ACT.T.copy : ACT.T.putIn; }
+        else if (slot) { const inside = (R.inside[id] || []).filter((v) => v.off == null).map((v) => v.id);   // FR138: it lies on the screen from now on
+          w.sc.push([t1, slot.s]); w.vis[w.vis.length - 1][1] = t1; stored.push({ id, at: into, x: to.x, y: to.y, s: slot.s, inside, on: t1, off: null });
+          shown.push({ id, at: into, x: to.x, y: to.y, s: slot.s, inside }); T += keep ? ACT.T.copy : ACT.T.putIn; }
+        else { w.sc.push([t1, 0.3]); w.vis[w.vis.length - 1][1] = t1; T += keep ? ACT.T.copy : ACT.T.putIn; }   // FR130: into a box — it goes in and is kept there
+      } else if (sc && (a.open != null || a.close != null) && ["A", "B"].includes(a.open != null ? a.open : a.close)) {   // the door swings open / shut; a key in its lock goes with it
+        const k = a.open != null ? a.open : a.close, q = sc.g[k], opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close;
+        sc.doors[k].push([T, opening ? 1 : SCENE.OPEN], [T + d, opening ? SCENE.OPEN : 1]);
+        if (sc.lock[k]) wMove(sc.lock[k], T, T + d, [opening ? q.open : q.lock]);
+        T += d;
+      } else if ((a.open != null || a.close != null) && (ACT_ITEMS[a.open != null ? a.open : a.close] || {}).vault
+                 && (R.items[a.open != null ? a.open : a.close] || []).some((v) => v[1] == null)) {   // FR135: the door of the vault it holds swings open / shut
+        const id = a.open != null ? a.open : a.close, opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close, l = R.doors[id] = R.doors[id] || [];
+        l.push([T, opening ? 1 : SCENE.OPEN], [T + d, opening ? SCENE.OPEN : 1]); T += d;
+      } else if (sc && a.fire) { const v = kvAt(sc.fire, T); sc.fire = sc.fire.filter((k) => k[0] <= T);   // a fire starts in the bowl (FR139: one still burning goes on)
+        sc.fire.push([T, v], [T + ACT.T.fire, 1]); T += ACT.T.fire;
+      } else if (a.take != null && ACT_ITEMS[a.take] && R.spot && (ACT_ITEMS[String(a.from || "")] || {}).vault) {   // FR138: out of the vault it holds (over the runner)
+        const box = String(a.from), v = (R.inside[box] || []).find((x) => x.id === a.take && x.off == null); if (!v) continue;
+        const h = hand(R, box), inst = newInst(a.take), w = track(inst), t1 = T + ACT.T.take; v.off = T; w.over = true;
+        wMove(inst, T, T, [{ x: h.x + VAULT.IN.x, y: h.y + VAULT.IN.y }]); wMove(inst, T, t1, [hand(R, a.take)]); w.vis.push([T, t1]); w.sc.push([T, VAULT.IN.s], [t1, 1]);
+        carry(R, a.take, t1); R.inst[a.take] = inst; T = t1;
+      } else if (a.take != null && ACT_ITEMS[a.take] && R.spot) {   // out of a keyhole ("A.lock"), out of a safe or off a shelf board ("A", "S.top")
+        const id = a.take, from = String(a.from || ""), [k, part] = from.split(".");
+        if (part === "lock" && sc && (k === "A" || k === "B")) { const inst = sc.lock[k]; if (!inst) continue;
+          const w = track(inst), t1 = T + ACT.T.unlock; turn(R, T, sc.g[k].lock.x - R.spot.x);
+          wMove(inst, T, t1, [hand(R, id)]); w.sc.push([T, 0.8], [t1, 1]); w.rot.push([T, 90], [t1, 0]); if (w.vis.length) w.vis[w.vis.length - 1][1] = t1;
+          carry(R, id, t1); R.inst[id] = inst; sc.lock[k] = null; T = t1;
+        } else { const v = sc && sc.inside.find((x) => x.id === id && x.k === from && x.off == null); if (!v) continue;
+          const inst = v.inst || newInst(id), w = track(inst), t1 = T + ACT.T.take; v.off = T; turn(R, T, v.x - R.spot.x);
+          wMove(inst, T, T, [{ x: v.x, y: v.y }]); wMove(inst, T, t1, [hand(R, id)]); w.vis.push([T, t1]); w.sc.push([T, v.s], [t1, 1]);
+          carry(R, id, t1); R.inst[id] = inst; T = t1; }
+      } else if (sc && a.throw != null && ACT_ITEMS[a.throw] && R.spot) {   // tossed into the fire: it shrinks away, the fire flares, then burns down
+        const id = a.throw, inst = instOf(R, id), w = track(inst), from = hand(R, id), to = { x: sc.g.fire.x, y: sc.g.fire.y - 12 }, t1 = T + 0.8, arc = [];
+        delete R.inst[id]; turn(R, T, to.x - R.spot.x); drop(R, id, T); wMove(inst, T, T, [from]); w.vis.push([T, T + ACT.T.throw]); w.sc.push([T, 1], [t1, 1], [T + ACT.T.throw, 0.3]);
+        for (let j = 1; j <= 8; j++) { const u = j / 8; arc.push({ x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u - 160 * u * (1 - u) }); }
+        wMove(inst, T, t1, arc);
+        sc.fire = sc.fire.filter((k) => k[0] <= t1); sc.fire.push([t1, 1], [t1 + 0.15, 1.5], [t1 + 0.5, 1], [t1 + 1.5, 1], [t1 + 2.5, 0]);   // (FR139: a second throw flares it again)
+        T += ACT.T.throw;
+      } else if (a.copy != null && ACT_ITEMS[a.copy] && ACT_ITEMS[String(a.in || "")] && R.spot) {   // FR130: a copy comes out of a box into what the runner holds (the vault)
+        const b = boxAt(String(a.from || "")); if (!b) continue;
+        const inst = newInst(a.copy), w = track(inst), from = middle(b), into = String(a.in), t1 = T + 0.8, h = hand(R, into);
+        turn(R, T, from.x - R.spot.x); wMove(inst, T, T, [from]);
+        if (ACT_ITEMS[into].vault) {   // FR135: into the (open) vault — over the runner, it lands inside and lies there
+          wMove(inst, T + 0.2, t1, [{ x: h.x + VAULT.IN.x, y: h.y + VAULT.IN.y }]); w.vis.push([T, t1]); w.sc.push([T, 0.6], [T + 0.2, 1], [t1, VAULT.IN.s]); w.over = true;
+          (R.inside[into] = R.inside[into] || []).push({ id: a.copy, on: t1 });
+        } else { wMove(inst, T + 0.2, t1, [h]); w.vis.push([T, t1 + 0.2]); w.sc.push([T, 0.6], [T + 0.2, 1], [t1, 1], [t1 + 0.2, 0.3]); }
+        T += ACT.T.copy;
+      } else if (a.write != null && R.spot) { const b = boxAt(String(a.write)); if (!b) continue;   // FR129: the book opens, what the runner brings goes in, the entry is written
+        writes.push({ book: String(a.write), t: T + 0.2 });
+        for (const id of Object.keys(R.items)) if (ACT_ITEMS[id].text && R.items[id].some((v) => v[1] == null)) {
+          const inst = instOf(R, id), w = track(inst); delete R.inst[id]; drop(R, id, T + 3.4);
+          wMove(inst, T + 3.4, T + 3.4, [hand(R, id)]); wMove(inst, T + 3.4, T + 3.9, [middle(b)]); w.vis.push([T + 3.4, T + 3.9]); w.sc.push([T + 3.4, 1], [T + 3.9, 0.3]); }
+        T += ACT.T.write;
+      } else if (a.lookup != null && R.spot) { const b = boxAt(String(a.lookup)); if (!b) continue;   // FR136: the book opens; the name it brings goes in, the address on that line comes out into its hand
+        const n = node(String(a.lookup)), lines = n ? entryOf(n).split("\n") : [], ip = (lines.slice(1).join(" ").match(IP_RE) || ["?"])[0];
+        const t0 = T + 0.2, c = middle(b); reads.push({ book: String(a.lookup), t: t0 }); texts.answer = "ip " + ip; turn(R, T, c.x - R.spot.x);
+        for (const id of Object.keys(R.items)) if (ACT_ITEMS[id].text && R.items[id].some((v) => v[1] == null)) {   // (once the book is open at the entry)
+          const inst = instOf(R, id), w = track(inst); delete R.inst[id]; drop(R, id, t0 + 3.0);
+          wMove(inst, t0 + 3.0, t0 + 3.0, [hand(R, id)]); wMove(inst, t0 + 3.0, t0 + 3.5, [c]); w.vis.push([t0 + 3.0, t0 + 3.5]); w.sc.push([t0 + 3.0, 1], [t0 + 3.5, 0.3]); }
+        const inst = newInst("answer"), w = track(inst), u0 = t0 + 0.48 * PB.T, u1 = u0 + 0.5;   // (when the book lets the address go, FR121)
+        wMove(inst, u0, u0, [c]); wMove(inst, u0, u1, [hand(R, "answer")]); w.vis.push([u0, u1]); w.sc.push([u0, 0.3], [u1, 1]);
+        carry(R, "answer", u1); R.inst.answer = inst; T = u1 + 0.1;
+      } else if (a.give != null && ACT_ITEMS[a.give] && R.spot) {   // FR136: hand to hand, to another runner
+        const O = ACTS[a.to], id = a.give; if (!O || !O.spot || O === R || !(R.items[id] && R.items[id].some((v) => v[1] == null))) continue;
+        const inst = instOf(R, id), w = track(inst), t1 = T + ACT.T.hand;
+        delete R.inst[id]; turn(R, T, O.spot.x - R.spot.x); turn(O, T, R.spot.x - O.spot.x); drop(R, id, T);
+        wMove(inst, T, T, [hand(R, id)]); wMove(inst, T, t1, [hand(O, id)]); w.vis.push([T, t1]); w.sc.push([T, 1]);
+        carry(O, id, t1); O.inst[id] = inst; T = t1;
+      } else if (a.show != null && ACT_ITEMS[a.show] && R.spot) { const b = boxAt(String(a.at || "")); if (!b) continue;   // FR136: on a box, for all to see (the call on the server, then on the phone)
+        const id = a.show, to = middle(b), held = !!(R.items[id] && R.items[id].some((v) => v[1] == null)), inst = held ? instOf(R, id) : newInst(id), w = track(inst), s = 1.3;
+        if (held) { delete R.inst[id]; turn(R, T, to.x - R.spot.x); drop(R, id, T); wMove(inst, T, T, [hand(R, id)]); wMove(inst, T, T + ACT.T.show, [to]); w.sc.push([T, 1], [T + ACT.T.show, s]); }
+        else { wMove(inst, T, T, [to]); w.sc.push([T, 0.3], [T + ACT.T.show, s]); }
+        w.vis.push([T, null]); shown.push({ id, at: String(a.at), x: to.x, y: to.y, s }); T += ACT.T.show + 0.2;
+      } else if (a.burn != null) { if (!boxAt(String(a.burn))) continue;   // FR140: a box burns down — flames over it, and it is gone
+        burns.push({ at: String(a.burn), t0: T, t1: T + ACT.T.burn }); T += ACT.T.burn;
+      } else if (typeof a.wait === "number") T += Math.max(0, a.wait);
+    }
+    const all = ACTORS.map((who) => ACTS[who]).filter((R) => R && R.pts.length);
+    if (!all.length && !sc && !stored.length && !burns.length) return null;   // no runner, no scene and nothing stored on a screen in this step
+    if (typeof step.dur === "number") T = Math.max(T, step.dur); else if (!(step.play || []).length) T = Math.max(T, ACT.STAND);   // standing time
+    for (const R of all) R.kf.push([T, R.dist]);
+    if (last) { for (const R of all) if (!R.gone) R.op.push([T, 1], [T + ACT.FADE, 0]); T += ACT.FADE; for (const R of all) R.kf.push([T, R.dist]); }
+    const out = { T, W, scene: sc, writes, reads, texts, last, stored, burns, end: { actors: {}, scene: null, texts, stored: stored.filter((v) => v.off == null).map((v) => ({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside })) },
+      actors: all.map((R) => ({ who: R.who, pts: R.pts, L: polyLen(R.pts), kf: R.kf, runs: R.runs, acts: R.acts, pops: R.pops, items: R.items, doors: R.doors, inside: R.inside, face: R.face, op: R.op })) };
+    for (const R of all) if (!R.gone) out.end.actors[R.who] = { spot: R.spot, at: R.at, face: R.facing, items: Object.keys(R.items).filter((id) => R.items[id].some((v) => v[1] == null)) };
+    if (sc && sc.t1 == null) out.end.scene = { O: sc.g.O, inside: sc.inside.filter((v) => v.off == null).map((v) => ({ id: v.id, k: v.k, x: v.x, y: v.y, s: v.s })) };
+    return out;
+  }
+  function drawActor(P, boxOf) {   // the plan, drawn: every animation runs once from the step's start (S.stepT0) and freezes at its end
+    const G = el("g", { class: "actor", "pointer-events": "none", "font-family": "ui-sans-serif, system-ui, sans-serif" }, gNodes);   // (the diagram's font, as in the SVG)
+    const f = (v) => +v.toFixed(4), tk = (t) => f(Math.max(0, Math.min(1, t / P.T)));
+    const anim = (p, a) => el(a.path ? "animateMotion" : a.type ? "animateTransform" : "animate", { dur: f(P.T) + "s", repeatCount: "1", fill: "freeze", begin: f(S.stepT0) + "s", ...a }, p);
+    const tail = P.last ? P.T - ACT.FADE : null;   // a thing still held at the end goes with the fade-out — or stays, for the next step
+    const fadeIv = (p, ivs0) => {   // opacity 1 during each [on, off] (off null = held to the end), 0.05 s ramps; a constant needs no animation
+      const ivs = ivs0.map(([on, off]) => [on, off == null ? tail : off]).filter(([on, off]) => off == null || off - on >= 0.12);   // (a moment's flash is left out)
+      const kv = [[0, ivs.some(([on]) => on <= 0) ? 1 : 0]]; let open = false;
+      for (const [on, off] of ivs) {
+        if (off == null) { if (on > 0) kv.push([on, 0], [on + 0.05, 1]); open = true; continue; }
+        if (on > 0) kv.push([on, 0], [on + 0.05, 1]); kv.push([off - 0.05, 1], [off, 0]); }
+      kv.push([P.T, open ? 1 : 0]);
+      const ks = kv.filter((v, i) => !i || v[0] >= kv[i - 1][0]);   // key times never go back
+      if (ks.every((v) => v[1] === ks[0][1])) { p.setAttribute("opacity", ks[0][1]); return; }
+      anim(p, { attributeName: "opacity", values: ks.map((v) => v[1]).join(";"), keyTimes: ks.map((v) => tk(v[0])).join(";") }); };
+    const keyed = (kv0) => {   // [time, value] key frames over the whole plan (held before the first and after the last)
+      const kv = kv0.length && kv0[0][0] > 0 ? [[0, kv0[0][1]], ...kv0] : kv0.slice();
+      if (kv.length && kv[kv.length - 1][0] < P.T) kv.push([P.T, kv[kv.length - 1][1]]);
+      return kv.filter((v, i) => !i || v[0] >= kv[i - 1][0]); };
+    const varies = (kv) => kv.some((v) => v[1] !== kv[0][1]);
+    const look = (p, id, x, y, s, plain, box) => {   // a thing's look at (x, y), scaled: its icon (+ tag, unless plain), the vault (box: its door + inside), or its text
+      const it = ACT_ITEMS[id], g = el("g", { transform: `translate(${f(x)} ${f(y)})` + (s !== 1 ? ` scale(${f(s)})` : ""), opacity: 0 }, p);
+      if (it.icon) { const u = el("use", { href: "#ic-" + it.icon, x: -9, y: -9, width: 18, height: 18 }, g); u.style.color = it.color; }
+      else if (it.light) { el("circle", { r: 9, fill: it.color, opacity: 0.35 }, g); el("circle", { r: 4.5, fill: "#fffbe0" }, g); }
+      else if (it.vault) {   // FR135: a small safe — its inside, what lies in it, and its door (hinged left) with the KeePass logo as the lock
+        const V = VAULT, iw = V.w - 2 * V.inset, ih = V.h - 2 * V.inset, lx = iw - V.lock - 2, ly = (ih - V.lock) / 2;
+        el("rect", { x: -V.w / 2, y: -V.h / 2, width: V.w, height: V.h, rx: 3, fill: "#2d333b", stroke: it.color, "stroke-width": 1.5 }, g);
+        el("rect", { x: -iw / 2, y: -ih / 2, width: iw, height: ih, fill: "#0b0e14" }, g);
+        for (const v of (box && box.inside) || []) fadeIv(look(g, v.id, V.IN.x, V.IN.y, V.IN.s, true), [[v.on, v.off == null ? null : v.off]]);
+        const D = el("g", {}, el("g", { transform: `translate(${-iw / 2} ${-ih / 2})` }, g));
+        el("rect", { x: 0, y: 0, width: iw, height: ih, fill: "#3d444d", stroke: "#c9d1d9", "stroke-width": 1 }, D);
+        const src = imgSrc("img:" + it.vault);
+        if (src) el("image", { href: src, x: lx, y: ly, width: V.lock, height: V.lock }, D); else el("circle", { cx: lx + V.lock / 2, cy: ly + V.lock / 2, r: 3, fill: "#facc15" }, D);
+        const dk = box && box.door ? keyed(box.door) : [];
+        if (varies(dk)) anim(D, { attributeName: "transform", type: "scale", values: dk.map((v) => `${f(v[1])} 1`).join(";"), keyTimes: dk.map((v) => tk(v[0])).join(";") }); }
+      else if (it.img) {   // FR136: a logo on a blue badge (Jitsi Meet)
+        el("rect", { x: -9, y: -9, width: 18, height: 18, rx: 4, fill: "#1d76ba", stroke: "#c9d1d9", "stroke-width": 1 }, g);
+        const src = imgSrc("img:" + it.img); if (src) el("image", { href: src, x: -7, y: -7, width: 14, height: 14 }, g); }
+      const label = it.text || (it.book && P.texts[id]) || (plain ? null : it.tag);   // FR136: a book's address carries the text the book gave
+      if (label) { const t = el("text", { x: 0, y: it.text || it.book ? 3.5 : -12, "text-anchor": "middle", fill: it.color }, g), ls = label.split("\n");
+        Object.assign(t.style, { fontSize: "10px", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" });
+        if (ls.length === 1) t.textContent = label;   // FR132: more lines stack upwards, the last one where a single line would be
+        else ls.forEach((l, i) => { el("tspan", { x: 0, y: 3.5 - (ls.length - 1 - i) * 11 }, t).textContent = l; }); }
+      return g; };
+    let nBuild = 0;
+    for (const A of P.actors) for (const a of A.acts) {   // world-fixed things first (under the runners): the build cover
+      if (a.kind === "hammer") { const n = a.at && node(a.at), b = n && boxOf[a.at] && anchorBox(n, boxOf[a.at]); if (!b) continue;
+        // FR131: the box is built up out of the light in its middle — a hole in the cover opens there, a ring wider with every blow
+        const x = b.x - 2, y = b.y - 2, w = b.w + 4, h = b.h + 4, c = a.c || { x: b.x + b.w / 2, y: b.y + b.h / 2 }, nb = a.blows.length;
+        const Rm = Math.max(...[[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => Math.hypot(px - c.x, py - c.y))) + 1, id = "actbuild" + nBuild++;
+        const M = el("mask", { id, maskUnits: "userSpaceOnUse", x: f(x), y: f(y), width: f(w), height: f(h) }, G);
+        el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: "#fff" }, M);
+        const hole = el("circle", { cx: f(c.x), cy: f(c.y), r: 0, fill: "#000" }, M), rk = [[0, 0], [a.t0, 0]];
+        if (nb) a.blows.forEach((t, i) => rk.push([t, f(Rm * i / nb)], [t + 0.12, f(Rm * (i + 1) / nb)])); else rk.push([Math.max(a.t0, a.t1 - 0.3), f(Rm)]);
+        const rv = keyed(rk);
+        anim(hole, { attributeName: "r", values: rv.map((v) => v[1]).join(";"), keyTimes: rv.map((v) => tk(v[0])).join(";") });
+        el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", mask: `url(#${id})` }, G);
+      }
+    }
+    for (const bn of P.burns || []) { const n = node(bn.at), b = n && boxOf[bn.at] && anchorBox(n, boxOf[bn.at]); if (!b) continue;   // FR140: flames over the box, which goes
+      const c = el("rect", { x: f(b.x - 2), y: f(b.y - 2), width: f(b.w + 4), height: f(b.h + 4), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", opacity: 0 }, G);
+      const ck = keyed([[0, 0], [bn.t0 + 1.0, 0], [bn.t0 + 2.2, 1]]);
+      anim(c, { attributeName: "opacity", values: ck.map((v) => v[1]).join(";"), keyTimes: ck.map((v) => tk(v[0])).join(";") });
+      const FS = el("g", { transform: "scale(0)" }, el("g", { transform: `translate(${f(b.x + b.w / 2)} ${f(b.y + b.h)})` }, G));
+      const fk = keyed([[0, 0], [bn.t0, 0], [bn.t0 + 0.6, 1], [bn.t0 + 1.4, 1.2], [bn.t1 - 0.8, 1], [bn.t1, 0]]), fs = b.h * 0.85 / 12;
+      anim(FS, { attributeName: "transform", type: "scale", values: fk.map((v) => `${f(v[1])} ${f(v[1])}`).join(";"), keyTimes: fk.map((v) => tk(v[0])).join(";") });
+      for (const [dx, k, ph] of BURN_FLAMES) flame(FS, f(dx * b.w), 0, f(fs * k), ph);
+    }
+    for (const v of P.stored || []) fadeIv(look(G, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);   // FR138: what lies on a screen
+    const sc = P.scene;
+    if (sc) {   // FR128 / FR129: the ledge, the safes, the fire bowl and the shelf — they fade in when the scene starts and out when it ends
+      const g = sc.g, s = SCENE.safe, SG = el("g", { opacity: 0 }, G);
+      const so0 = [...(sc.fadeIn ? [[0, 0], [sc.t0, 0], [sc.t0 + 0.4, 1]] : [[0, 1]]), ...(sc.t1 != null ? [[sc.t1 - 0.6, 1], [sc.t1, 0]] : [])];
+      const so = keyed(so0);
+      if (varies(so)) anim(SG, { attributeName: "opacity", values: so.map((v) => v[1]).join(";"), keyTimes: so.map((v) => tk(v[0])).join(";") });
+      else SG.setAttribute("opacity", so.length ? so[0][1] : 1);
+      el("rect", { x: f(g.x0), y: f(g.top), width: f(g.x1 - g.x0), height: SCENE.h, fill: "#9a5523", stroke: "#5c2f0d", "stroke-width": 1.5 }, SG);   // the ledge (bricks)
+      for (let x = g.x0 + 16; x < g.x1 - 4; x += 16) el("line", { x1: f(x), y1: f(g.top), x2: f(x), y2: f(g.top + SCENE.h), stroke: "#5c2f0d", "stroke-width": 1.5 }, SG);
+      for (const k of ["A", "B"]) { const q = g[k], dh = s.h - 2 * s.inset, x0 = SCENE[k].hinge === "l" ? 0 : -q.dw, kx = x0 + q.dw / 2, ky = s.lock - s.inset;
+        el("rect", { x: f(q.x), y: f(q.y), width: s.w, height: s.h, rx: 4, fill: "#2d333b", stroke: "#c9d1d9", "stroke-width": 1.5 }, SG);
+        el("rect", { x: f(q.x + s.inset), y: f(q.y + s.inset), width: q.dw, height: dh, fill: "#0b0e14" }, SG);   // inside
+        for (const v of sc.inside) if (v.k === k) fadeIv(look(SG, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);
+        const D = el("g", {}, el("g", { transform: `translate(${f(q.hx)} ${f(q.y + s.inset)})` }, SG));   // the door, turning on its hinge
+        el("rect", { x: x0, y: 0, width: q.dw, height: dh, fill: "#3d444d", stroke: "#c9d1d9", "stroke-width": 1 }, D);
+        el("circle", { cx: f(kx), cy: f(ky), r: 3.4, fill: "#facc15" }, D);   // the keyhole (yellow, like the logo's)
+        el("path", { d: `M ${f(kx - 1.8)} ${f(ky + 1)} L ${f(kx + 1.8)} ${f(ky + 1)} L ${f(kx + 3)} ${f(ky + 9)} L ${f(kx - 3)} ${f(ky + 9)} Z`, fill: "#facc15" }, D);
+        const dk = keyed(sc.doors[k]);
+        if (varies(dk)) anim(D, { attributeName: "transform", type: "scale", values: dk.map((v) => `${f(v[1])} 1`).join(";"), keyTimes: dk.map((v) => tk(v[0])).join(";") });
+      }
+      const SH = g.S;   // FR129: the shelf — a frame with its boards (FR132: two), and what stands on them
+      el("rect", { x: f(SH.x), y: f(SH.y), width: SH.w, height: SH.h, fill: "#2b1d12", stroke: "#8b5a2b", "stroke-width": 1.5 }, SG);
+      for (let i = 1; i <= SCENE.S.rows.length; i++) el("line", { x1: f(SH.x), y1: f(SH.y + SH.rh * i), x2: f(SH.x + SH.w), y2: f(SH.y + SH.rh * i), stroke: "#8b5a2b", "stroke-width": 2.5 }, SG);
+      for (const v of sc.inside) if (v.k.startsWith("S.")) fadeIv(look(SG, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);
+      const FG = el("g", { transform: `translate(${f(g.fire.x)} ${f(g.fire.y)})` }, SG);   // the fire bowl; the fire starts, flares, burns down
+      el("path", { d: "M -13 -9 L 13 -9 L 9 0 L -9 0 Z", fill: "#6e7681", stroke: "#2d333b", "stroke-width": 1.2 }, FG);
+      const FS = el("g", {}, el("g", { transform: "translate(0 -9)" }, FG)), fk = keyed(sc.fire);
+      if (varies(fk)) anim(FS, { attributeName: "transform", type: "scale", values: fk.map((v) => `${f(v[1])} ${f(v[1])}`).join(";"), keyTimes: fk.map((v) => tk(v[0])).join(";") });
+      else FS.setAttribute("transform", `scale(${fk.length ? f(fk[0][1]) : 0})`);
+      flame(FS, -6, 0, 1.2, 0); flame(FS, 0, 0, 1.7, 0.3); flame(FS, 6, 0, 1.2, 0.55);
+    }
+    const drawTrack = (w) => {   // things away from the runners — into a keyhole, a safe, a shelf, the fire or a box, and back
+      const WG = el("g", { opacity: 0 }, G), kk = keyed(w.kf);
+      if (w.d > 0) anim(WG, { path: "M " + w.pts.map((q) => `${f(q.x)} ${f(q.y)}`).join(" L "), keyPoints: kk.map((v) => f(Math.min(1, v[1] / w.d))).join(";"), keyTimes: kk.map((v) => tk(v[0])).join(";"), calcMode: "linear" });
+      else WG.setAttribute("transform", `translate(${f(w.pts[0].x)} ${f(w.pts[0].y)})`);
+      fadeIv(WG, w.vis);
+      const IG = el("g", {}, WG), sk = keyed(w.sc), rk = keyed(w.rot);   // it shrinks into a keyhole / safe / box and turns in a lock
+      if (varies(sk)) anim(IG, { attributeName: "transform", type: "scale", values: sk.map((v) => `${f(v[1])} ${f(v[1])}`).join(";"), keyTimes: sk.map((v) => tk(v[0])).join(";") });
+      const RG = el("g", {}, IG);
+      if (varies(rk)) anim(RG, { attributeName: "transform", type: "rotate", values: rk.map((v) => f(v[1])).join(";"), keyTimes: rk.map((v) => tk(v[0])).join(";") });
+      look(RG, w.id, 0, 0, 1, true).setAttribute("opacity", 1);
+    };
+    for (const inst in P.W) if (!P.W[inst].over) drawTrack(P.W[inst]);   // (FR135: what lands in a vault a runner holds goes over the runner)
+    for (const A of P.actors) {   // the runners: along their paths, or standing where the step before left them
+      const R = el("g", { opacity: 0 }, G);
+      if (A.pts.length >= 2) anim(R, { path: "M " + A.pts.map((q) => `${f(q.x)} ${f(q.y)}`).join(" L "), keyPoints: A.kf.map((k) => f(Math.min(1, k[1] / A.L))).join(";"), keyTimes: A.kf.map((k) => tk(k[0])).join(";"), calcMode: "linear" });
+      else R.setAttribute("transform", `translate(${f(A.pts[0].x)} ${f(A.pts[0].y)})`);
+      const ro = keyed(A.op);   // it fades in / out where it appears and vanishes, and at the story's ends
+      if (varies(ro)) anim(R, { attributeName: "opacity", values: ro.map((v) => v[1]).join(";"), keyTimes: ro.map((v) => tk(v[0])).join(";") });
+      else R.setAttribute("opacity", ro.length ? ro[0][1] : 1);
+      const hop = [[0, 0]];   // hops while running: up 4 every half hop
+      for (const [t0, t1] of A.runs) { hop.push([t0, 0]); for (let k = 1, t = t0 + ACT.HOP / 2; t < t1 - 0.05; k++, t = t0 + k * ACT.HOP / 2) hop.push([t, k % 2 ? -4 : 0]); hop.push([t1, 0]); }
+      hop.push([P.T, 0]);
+      const H = el("g", {}, R);
+      if (A.runs.length) anim(H, { attributeName: "transform", type: "translate", values: hop.map((h) => `0 ${h[1]}`).join(";"), keyTimes: hop.map((h) => tk(h[0])).join(";") });
+      const FL = el("g", {}, H), fv = keyed(A.face);   // the sprite faces where it goes (what it holds doesn't turn)
+      if (varies(fv)) anim(FL, { attributeName: "transform", type: "scale", values: fv.map((v) => `${v[1]} 1`).join(";"), keyTimes: fv.map((v) => tk(v[0])).join(";"), calcMode: "discrete" });
+      else if (fv.length && fv[0][1] === -1) FL.setAttribute("transform", "scale(-1 1)");
+      el("use", { href: "#ic-" + A.who, x: -ACT.SIZE / 2, y: -ACT.SIZE, width: ACT.SIZE, height: ACT.SIZE }, FL);
+      for (const id in A.items) fadeIv(look(H, id, ACT_ITEMS[id].dx, ACT_ITEMS[id].dy, 1, false, { door: A.doors && A.doors[id], inside: A.inside && A.inside[id] }), A.items[id]);
+      for (const [text, t0, t1] of A.pops) { const t = el("text", { x: 0, y: -46, "text-anchor": "middle", fill: "#3fb950", opacity: 0 }, H);
+        Object.assign(t.style, { fontSize: "12px", fontWeight: "700", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" }); t.textContent = text; fadeIv(t, [[t0, t1]]); }
+      for (const a of A.acts) if (a.kind === "hammer") {   // FR131: a real hammer in its right hand (it turns with the sprite): down fast, up slowly, a blow every BLOW s
+        const hg = el("g", { transform: "translate(9 -16)", opacity: 0 }, FL); fadeIv(hg, [[a.t0, a.t1]]);
+        el("use", { href: "#ic-claw-hammer", x: -11, y: -18.33, width: 22, height: 22 }, hg);
+        el("animateTransform", { attributeName: "transform", type: "rotate", additive: "sum", values: "-25;70;-25", keyTimes: "0;0.3;1", dur: ACT.BLOW + "s",
+          begin: f(S.stepT0 + a.t0) + "s", repeatCount: "indefinite" }, hg);
+      }
+    }
+    for (const inst in P.W) if (P.W[inst].over) drawTrack(P.W[inst]);
+    if (sc) for (const [text, x, y, t0, t1] of sc.pops) { const t = el("text", { x: f(x), y: f(y), "text-anchor": "middle", fill: "#3fb950", opacity: 0 }, G);   // a sign above a safe
+      Object.assign(t.style, { fontSize: "12px", fontWeight: "700", paintOrder: "stroke", stroke: "#0b0e14", strokeWidth: "3px" }); t.textContent = text; fadeIv(t, [[t0, t1]]); }
+  }
+  function stepPlans(epoly, boxOf) {   // FR125 / FR129: the plans of steps 0…step, each starting where the one before ended (and every step's length)
+    const st = stepsNow(); if (S.step == null || !st[S.step]) return null;
+    const boxAt = (id) => { const n = node(id); return n && boxOf[id] ? anchorBox(n, boxOf[id]) : null; };
+    const screenAt = (id) => { const n = node(id), b = boxOf[id], q = n && ICON_SCREEN[n.icon]; if (!b || !q || !isPictogram(n)) return null;   // FR138: its screen (the laptop's)
+      const g = pictoGeom(b, String(n.label || "").split("\n")), k = g.s / 24; return { x: g.x + q[0] * k, y: g.y + q[1] * k, w: q[2] * k, h: q[3] * k }; };
+    let P = null, prev = null; const durs = [];
+    for (let k = 0; k <= S.step; k++) { P = actorPlan(st[k], epoly, prev, k === 0, k === st.length - 1, boxAt, screenAt); prev = P && P.end;
+      durs.push(P ? P.T : (typeof st[k].dur === "number" ? st[k].dur : ACT.STAND)); }
+    return { P, durs };
+  }
+  function drawStep(SP, boxOf) {   // the active step's caption (bottom-right) and its runners
+    const cap = $("stepcap"), st = stepsNow(), s = S.step != null && st[S.step];
+    $("stepenter").hidden = !!s || !st.length;   // FR137: the whole view of a story offers to tell it step by step
+    if (!s) { cap.hidden = true; S.capEdit = null; S.stepDur = 0; return; }
+    if (S.capEdit !== s) {   // (left as it is while its text is being edited)
+      S.capEdit = null; cap.hidden = false; cap.textContent = "";
+      const head = document.createElement("div"); head.className = "sc-head";
+      const no = document.createElement("span"); no.textContent = `step ${S.step}`;
+      const title = document.createElement("b"); title.textContent = s.title || s.id;
+      const btn = (text, tip) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = text; b.title = tip; return b; };
+      const n = st.length, ip = (S.step - 1 + n) % n, inx = (S.step + 1) % n, name = (i) => `${i} ${st[i].label || st[i].title || st[i].id}`;
+      const prev = btn("⏮", `previous step (${name(ip)})`), next = btn("⏭", `next step (${name(inx)})`);   // FR137: round and round, like playing
+      prev.onclick = () => setStep(ip); next.onclick = () => setStep(inx);
+      const rw = btn("⏪", "back 2 s — hold: play backwards (4×)"), ff = btn("⏩", "ahead 2 s — hold: fast forward (4×)");   // FR128
+      rw.onpointerdown = (ev) => { ev.preventDefault(); seekStart(-1); }; ff.onpointerdown = (ev) => { ev.preventDefault(); seekStart(1); };
+      const pl = btn(S.play ? "⏸" : "▶", S.play ? "pause — everything stops where it is" : "play on, the steps one after another"); pl.onclick = togglePlay;   // FR125 / FR128
+      const all = btn("✕", "the whole view (no steps)"); all.onclick = () => setStep(null);
+      head.append(no, title, prev, rw, pl, ff, next, all); cap.appendChild(head);
+      const body = document.createElement("div"); body.className = "sc-body"; body.textContent = s.caption || ""; cap.appendChild(body);
+      if (S.backend) { body.classList.add("editable"); body.title = "double-click to edit · Enter keeps it, Esc drops it";   // FR137: the caption is edited in place
+        body.ondblclick = (ev) => { ev.stopPropagation(); editCaption(body, s); }; }
+      const o = S.backend && selObj();   // editing the story: the selected box or line in this step or not
+      if (o) { const inS = (s.show || []).includes(o.id), foot = document.createElement("div"); foot.className = "sc-foot";
+        const m = btn(inS ? "☑ in step" : "☐ in step", `${o.id}: ${inS ? "take out of" : "show from"} step ${S.step} on`); m.id = "stepmember";
+        m.onclick = () => { s.show = inS ? s.show.filter((x) => x !== o.id) : [...(s.show || []), o.id]; markDirty(true); render(); };
+        foot.appendChild(m); cap.appendChild(foot); }
+    }
+    // FR125: this step's runners follow on from the previous steps' (the end of one is the start of the next)
+    S.stepDurs = SP ? SP.durs : [];   // FR128: every step's length so far (⏪ goes back into them)
+    S.stepDur = S.stepDurs[S.step] != null ? S.stepDurs[S.step] : ACT.STAND;   // how long the step plays before the next one
+    if (SP && SP.P) drawActor(SP.P, boxOf);
+  }
+
   function render() {
     gEdges.textContent = ""; gNodes.textContent = ""; gUnder.textContent = ""; applyView();
+    STEP_BEGIN = S.step != null && stepsNow()[S.step] ? +S.stepT0.toFixed(3) + "s" : null;   // FR126
     for (const k in GH) delete GH[k];   // FR118: crossings are recomputed for this view
     svg.style.background = (S.data.meta && S.data.meta.background) ? S.data.meta.background : "";
     if (S.data.meta && typeof S.data.meta.ground === "number") drawGround(gEdges, S.data.meta.ground);
     const vis = S.data.nodes.filter(visible);
     const boxOf = {}; for (const n of vis) boxOf[n.id] = rbox(n);
+    const sNow = S.step != null && stepsNow()[S.step];   // FR125: what this step adds fades in while the step starts
+    NEW_SET = sNow && svg.getCurrentTime() - S.stepT0 < 0.8 ? new Set(sNow.show || []) : null;
     const gates = [];   // FR118: routes crossing a gatehouse router — its windows go under the pipes, its gates over them
 
     let selPoly = null;
@@ -1034,9 +1528,11 @@
       const { a, b } = ends, kind = e.kind || "plain";
       const nh = nestHost(e), sl = nh ? sleevePoly(e, nh) : isLan(e) ? ownCable(e, a, b) : null;   // NT14: every LAN line is a cable
       const g = el("g", { class: "edge k-" + kind + (S.selEdge === e.id ? " sel" : ""), "data-edge": e.id }, e.z === "front" ? gFront : sl && sl.poly ? gSleeve : gEdges);
+      if (NEW_SET && NEW_SET.has(e.id)) g.classList.add("stepnew");   // FR125
       let mx, my, iconOnLine = false, aside = 0;
       const role = roleOf(e);
       if (sl && sl.poly) {   // NT1–NT4: the link drawn as a see-through sleeve around the tunnel it carries; its icon sits on it
+        epoly[e.id] = sl.poly;   // FR124: the step mode's runner can walk a cable
         el("path", { class: "hit", d: "M " + sl.poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g).style.strokeWidth = 2 * sl.R;
         const sg = el("g", { opacity: nestP(e, "nestOp", !!sl.own) }, g);
         if (kind === "cable" || kind === "lan") drawCable(sg, sl.poly, lineColor(e) || "#7b828a", sl.R);   // NT13
@@ -1051,6 +1547,7 @@
         }
       } else if (isTube(e)) {
         const poly = dedupe(pipePoly(a, b, e));
+        epoly[e.id] = poly;   // FR122: a book's light can ride a tunnel too (your friend's pipe to the internet)
         el("path", { class: "hit", d: "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), fill: "none" }, g);
         drawMarioPipe(g, poly, e.color || "#8b949e", e.pw, e.casing);
         if (e.gate && GH[e.id] && !e.path) gates.push({ e, poly });   // FR118: this route crosses a gatehouse router
@@ -1100,6 +1597,7 @@
         t.textContent = e.label; }
     }
 
+    const SP = stepPlans(epoly, boxOf);   // FR129: the active step's plans — before the books are drawn (a runner may write one)
     const houses = {};   // FR118: gatehouse router id → the routes through it (the first one drives the animation)
     for (const gt of gates) (houses[gt.e.gate] = houses[gt.e.gate] || []).push(gt);
     // draw containers first, then normal nodes, then contained children on top
@@ -1108,6 +1606,7 @@
       const pal = PALETTE[n.color] || PALETTE.note, bx = boxOf[n.id];
       const g = el("g", { class: "node" + (isContainer(n) ? " container" : "") + (S.sel === n.id ? " sel" : ""),
                           "data-id": n.id }, gNodes);
+      if (NEW_SET && NEW_SET.has(n.id)) g.classList.add("stepnew");   // FR125: a box this step adds fades in
       const T = NODE_TYPES[n.nodeType], r = T ? T.rx(bx) : 8;   // FR82: block shape = what the box IS
       const lines = String(n.label || "").split("\n"), cx = bx.x + bx.w / 2;
       if (isPictogram(n)) {   // FR89: a device IS its icon — no box; the (invisible) box still sizes + anchors it
@@ -1116,11 +1615,23 @@
         const rect = el("rect", { x: hb.x, y: hb.y, width: hb.w, height: hb.h, rx: 3, ry: 3, fill: "transparent", stroke: "none" }, g);
         if (S.sel === n.id) { rect.setAttribute("stroke", pal.stroke); rect.style.strokeWidth = 1.5; }
         const pg = pictoGeom(bx, lines);
-        drawIcon(houses[n.id] ? gUnder : g, n.icon, pg.x, pg.y, pg.s, pal.stroke);   // FR118: a gatehouse sits under its pipes
+        const sc = ICON_SCREEN[n.icon], scr = sc && imgSrc(n.screen), k24 = pg.s / 24;   // FR127: a picture on the icon's screen (n.screen = "img:<key>"), under its outline
+        if (scr) el("image", { href: scr, x: pg.x + sc[0] * k24, y: pg.y + sc[1] * k24, width: sc[2] * k24, height: sc[3] * k24, preserveAspectRatio: "xMidYMid meet", class: "nscreen" }, houses[n.id] ? gUnder : g).style.cursor = "pointer";
+        const ic = drawIcon(houses[n.id] ? gUnder : g, n.icon, pg.x, pg.y, pg.s, pal.stroke);   // FR118: a gatehouse sits under its pipes
+        if (NEW_SET && NEW_SET.has(n.id)) ic.classList.add("stepnew");   // FR125 (the icon lives outside the node's group)
         if (houses[n.id]) gatehouseUnder(houses[n.id]);
         lines.forEach((ln, i) => { const t = el("text", { x: cx, y: pg.ty + i * 15, "text-anchor": "middle", class: "halo" }, g); t.textContent = ln; });
       } else if (n.nodeType === "phonebook") {   // FR119 / FR121: drawn as the DNS book; click area + selection = the closed book
         const B = bookGeom(n, bx), lt = bookLights(n, B, epoly);
+        const wr = SP && SP.P && SP.P.writes.find((w) => w.book === n.id); if (wr) { lt.update = null; lt.write = wr; }   // FR129: a runner writes it in this step
+        // FR133: a book a runner writes in this view's story opens the way it was written — spine left, the entry on the right-hand
+        // page — in every step and in the whole view, also when someone looks a name up from its right
+        const rd = SP && SP.P && SP.P.reads.find((w) => w.book === n.id); if (rd) { lt.ask = lt.answer = lt.update = null; lt.read = rd; }   // FR136: a runner looks it up in this step (it is the lights)
+        if (stepsNow().some((st) => (st.play || []).some((a) => a.write === n.id))) {
+          lt.dir = 1;
+          if (S.step != null && stepsNow()[S.step]) lt.update = null;   // FR134: in the story the runner brought the entry — no update light on any step
+          if (S.step != null && stepsNow()[S.step] && !wr && !rd) { lt.ask = lt.answer = null; lt.still = true; }   // FR136: …and it only opens to be written or read
+        }
         const rect = el("rect", { x: B.x, y: B.y, width: B.w, height: B.h, rx: 5, fill: "transparent", stroke: "none" }, g);
         if (S.sel === n.id) { rect.setAttribute("stroke", pal.stroke); rect.style.strokeWidth = 1.5; }
         const fn = lt.answer && node(lt.answer.far), fb = fn && boxOf[fn.id] && anchorBox(fn, boxOf[fn.id]);
@@ -1145,11 +1656,12 @@
       if (n.childDiagram && n.nodeType !== "phonebook") {   // (a phonebook has it on its cover, FR121)
         const d = el("text", { x: bx.x + bx.w - Math.max(8, r * 0.7), y: bx.y + 14, "text-anchor": "end", class: "drill" }, g); d.textContent = "⊕ open"; }
     }
-    for (const id in houses) if (node(id) && visible(node(id))) gatehouseGates(id, houses[id]);   // FR118: gates + lights, over the pipes
+    for (const id in houses) if (node(id) && visible(node(id))) gatehouseGates(id, houses[id], !visitorsNow(), S.step != null && !!stepsNow()[S.step]);   // FR118: gates + lights, over the pipes (FR126 / FR134)
     gEdges.appendChild(gSleeve);   // NT3: after all tunnels, still under the boxes
     gEdges.appendChild(pbUnder);   // FR121: lights coming into a book slide UNDER it
     gNodes.appendChild(gFront);   // FR102: "front" lines go above the gate badges too (an arrowhead on a gate stays visible)
     gNodes.appendChild(pbOver);   // FR121: the answer leaves over everything
+    drawStep(SP, boxOf);   // FR124: the active step's runners (over everything) and its caption
     // resize handles on the selected node — drag an edge (w/h) or a corner (diagonal)
     if (S.sel) { const sn = node(S.sel); if (sn && visible(sn) && boxOf[sn.id]) drawHandles(anchorBox(sn, boxOf[sn.id])); }   // FR99: on the icon
     if (selPoly) drawEndHandles(selPoly);
@@ -1452,14 +1964,78 @@
       for (const o of opts) {
         const b = document.createElement("button");
         b.textContent = o.label || o.value; b.className = S.toggle[t.id] === o.value ? "on" : "";
-        b.onclick = () => { S.toggle[t.id] = o.value; normalizeToggles(); writeHash(); dropHiddenSel(); buildToggles(); render();
+        b.onclick = () => { S.toggle[t.id] = o.value; normalizeToggles(); clampStep(); writeHash(); dropHiddenSel();
+          if (S.step != null) startStep(S.step); else { buildToggles(); render(); }   // FR125: a step starts over in the new view
           applyAnchor(); };   // FR104: the anchored box stays on its spot in every view
         seg.appendChild(b);
       }
       wrap.appendChild(seg); bar.appendChild(wrap);
     }
+    if (stepsNow().length) clampStep();   // FR124: this view's story — FR137: run from the caption bottom-right (drawStep), not from here
     bar.appendChild(anchorButton());   // FR104
     bar.appendChild(nailButton());     // FR106
+  }
+  const selObj = () => S.selEdge ? S.data.edges.find((e) => e.id === S.selEdge) : S.sel ? node(S.sel) : null;   // the selected box or line
+  function startStep(i) {   // FR124 / FR125: show step i from its start state (null = the whole view); the selection is kept so ☐ in step can add it
+    S.step = i; clampStep(); S.stepT0 = svg.getCurrentTime(); writeHash(); buildToggles(); render(); applyPause(); schedule();
+  }
+  function applyPause() {   // FR128: ⏸ stops the clock at once — everything freezes where it is; ▶ (or the whole view) runs it on from there
+    if (S.step != null && !S.play) svg.pauseAnimations(); else svg.unpauseAnimations();
+  }
+  // FR128: ⏪ / ⏩ move the story's clock — within a step by moving the page's clock, into another step by drawing that one with
+  // its start set back by how far in it is; back stops at the story's start, ahead goes round (3 → 0) like playing does
+  function seekBy(dt) {
+    const st = stepsNow(); if (S.step == null || !st.length) return;
+    let i = S.step, local = svg.getCurrentTime() - S.stepT0 + dt;
+    while (local < 0 && i > 0) { i -= 1; local += S.stepDurs[i]; }   // back into the steps before (drawStep keeps their lengths)
+    if (local < 0) local = 0;
+    if (i !== S.step) { S.step = i; S.stepT0 = svg.getCurrentTime() - local; writeHash(); buildToggles(); render(); }
+    else if (local < S.stepDur) svg.setCurrentTime(S.stepT0 + local);
+    while (local >= S.stepDur) {   // ahead into the next steps (a step's end is the next one's start) — each one's length is known once it is drawn
+      local -= S.stepDur; S.step = (S.step + 1) % st.length; S.stepT0 = svg.getCurrentTime() - local; writeHash(); buildToggles(); render();
+    }
+    applyPause(); schedule();
+  }
+  const SEEK = { dir: 0, t0: 0, last: 0, held: false, raf: 0 };   // a click on ⏪ / ⏩ = 2 s; held = 4× backwards / forwards
+  function seekStart(dir) { cancelAnimationFrame(SEEK.raf); Object.assign(SEEK, { dir, t0: performance.now(), held: false }); SEEK.raf = requestAnimationFrame(seekTick); }
+  function seekTick(now) {
+    if (!SEEK.dir) return;
+    if (now - SEEK.t0 > 250) {
+      if (!SEEK.held) { SEEK.held = true; SEEK.last = now; }
+      const dt = Math.min(0.1, (now - SEEK.last) / 1000); SEEK.last = now;
+      if (dt > 0) seekBy(SEEK.dir > 0 ? (S.play ? 3 : 4) * dt : -(S.play ? 5 : 4) * dt);   // the clock itself runs on while playing
+    }
+    SEEK.raf = requestAnimationFrame(seekTick);
+  }
+  function seekEnd() { if (!SEEK.dir) return; cancelAnimationFrame(SEEK.raf); if (!SEEK.held) seekBy(SEEK.dir * 2); SEEK.dir = 0; }
+  window.addEventListener("pointerup", seekEnd); window.addEventListener("pointercancel", seekEnd);
+  function schedule() {   // FR125: while playing, the next step follows as soon as this one's animation has run once (round and round)
+    clearTimeout(S.playTimer); S.playTimer = null;
+    const st = stepsNow(); if (!S.play || S.step == null || !st.length) return;
+    const i = S.step, left = Math.max(0.05, S.stepDur - (svg.getCurrentTime() - S.stepT0));
+    S.playTimer = setTimeout(() => { if (S.step === i && S.play) startStep((i + 1) % st.length); }, left * 1000);
+  }
+  function togglePlay() {
+    S.play = !S.play; writeHash(); buildToggles(); render(); applyPause(); schedule();
+    status(S.play ? "playing the steps one after another" : "paused — everything stops where it is; ⏪ ⏩ still move it");
+  }
+  function setStep(i) {
+    if (i == null && S.step != null) S.lastStep = S.step;   // FR137: ▶ step by step comes back to it
+    startStep(i);
+    const s = S.step != null && stepsNow()[S.step], o = selObj();
+    status(s ? `step <b>${S.step}</b> — ${s.title || s.id}${o && !visible(o) ? ` · <b>${o.id}</b> is not in this step — ☐ in step adds it` : ""}` : "the whole view");
+  }
+  $("stepenter").onclick = () => setStep(S.lastStep != null ? S.lastStep : 0);
+  function editCaption(body, s) {   // FR137: a double-click on the caption edits it in place — Enter (or clicking away) keeps it, Esc drops it
+    if (!S.backend || S.capEdit) return;
+    S.capEdit = s; clearTimeout(S.playTimer); S.playTimer = null;   // the story waits while you type
+    body.contentEditable = "true"; body.focus(); getSelection().selectAllChildren(body);
+    const done = (keep) => { if (S.capEdit !== s) return; S.capEdit = null; body.contentEditable = "false";
+      const v = body.textContent.replace(/\s+/g, " ").trim();
+      if (keep && v !== (s.caption || "")) { s.caption = v; markDirty(true); status(`caption of step <b>${S.step}</b> changed`); }
+      render(); schedule(); };
+    body.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === "Enter") { ev.preventDefault(); done(true); } else if (ev.key === "Escape") { ev.preventDefault(); done(false); } };
+    body.onblur = () => done(true);
   }
 
   /* ---------- breadcrumbs + picker ---------- */
@@ -1490,11 +2066,12 @@
   function writeHash() {
     let h = "#" + S.id;
     for (const t of toggles()) if (S.toggle[t.id] != null) h += `;${t.id}=${S.toggle[t.id]}`;
-    history.replaceState(null, "", h);
     // FR117: the ◧ link opens the test matrix filtered to this setup-map view (its columns = Install × Network,
     // its rows = Reach × Name — the same toggles); other diagrams link to the whole matrix.
     const ml = $("matrixlink");
     if (ml) ml.href = "index.html" + (S.id === "setup-map" ? h.replace(/^#setup-map;?/, "#") : "");
+    if (S.step != null && stepsNow().length) h += `;step=${S.step}` + (S.play ? "" : ";play=0");   // FR124 / FR125: the step (and a pause) are part of the link
+    history.replaceState(null, "", h);
   }
   function parseHash() {
     const parts = (location.hash || "").replace(/^#/, "").split(";");
@@ -1525,12 +2102,15 @@
       if (!S.data.meta) S.data.meta = { title: id, parent: null };
       S.id = id; S.sel = null; S.selEdge = null; markDirty(false); resetHistory();
       S.toggle = {}; for (const t of toggles()) S.toggle[t.id] = t.default;
-      if (toggleState) for (const k in toggleState) S.toggle[k] = toggleState[k];
-      normalizeToggles(); writeHash();
+      if (toggleState) for (const k in toggleState) if (k !== "step" && k !== "play") S.toggle[k] = toggleState[k];
+      S.step = toggleState && /^\d+$/.test(toggleState.step || "") ? +toggleState.step : null;   // FR124: #…;step=i
+      S.play = !(toggleState && toggleState.play === "0");   // FR125: ;play=0 = paused
+      clearTimeout(S.playTimer); S.stepT0 = svg.getCurrentTime();
+      normalizeToggles(); clampStep(); writeHash();
       buildCrumbs(); buildPicker(); buildToggles(); buildLegend();
       const v = savedView() || recallView(id); if (v) { S.view = { x: v.x, y: v.y, k: v.k }; applyView(); } else fit();   // FR112, FR94
       applyAnchor();   // FR104: an anchored box sits on its spot in this diagram too (its zoom kept)
-      render();
+      render(); applyPause(); schedule();   // FR125: a step opened from a link plays on (FR128: or stands still, paused)
       status(`loaded <b>${id}</b> — ${S.data.nodes.length} nodes, ${S.data.edges.length} edges`);
     } catch (e) { status(`could not load ${id}.json — ${e.message}`); }
   }
@@ -1582,6 +2162,7 @@
     const c = toWorld({ clientX: r.left + svg.clientWidth / 2, clientY: r.top + svg.clientHeight / 2 });
     S.data.nodes.push({ id, label: "new node", x: c.x - 80, y: c.y - 30, w: 160, h: 64, color: "note", icon: "", childDiagram: "" });
     const w = thisViewWhen(); if (w) S.data.nodes[S.data.nodes.length - 1].showWhen = w;   // FR113: only in the view it was added in
+    stepAdopt(id);   // FR124: and only from the active step on
     S.sel = id; S.selEdge = null; markDirty(true); render(); refreshSwatchSel();
     status(`added <b>${id}</b> — drag it, ✎ rename, ★ icon, colour`);
   }
@@ -1608,8 +2189,9 @@
         S.sel = null; S.selEdge = null; markDirty(true); render(); return;
       }
     }
-    if (S.selEdge) { S.data.edges = S.data.edges.filter((e) => e.id !== S.selEdge); status(`deleted edge ${S.selEdge}`); S.selEdge = null; markDirty(true); render(); return; }
+    if (S.selEdge) { S.data.edges = S.data.edges.filter((e) => e.id !== S.selEdge); stepForget(S.selEdge); status(`deleted edge ${S.selEdge}`); S.selEdge = null; markDirty(true); render(); return; }
     if (!S.sel) { status("nothing selected"); return; }
+    stepForget(S.sel); S.data.edges.filter((e) => e.from === S.sel || e.to === S.sel).forEach((e) => stepForget(e.id));   // FR124: gone from every step too
     S.data.nodes = S.data.nodes.filter((n) => n.id !== S.sel);
     S.data.edges = S.data.edges.filter((e) => e.from !== S.sel && e.to !== S.sel);
     S.data.nodes.forEach((n) => { if (n.container === S.sel) { delete n.container; delete n.containerWhen; delete n.snapSide; } });
@@ -1895,6 +2477,7 @@
         if (!S.pending.src) { S.pending.src = nid; status(`edge from <b>${nid}</b> — click the target`); }
         else if (nid !== S.pending.src) {
           S.data.edges.push({ id: uid("e", (x) => S.data.edges.some((e) => e.id === x)), from: S.pending.src, to: nid, label: "", kind: "plain" });
+          stepAdopt(S.data.edges[S.data.edges.length - 1].id);   // FR124
           S.pending = null; svg.classList.remove("addedge"); markDirty(true); render(); status("edge added — set its kind with ～");
         }
       }
@@ -1992,6 +2575,7 @@
         S.data.edges.push(e);
         applyTarget(e, "start", { ...src, pt: null }); applyTarget(e, "end", { ...tgt, pt: null });   // both ends exist first …
         applyTarget(e, "start", src); applyTarget(e, "end", tgt);                                    // … then the exact points
+        stepAdopt(id);   // FR124
         S.selEdge = id; S.sel = null; markDirty(true);
         status(`arrow <b>${src.pipe || src.id} → ${tgt.pipe || tgt.id}</b> added — set its direction in the box, or ✎ label`);
       } else { status("arrow cancelled (release on a target box or pipe)"); }
@@ -2217,12 +2801,13 @@
       if (!ok(it.from, it.fromOn) || !ok(it.to, it.toOn)) { status(`can't paste <b>${it.id}</b> here — this diagram has no <b>${!node(it.from) ? it.from : it.to}</b> to connect`); return; }
       it.id = uid("e", (x) => S.data.edges.some((e) => e.id === x)); S.data.edges.push(it); S.selEdge = it.id; S.sel = null;
     }
+    stepAdopt(it.id);   // FR124: a pasted item joins the active step
     markDirty(true); refreshSwatchSel(); render(); status(`pasted <b>${it.id}</b>${clip.from !== S.id ? ` (from ${clip.from})` : ""} — only in this view; 👁 show-when to widen`);
   }
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Control" || ev.key === "Meta") setCtrl(true);
-    const textField = ev.target.tagName === "TEXTAREA" || (ev.target.tagName === "INPUT" && !["range", "color", "button", "checkbox"].includes(ev.target.type));
+    const textField = ev.target.tagName === "TEXTAREA" || ev.target.isContentEditable || (ev.target.tagName === "INPUT" && !["range", "color", "button", "checkbox"].includes(ev.target.type));   // (FR137: the caption)
     if (textField) return;   // typing keeps the browser's own keys (incl. its own undo); sliders/pickers don't
     const mod = ev.ctrlKey || ev.metaKey, k = ev.key.toLowerCase();
     if (mod && !ev.altKey && (k === "z" || k === "y")) {   // FR97
@@ -2253,6 +2838,8 @@
       for (const sym of doc.querySelectorAll("symbol")) {
         const bb = (sym.getAttribute("data-bbox") || "").split(" ").map(Number);   // FR92: the glyph's drawn outline (24-grid)
         if (bb.length === 4 && bb.every((v) => !isNaN(v))) ICON_BOX[sym.id.replace(/^ic-/, "")] = bb;
+        const sc = (sym.getAttribute("data-screen") || "").split(" ").map(Number);   // FR127: where a picture can sit on it
+        if (sc.length === 4 && sc.every((v) => !isNaN(v))) ICON_SCREEN[sym.id.replace(/^ic-/, "")] = sc;
         $("defs").appendChild(sym);
       }
     } catch (_) {}

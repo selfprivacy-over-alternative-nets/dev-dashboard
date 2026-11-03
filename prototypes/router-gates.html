@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Router gates</title>
+<style>
+  :root { --bg: #0b0e14; --panel: #11151c; --border: #2a313c; --fg: #c9d1d9; --dim: #8b949e; --gold: #f0b429; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; padding: 0 16px 32px; }
+  h1 { font-size: 20px; margin: 20px 0 6px; }
+  h2 { font-size: 16px; margin: 26px 0 8px; color: var(--gold); }
+  p, li { color: var(--dim); max-width: 980px; }
+  b { color: var(--fg); }
+  table { border-collapse: collapse; margin: 6px 0 4px; font-size: 14px; }
+  td, th { border: 1px solid var(--border); padding: 5px 10px; text-align: left; vertical-align: top; }
+  th { color: var(--fg); background: var(--panel); }
+  td { color: var(--dim); }
+  .row { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; }
+  .card.wide { grid-column: 1 / -1; max-width: 780px; }
+  .card h3 { font-size: 14px; margin: 2px 0 2px; }
+  .card .d { color: var(--dim); font-size: 12px; min-height: 34px; margin-bottom: 4px; }
+  svg { display: block; width: 100%; height: auto; background: var(--bg); border-radius: 6px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Proposal: the router as a gatehouse, the phonebook, and when Direct IPv6 works</h1>
+<p>Every animation loops: <b>first</b> your friend's request (the white light) reaches your server; <b>then</b> a request
+hits a shut gate — it is stopped at the fire wall (it turns red and bounces).</p>
+
+<h2>1. The story in one picture — a phone analogy</h2>
+<table>
+  <tr><th>In the diagram</th><th>Plain words (the analogy)</th></tr>
+  <tr><td>Domain name / DNS</td><td>📖 <b>The phonebook</b>: your friend looks up "yourname" and finds your number.</td></tr>
+  <tr><td>Registrar (bought domain)</td><td>📖🐢 <b>A slow phonebook</b>: you change your number by hand on their website (most registrars, e.g. theory7).</td></tr>
+  <tr><td>DuckDNS</td><td>📖⚡ <b>A fast phonebook</b>: your server updates its own entry automatically, within minutes — free.</td></tr>
+  <tr><td>IP address</td><td>☎️ <b>The phone number</b>. IPv4: the whole house shares one number. IPv6: every device has its own.</td></tr>
+  <tr><td>Port-forward (NAT, IPv4)</td><td>🚧 <b>The receptionist</b> (barrier gate): "calls for extension 443 go to the server".</td></tr>
+  <tr><td>Router firewall</td><td>🔥 <b>The doorman</b> (a wall with flames — a <i>fire wall</i>): refuses every unknown caller unless you put the server on the list.</td></tr>
+  <tr><td>Tunnel (Tailscale, Cloudflare, Tor)</td><td>📞 <b>The server calls out</b> to a helper and keeps the line open; friends call the helper, who passes it on. The tunnel runs <b>over</b> both gates — nothing to open.</td></tr>
+</table>
+<ul>
+  <li><b>Port-forward (IPv4)</b>: open <b>both</b> gates — the doorman lets port 443 in, the receptionist sends it to the server.</li>
+  <li><b>Direct IPv6</b> is <b>not a tunnel</b>: the server has its own number, so there is <b>no receptionist</b> — but the
+    <b>doorman still blocks</b> callers until you open the fire wall for it. Only works for a <b>server at home</b>, on a router
+    whose settings you can change — <b>not</b> for a laptop moving from the supermarket to a café (new number every place,
+    and the café's doorman never lets your callers in).</li>
+  <li><b>Tunnels</b>: both gates stay shut; the tunnel goes <b>over</b> them, because your server started the call.</li>
+</ul>
+<div class="row" id="routes"></div>
+
+<h2>2. The phonebook (replaces "Buy a domain" / "DuckDNS" as boxes)</h2>
+<p>Your friend never types your ip: they look up <b>https://yourdomain.org</b> in a phonebook and get the ip to go to.
+When your ip changes, the phonebook must be updated: by <b>you, by hand</b> on the website of the 🐌 <b>slow phonebook</b>
+(most registrars, where you bought the domain), or <b>automatically by your server</b> in the ⚡ <b>fast phonebook</b>
+(DuckDNS). The book's colour is its cost, like everywhere in the diagram: red = costs money, orange = a service you depend
+on. Direct IPv6 and port-forward need a phonebook that keeps up; the tunnels don't (the helper's address never changes).</p>
+<div class="row"><div class="card wide"><svg id="book" viewBox="0 0 680 248"></svg></div>
+  <div class="card wide"><h3>The DNS phonebook as an icon (demo): one lookup</h3><div class="d">The white light is the https address your
+  friend asks for. It goes into the book, the book opens and flips to its page, finds the ip that matches, packs that ip into a
+  gray light and sends it on to your server.</div><svg id="bookIcon" viewBox="0 0 680 160"></svg></div></div>
+</main>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+// geometry: route y PY through the two gate windows (x G1, G2); the tunnel lane LY runs above them inside the router
+const T = 8, G1 = 135, G2 = 192, PY = 151, LY = 94, X0 = 50, XS = 294;   // XS = the server's centre (where a light ends)
+const frac = (x) => ((x - X0) / (XS - X0)).toFixed(3);
+const anim = (p, a) => el(a.motion ? "animateMotion" : a.transform ? "animateTransform" : "animate", { dur: T + "s", repeatCount: "indefinite", ...a.attrs }, p);
+const GREY = "#6e7681", BODY = "#252b33";
+let uid = 0;
+
+function flame(p, x, y, begin) {   // a small flickering flame standing on the bricks
+  const g = el("g", { transform: `translate(${x} ${y})` }, p), f = el("g", {}, g);
+  el("path", { d: "M0 0 C-4 0 -5 -3 -4 -6 C-3 -8 -1 -9 0 -12 C1 -9 4 -8 4 -5 C5 -2 3 0 0 0 Z", fill: "#f97316", stroke: "#7c2d12", "stroke-width": 0.6 }, f);
+  el("path", { d: "M0 0 C-2 0 -2.5 -2 -2 -3.5 C-1.5 -4.5 -0.5 -5 0 -7 C0.5 -5 2 -4.5 2 -3 C2.5 -1.5 1.5 0 0 0 Z", fill: "#fde047" }, f);
+  el("animateTransform", { attributeName: "transform", type: "scale", values: "1 1;1.12 0.88;0.92 1.12;1 1", dur: "0.8s", begin: begin + "s", repeatCount: "indefinite" }, f);
+}
+function router(svg) {   // the chosen "classic box", taller: a lane above the gate windows for tunnels
+  el("rect", { x: 92, y: 74, width: 144, height: 126, rx: 12, fill: BODY, stroke: GREY, "stroke-width": 3 }, svg);
+  for (const [x1, y1, x2, y2] of [[112, 74, 102, 44], [216, 74, 226, 44]]) el("line", { x1, y1, x2, y2, stroke: GREY, "stroke-width": 6, "stroke-linecap": "round" }, svg);
+  for (let i = 0; i < 4; i++) el("circle", { cx: 150 + i * 9, cy: 193, r: 2.2, fill: i % 2 ? "#3fb950" : "#58a6ff" }, svg);
+}
+function scene(svg, mode) {
+  const id = "c" + uid++, tunnel = mode === "tunnel";
+  // internet (left) + your server (right)
+  el("path", { d: `M18 ${PY + 8} a12 12 0 0 1 4-23 a16 16 0 0 1 30-4 a11 11 0 0 1 8 27 Z`, fill: "none", stroke: "#8b949e", "stroke-width": 3 }, svg);
+  el("text", { x: 38, y: PY + 28, "text-anchor": "middle", "font-size": 10, fill: "#8b949e" }, svg).textContent = "internet";
+  for (const y of [PY - 22, PY + 2]) el("rect", { x: 276, y, width: 36, height: 20, rx: 4, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  el("text", { x: XS, y: PY + 38, "text-anchor": "middle", "font-size": 10, fill: "#8b949e" }, svg).textContent = "your server";
+  const glow = el("circle", { cx: XS, cy: PY, r: 24, fill: "#fff3a0", opacity: 0 }, svg);
+  router(svg);
+  const win = (cx) => el("rect", { x: cx - 20, y: 116, width: 40, height: 70, rx: 4, fill: "#0b0e14", stroke: GREY, "stroke-width": 2 }, svg);
+  win(G1); if (mode !== "ipv6") win(G2);
+  // the direct way in, through the gates (for a tunnel: the unused front door — only strangers try it)
+  if (tunnel) el("line", { x1: X0 + 6, y1: PY, x2: 272, y2: PY, stroke: "#3a414b", "stroke-width": 4 }, svg);
+  else {
+    const col = mode === "ipv6" ? "#3b82f6" : "#eab308";
+    el("line", { x1: X0 + 6, y1: PY, x2: 272, y2: PY, stroke: "#0a140a", "stroke-width": 12 }, svg);
+    el("line", { x1: X0 + 6, y1: PY, x2: 272, y2: PY, stroke: col, "stroke-width": 7, opacity: 0.85 }, svg);
+  }
+  // gate 1: the fire wall — bricks with flames, slides down into the floor to open (clipped to its window)
+  const clip = el("clipPath", { id: id + "w" }, svg); el("rect", { x: G1 - 19, y: 117, width: 38, height: 68 }, clip);
+  const wall = el("g", { "clip-path": `url(#${id}w)` }, svg), wg = el("g", {}, wall);
+  el("rect", { x: G1 - 18, y: 118, width: 36, height: 66, fill: "#8a3b2a", stroke: "#0a140a", "stroke-width": 1.2 }, wg);
+  for (let r = 0; r < 6; r++) { const y = 118 + r * 11;
+    el("line", { x1: G1 - 18, y1: y, x2: G1 + 18, y2: y, stroke: "#5a2418", "stroke-width": 1.2 }, wg);
+    for (const bx of r % 2 ? [G1 - 6, G1 + 6] : [G1 - 12, G1, G1 + 12]) el("line", { x1: bx, y1: y, x2: bx, y2: y + 11, stroke: "#5a2418", "stroke-width": 1.2 }, wg); }
+  flame(wg, G1 - 8, 134, 0); flame(wg, G1 + 8, 142, 0.3); flame(wg, G1 - 2, 178, 0.55);
+  // gate 2: the boom barrier (the receptionist / port 443) — lifts to open
+  const bar = el("g", {}, svg);
+  if (mode !== "ipv6") {
+    el("rect", { x: G2 - 19, y: PY + 6, width: 7, height: 27, rx: 2, fill: "#c9d1d9" }, svg);
+    el("rect", { x: G2 - 17, y: PY - 4, width: 34, height: 8, rx: 3, fill: "#a3c55a", stroke: "#0a140a", "stroke-width": 1 }, bar);
+    for (const x of [G2 - 9, G2 + 1, G2 + 11]) el("rect", { x, y: PY - 4, width: 4, height: 8, fill: "#0b0e14" }, bar);
+    el("circle", { cx: G2 - 15, cy: PY, r: 3, fill: "#0b0e14" }, svg);
+  } else for (const [i, t] of ["no", "receptionist"].entries()) el("text", { x: G2, y: 132 + i * 11, "text-anchor": "middle", "font-size": 9, fill: "#8b949e" }, svg).textContent = t;
+  el("text", { x: G1, y: 214, "text-anchor": "middle", "font-size": 10, fill: "#c9d1d9" }, svg).textContent = "🔥 fire wall";
+  if (mode !== "ipv6") el("text", { x: G2, y: 214, "text-anchor": "middle", "font-size": 10, fill: "#c9d1d9" }, svg).textContent = "🚧 port 443";
+
+  const light = (color) => { const g = el("g", {}, svg); el("circle", { r: 9, fill: color, opacity: 0.3 }, g); el("circle", { r: 4.5, fill: color }, g); return g; };
+  const straight = `M${X0} ${PY} L${XS} ${PY}`;
+  if (tunnel) {
+    // the tunnel goes AROUND the gates: up on the left, over both shut windows, down on the right
+    const d = `M38 122 L38 ${LY} L224 ${LY} L224 ${PY} L${XS} ${PY}`;
+    el("path", { d, fill: "none", stroke: "#0a140a", "stroke-width": 13, "stroke-linejoin": "round" }, svg);
+    el("path", { d, fill: "none", stroke: "#8b949e", "stroke-width": 8, "stroke-linejoin": "round" }, svg);
+    el("path", { d, fill: "none", stroke: "#c9d1d9", "stroke-width": 1.5, "stroke-linejoin": "round", opacity: 0.5, transform: "translate(0 -2)" }, svg);
+    el("text", { x: 164, y: 111, "text-anchor": "middle", "font-size": 8.5, fill: "#c9d1d9" }, svg).textContent = "the tunnel goes over the gates";
+    el("text", { x: 160, y: 16, "text-anchor": "middle", "font-size": 10, fill: "#8b949e" }, svg).textContent = "1. your server calls out · 2. your friend comes in on that line";
+    const a = light("#ffffff");
+    anim(a, { motion: 1, attrs: { path: d, keyPoints: "1;1;0;0;0;1;1", keyTimes: "0;0.04;0.26;0.30;0.34;0.58;1", calcMode: "linear" } });
+    anim(a, { attrs: { attributeName: "opacity", values: "0;1;1;0;0;1;1;0;0", keyTimes: "0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1" } });
+    anim(glow, { attrs: { attributeName: "opacity", values: "0;0;0.55;0;0", keyTimes: "0;0.57;0.60;0.68;1" } });
+  } else {   // the gates open for your friend, then shut again
+    anim(wg, { transform: 1, attrs: { attributeName: "transform", type: "translate", values: "0 0;0 0;0 70;0 70;0 0;0 0", keyTimes: "0;0.08;0.13;0.30;0.35;1" } });
+    if (mode !== "ipv6") anim(bar, { transform: 1, attrs: { attributeName: "transform", type: "rotate",
+      values: [0, 0, -80, -80, 0, 0].map((a) => `${a} ${G2 - 15} ${PY}`).join(";"), keyTimes: "0;0.19;0.24;0.36;0.41;1" } });
+    const a = light("#ffffff"), p1 = frac(G1 - 24), p2 = frac(G2 - 24);
+    if (mode === "ipv6") anim(a, { motion: 1, attrs: { path: straight, keyPoints: `0;${p1};${p1};1;1`, keyTimes: "0;0.08;0.13;0.38;1", calcMode: "linear" } });
+    else anim(a, { motion: 1, attrs: { path: straight, keyPoints: `0;${p1};${p1};${p2};${p2};1;1`, keyTimes: "0;0.08;0.13;0.19;0.24;0.38;1", calcMode: "linear" } });
+    anim(a, { attrs: { attributeName: "opacity", values: "1;1;0;0", keyTimes: "0;0.38;0.41;1" } });
+    anim(glow, { attrs: { attributeName: "opacity", values: "0;0;0.55;0;0", keyTimes: "0;0.37;0.40;0.48;1" } });
+  }
+  // a request at a shut gate (for a tunnel: a stranger knocking on the front door) — stopped by the fire wall
+  const t0 = tunnel ? 0.66 : 0.55, b = light("#ffffff"), stop = frac(G1 - 24), back = frac(G1 - 54), k = (v) => (t0 + v).toFixed(3);
+  anim(b, { motion: 1, attrs: { path: straight, keyPoints: `0;0;${stop};${back};${back}`, keyTimes: `0;${k(0)};${k(0.13)};${k(0.20)};1`, calcMode: "linear" } });
+  anim(b, { attrs: { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: `0;${k(-0.01)};${k(0.01)};${k(0.17)};${k(0.23)};1` } });
+  for (const c of b.children) anim(c, { attrs: { attributeName: "fill", values: "#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes: `0;${k(0.12)};${k(0.14)};1` } });
+  const x = el("text", { x: G1 - 30, y: PY - 10, "text-anchor": "middle", "font-size": 18, fill: "#ff5c5c", opacity: 0 }, svg); x.textContent = "✕";
+  anim(x, { attrs: { attributeName: "opacity", values: "0;0;1;1;0;0", keyTimes: `0;${k(0.13)};${k(0.15)};${k(0.25)};${k(0.29)};1` } });
+}
+
+(function phonebook() {
+  const svg = document.getElementById("book"), DARK = "#0a140a", PAGE = "#f6f1e3";
+  const shade = (hex, f) => { const m = hex.replace("#", ""), h = (v) => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+    return "#" + h(parseInt(m.slice(0, 2), 16)) + h(parseInt(m.slice(2, 4), 16)) + h(parseInt(m.slice(4, 6), 16)); };
+  const defs = el("defs", {}, svg);
+  const head = (id, col, open) => { const m = el("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
+    el("path", open ? { d: "M0 0 L10 5 L0 10", fill: "none", stroke: col, "stroke-width": 2 } : { d: "M0 0 L10 5 L0 10 Z", fill: col }, m); };
+  head("ahG", "#c9d1d9"); head("ahR", "#e5484d", true); head("ahO", "#f97316");
+  const snail = (x, y) => { const g = el("g", { transform: `translate(${x} ${y})` }, svg);   // slow
+    el("path", { d: "M2 22 Q6 15 16 16 L34 16 Q39 16 38 22 Z", fill: "#c9b38f", stroke: DARK, "stroke-width": 1.2 }, g);
+    el("circle", { cx: 16, cy: 11, r: 9, fill: "#b07a3c", stroke: DARK, "stroke-width": 1.2 }, g);
+    el("path", { d: "M16 11 m-3 0 a3 3 0 1 1 3 3 a5.5 5.5 0 1 1 5.5 -5.5", fill: "none", stroke: DARK, "stroke-width": 1.1 }, g);
+    for (const [x2, y2] of [[37, 7], [41, 10]]) { el("line", { x1: 34, y1: 16, x2, y2, stroke: DARK, "stroke-width": 1.2 }, g); el("circle", { cx: x2, cy: y2, r: 1.6, fill: DARK }, g); } };
+  const bolt = (x, y) => el("polygon", { points: [[9, 0], [0, 15], [7, 15], [3, 28], [16, 10], [9, 10], [13, 0]].map(([a, b]) => `${x + a},${y + b}`).join(" "), fill: "#fde047", stroke: DARK, "stroke-width": 1.2 }, svg);   // fast
+  const bookIcon = (x, y, cover, entry, badge) => {   // a closed book: pages peeking out, spine, the entry on its cover
+    const w = 236, h = 88;
+    el("rect", { x: x + 5, y: y + 5, width: w, height: h, rx: 5, fill: PAGE, stroke: DARK, "stroke-width": 1.5 }, svg);
+    for (const k of [1.6, 3.2]) { el("line", { x1: x + w + 5 - k, y1: y + 10, x2: x + w + 5 - k, y2: y + h + 2, stroke: "#b9b2a2", "stroke-width": 0.8 }, svg);
+      el("line", { x1: x + 10, y1: y + h + 5 - k, x2: x + w + 2, y2: y + h + 5 - k, stroke: "#b9b2a2", "stroke-width": 0.8 }, svg); }
+    el("rect", { x, y, width: w, height: h, rx: 5, fill: cover, stroke: DARK, "stroke-width": 1.5 }, svg);
+    el("rect", { x, y, width: 15, height: h, rx: 5, fill: shade(cover, 0.7), stroke: DARK, "stroke-width": 1.5 }, svg);
+    for (const yy of [y + 12, y + h - 12]) el("line", { x1: x + 2, y1: yy, x2: x + 13, y2: yy, stroke: shade(cover, 1.3), "stroke-width": 1.5 }, svg);
+    el("text", { x: x + 15 + (w - 15) / 2, y: y + 19, "text-anchor": "middle", "font-size": 11, "font-weight": 700, "letter-spacing": 2, fill: "#ffffff" }, svg).textContent = "PHONEBOOK";
+    el("rect", { x: x + 24, y: y + 28, width: w - 34, height: 46, rx: 4, fill: PAGE }, svg);
+    el("text", { x: x + 32, y: y + 46, "font-size": 10, fill: "#1f2328", "font-family": "ui-monospace, monospace" }, svg).textContent = entry;
+    el("text", { x: x + 32, y: y + 63, "font-size": 10, fill: "#1f2328", "font-family": "ui-monospace, monospace" }, svg).textContent = "→ your ip, like: 123.45.67.89";
+    badge(x + w - 26, y - 16);
+  };
+  bookIcon(200, 24, "#e5484d", "https://yourdomain.org", snail);      // a bought domain at a registrar = costs money (red)
+  bookIcon(200, 150, "#f97316", "https://yourname.duckdns.org", bolt); // DuckDNS = a service you depend on (orange)
+  // your friend (phone), you (your computer), your server
+  el("rect", { x: 38, y: 112, width: 22, height: 38, rx: 4, fill: "none", stroke: "#f0b429", "stroke-width": 3 }, svg);
+  el("text", { x: 49, y: 168, "text-anchor": "middle", "font-size": 11, fill: "#8b949e" }, svg).textContent = "your friend";
+  el("rect", { x: 590, y: 22, width: 36, height: 24, rx: 3, fill: "none", stroke: "#58a6ff", "stroke-width": 3 }, svg);
+  el("rect", { x: 582, y: 48, width: 52, height: 5, rx: 2, fill: "#58a6ff" }, svg);
+  el("text", { x: 608, y: 68, "text-anchor": "middle", "font-size": 11, fill: "#8b949e" }, svg).textContent = "you";
+  for (const yy of [150, 174]) el("rect", { x: 592, y: yy, width: 36, height: 20, rx: 4, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  el("text", { x: 610, y: 210, "text-anchor": "middle", "font-size": 11, fill: "#8b949e" }, svg).textContent = "your server at home";
+  const line = (x1, y1, x2, y2, col, attrs) => el("line", { x1, y1, x2, y2, stroke: col, ...attrs }, svg);
+  const label = (x, y, t, col, anchor) => { el("text", { x, y, "text-anchor": anchor || "middle", "font-size": 11, fill: col }, svg).textContent = t; };
+  line(64, 122, 192, 70, "#c9d1d9", { "stroke-width": 2, "marker-end": "url(#ahG)" }); label(112, 82, "1. looks up the address", "#c9d1d9");
+  line(64, 140, 192, 196, "#c9d1d9", { "stroke-width": 2, "marker-end": "url(#ahG)" });
+  line(446, 130, 586, 160, "#c9d1d9", { "stroke-width": 2, "marker-end": "url(#ahG)" }); label(508, 128, "2. goes to that ip", "#c9d1d9");
+  // the two ways the book gets updated: you, by hand (an ACTION) — or your server, by itself (INFORMATION it sends)
+  line(584, 40, 448, 58, "#e5484d", { "stroke-width": 3, "stroke-dasharray": "9 6", "marker-end": "url(#ahR)" }); label(516, 32, "you edit this by hand", "#e5484d");
+  line(588, 186, 448, 206, "#f97316", { "stroke-width": 3, "stroke-dasharray": "0.1 7", "stroke-linecap": "round", "marker-end": "url(#ahO)" });
+  label(452, 236, "your server updates its own entry", "#f97316", "start");
+  // a lookup: friend → the (fast) phonebook … then from it to your server (hidden while "inside" the book)
+  const dot = el("circle", { r: 5, fill: "#ffffff" }, svg);
+  anim(dot, { motion: 1, attrs: { path: "M64 140 L192 196 L446 130 L586 160", keyPoints: "0;0.256;0.737;1;1", keyTimes: "0;0.3;0.42;0.65;1", calcMode: "linear" } });
+  anim(dot, { attrs: { attributeName: "opacity", values: "1;1;0;0;1;1;0;0", keyTimes: "0;0.29;0.31;0.41;0.43;0.64;0.67;1" } });
+})();
+
+(function phonebookIcon() {   // demo: the white light (an https address) goes in, the book opens, flips to its entry, sends the ip on as a gray light
+  const svg = document.getElementById("bookIcon"), DARK = "#0a140a", PAGE = "#f6f1e3", INK = "#1f2328", BAR = "#d6cfbd", EDGE = "#b9b2a2";
+  const TB = 9, SX = 285, BY = 62, W = 110, H = 78, CY = BY + H / 2 - 3, IP = "123.45.67.69", RED = "#e5484d", INSIDE = "#a03236", GRAY = "#9aa3ad";
+  const go = (e, attrs, kind) => anim(e, { motion: kind === "motion", transform: kind === "transform", attrs: { dur: TB + "s", ...attrs } });
+  const keys = (kv) => ({ keyTimes: kv.map((p) => p[0]).join(";"), values: kv.map((p) => p[1]).join(";") });
+  const fade = (e, kv) => go(e, { attributeName: "opacity", ...keys(kv) });
+  const txt = (p, x, y, t, a) => { const e = el("text", { x, y, ...a }, p); e.textContent = t; return e; };
+  const light = (col, tag) => { const g = el("g", { opacity: 0 }, svg);
+    return { g, halo: el("circle", { r: 9, fill: col, opacity: 0.3 }, g), core: el("circle", { r: 4.5, fill: col }, g), tag: txt(g, 0, -14, tag, { "text-anchor": "middle", "font-size": 10, fill: col }) }; };
+  // your friend (phone) → the phonebook → your server, on one track
+  for (const [x1, x2] of [[64, SX], [SX + W + 5, 606]]) el("line", { x1, y1: CY, x2, y2: CY, stroke: "#30363d", "stroke-width": 4 }, svg);
+  el("rect", { x: 38, y: CY - 19, width: 22, height: 38, rx: 4, fill: "none", stroke: "#f0b429", "stroke-width": 3 }, svg);
+  txt(svg, 49, CY + 38, "your friend", { "text-anchor": "middle", "font-size": 11, fill: "#8b949e" });
+  for (const y of [CY - 22, CY + 2]) el("rect", { x: 610, y, width: 36, height: 20, rx: 4, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  txt(svg, 628, CY + 38, "your server", { "text-anchor": "middle", "font-size": 11, fill: "#8b949e" });
+  const glow = el("circle", { cx: 628, cy: CY, r: 26, fill: "#fff3a0", opacity: 0 }, svg);
+  // 1. the white light (the https address) goes into the closed book — drawn under it, so it slides in
+  const ask = light("#ffffff", "https://yourdomain.org");
+  go(ask.g, { path: `M62 ${CY} L${SX + 30} ${CY}`, keyPoints: "0;1;1", keyTimes: "0;0.15;1", calcMode: "linear" }, "motion");
+  fade(ask.g, [[0, 0], [0.02, 1], [0.15, 1], [0.17, 0], [1, 0]]);
+  // 2. the book opens and flips through its pages: each turn folds its right face into the spine, then unfolds its left face
+  const page = (g, x, letter) => { el("rect", { x, y: BY, width: W, height: H, fill: PAGE, stroke: EDGE, "stroke-width": 0.8 }, g);
+    if (letter) txt(g, x + W / 2, BY + 11, letter, { "text-anchor": "middle", "font-size": 9, "font-weight": 700, fill: "#9a917d" }); };
+  const rows = (g, x, ys) => ys.forEach((y, i) => { el("rect", { x: x + 7, y, width: 24 + (i * 11) % 22, height: 2.4, rx: 1, fill: BAR }, g);
+    el("rect", { x: x + W - 33, y, width: 26, height: 2.4, rx: 1, fill: BAR }, g); });   // other people's entries: name … number
+  const ROWS = [0, 1, 2, 3, 4, 5, 6].map((i) => BY + 19 + i * 8);
+  const AT = [0.18, 0.25, 0.30, 0.35], HALF = [0.03, 0.022, 0.022, 0.022], C0 = 0.55, C1 = 0.58, C2 = 0.61;   // turn i (0 = the cover) starts at AT[i]; the book shuts C0 → C2
+  const turn = (i, side, draw) => { const g = el("g", {}, el("g", { transform: `translate(${SX} 0)` }, svg)), a = AT[i], h = HALF[i];
+    draw(g);
+    const kv = side === "left" ? [[0, "0 1"], [a + h, "0 1"], [a + 2 * h, "1 1"], [C0, "1 1"], [C1, "0 1"], [1, "0 1"]]
+      : i ? [[0, "1 1"], [a, "1 1"], [a + h, "0 1"], [C2, "0 1"], [C2 + 0.005, "1 1"], [1, "1 1"]]   // a page's front comes back under the shut cover
+      : [[0, "1 1"], [a, "1 1"], [a + h, "0 1"], [C1, "0 1"], [C2, "1 1"], [1, "1 1"]];
+    go(g, { attributeName: "transform", type: "scale", ...keys(kv) }, "transform"); };
+  el("rect", { x: SX, y: BY - 3, width: W + 5, height: H + 7, rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 }, svg);   // the back cover
+  page(svg, SX, "Y"); rows(svg, SX, [BY + 55, BY + 62, BY + 69]);   // the last page: the entry for yourdomain.org
+  const hl = el("rect", { x: SX + 5, y: BY + 17, width: W - 10, height: 31, rx: 3, fill: "#fde68a", opacity: 0 }, svg);
+  const mono = { "font-size": 9, fill: INK, "font-family": "ui-monospace, monospace" };
+  txt(svg, SX + 19, BY + 30, "yourdomain.org", mono); txt(svg, SX + 19, BY + 42, "ip " + IP, { ...mono, "font-weight": 700 });
+  const hit = el("circle", { cx: SX + 12, cy: BY + 27, r: 9, fill: "#ffffff", stroke: INK, "stroke-width": 1, opacity: 0 }, svg);   // the white light, landed on its entry
+  for (const [i, l] of [[3, "P"], [2, "H"], [1, "A"]]) turn(i, "right", (g) => { page(g, 0, l); rows(g, 0, ROWS); });
+  turn(0, "right", (g) => {   // the front cover
+    el("rect", { x: 0, y: BY - 3, width: W, height: H, rx: 4, fill: RED, stroke: DARK, "stroke-width": 1.5 }, g);
+    el("rect", { x: 0, y: BY - 3, width: 11, height: H, rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 }, g);
+    for (const y of [BY + 7, BY + H - 13]) el("line", { x1: 2, y1: y, x2: 9, y2: y, stroke: "#ff5e64", "stroke-width": 1.5 }, g);
+    [["DNS", 15, CY - 1], ["PHONEBOOK", 10.5, CY + 13]].forEach(([t, size, y]) => txt(g, 11 + (W - 11) / 2, y, t, { "text-anchor": "middle", "font-size": size, "font-weight": 700, "letter-spacing": 1.5, fill: "#ffffff" })); });
+  turn(0, "left", (g) => el("rect", { x: -W - 5, y: BY - 3, width: W + 5, height: H + 7, rx: 4, fill: INSIDE, stroke: DARK, "stroke-width": 1.5 }, g));
+  for (const i of [1, 2, 3]) turn(i, "left", (g) => { page(g, -W); rows(g, -W, ROWS); });
+  // 3. found: the white light's address matches an ip
+  fade(hl, [[0, 0], [0.40, 0], [0.42, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
+  fade(hit, [[0, 0], [0.39, 0], [0.40, 1], [C2, 1], [C2 + 0.01, 0], [1, 0]]);
+  go(hit, { attributeName: "r", ...keys([[0, 9], [0.39, 9], [0.42, 3.4], [1, 3.4]]) });
+  const cap = txt(svg, SX, BY - 20, "", { "text-anchor": "middle", "font-size": 12, opacity: 0 });
+  for (const [t, fill] of [["✓ ", "#3fb950"], ["https://yourdomain.org", "#ffffff"], [" matches ", "#8b949e"], ["ip " + IP, GRAY]]) el("tspan", { fill }, cap).textContent = t;
+  fade(cap, [[0, 0], [0.41, 0], [0.43, 1], [0.62, 1], [0.65, 0], [1, 0]]);
+  // 4. the ip is packed into a gray light (its halo shrinks onto it) and travels on to your server
+  const out = light(GRAY, "ip " + IP);
+  go(out.g, { path: `M${SX + 60} ${BY + 39} L600 ${CY}`, keyPoints: "0;0;1;1", keyTimes: `0;${C0};0.78;1`, calcMode: "linear" }, "motion");
+  fade(out.g, [[0, 0], [0.47, 0], [0.48, 1], [0.78, 1], [0.80, 0], [1, 0]]);
+  go(out.halo, { attributeName: "r", ...keys([[0, 26], [0.48, 26], [0.53, 9], [1, 9]]) });
+  go(out.core, { attributeName: "r", ...keys([[0, 0], [0.49, 0], [0.53, 4.5], [1, 4.5]]) });
+  fade(out.tag, [[0, 0], [0.635, 0], [0.655, 1], [1, 1]]);   // once the light is clear of the book
+  fade(glow, [[0, 0], [0.78, 0], [0.80, 0.55], [0.88, 0], [1, 0]]);
+})();
+
+const routes = document.getElementById("routes");
+for (const [title, desc, mode] of [["Port-forward (IPv4)", "You open BOTH: the doorman lets port 443 in, the receptionist sends it to the server.", "portfwd"],
+  ["Direct IPv6 — server at home only", "Own number, so no receptionist — but you still open the doorman (fire wall). Not a tunnel.", "ipv6"],
+  ["Tunnel (Tailscale / Cloudflare / Tor)", "Both gates stay shut: the tunnel runs over them, because your server called out first. Nothing to open.", "tunnel"]]) {
+  const c = document.createElement("div"); c.className = "card"; c.innerHTML = `<h3>${title}</h3><div class="d">${desc}</div>`;
+  const s = el("svg", { viewBox: "0 0 320 222" }); c.appendChild(s); routes.appendChild(c); scene(s, mode);
+}
+</script>
+</body>
+</html>

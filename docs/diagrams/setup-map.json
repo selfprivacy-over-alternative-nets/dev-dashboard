@@ -381,85 +381,52 @@
       "to": "tn4"
     },
     {
+      "_H": true,
       "cost": "central",
-      "dir": "to",
+      "dir": "both",
       "from": "duck",
       "id": "e_duck",
       "kind": "plain",
-      "label": "your friend looks up your ip",
-      "mo": 280,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "showWhen": {
-        "name": [
-          "duckdns"
-        ],
-        "reach": [
-          "ipv6",
-          "portfwd"
-        ]
-      },
-      "to": "friend"
+      "to": "inet"
     },
     {
-      "cost": "paid",
+      "cost": "central",
       "dir": "to",
-      "eo": 11,
-      "from": "buy",
+      "eo": 58,
+      "from": "relayCF",
       "id": "e1",
       "kind": "plain",
-      "label": "",
+      "label": "Cloudflare writes your name",
       "role": "info",
-      "so": 11,
-      "to": "relayCF"
+      "so": 40.3,
+      "to": "cfbook"
     },
     {
-      "cost": "central",
-      "dir": "from",
-      "eo": 12,
-      "from": "cffree",
-      "id": "e2",
-      "kind": "plain",
-      "label": "",
-      "role": "info",
-      "so": 12,
-      "to": "relayCF"
-    },
-    {
-      "bp": {
-        "dx": 108,
-        "dy": -168
-      },
       "cost": "central",
       "dir": "to",
-      "eo": 31,
+      "eo": 58,
+      "from": "relayCF",
+      "id": "e2",
+      "kind": "plain",
+      "label": "Cloudflare writes a random name",
+      "role": "info",
+      "so": 40.3,
+      "to": "trybook"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "eo": 58,
       "from": "relayTS",
       "id": "e3",
       "kind": "plain",
-      "label": "",
-      "lw": 9,
+      "label": "Tailscale writes your name",
       "role": "info",
-      "so": 5,
-      "to": "tsname"
-    },
-    {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
-      "cost": "paid",
-      "dir": "to",
-      "eo": -56,
-      "from": "buy",
-      "id": "e4",
-      "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 278,
-      "role": "info",
-      "so": 92,
-      "ss": 658,
-      "to": "friend"
+      "so": 9.1,
+      "to": "tsbook"
     },
     {
       "cost": "free",
@@ -475,20 +442,24 @@
       "to": "pfwarn"
     },
     {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
+      "_H": true,
       "cost": "paid",
       "dir": "to",
-      "eo": -189,
       "from": "buy",
       "id": "e7",
       "kind": "plain",
       "label": "",
       "lw": 5,
+      "mo": 27,
       "role": "info",
-      "so": -23,
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ]
+      },
+      "so": 20,
       "to": "server"
     },
     {
@@ -512,22 +483,15 @@
       "z": "front"
     },
     {
-      "bp": {
-        "dx": 1048,
-        "dy": 462
-      },
       "cost": "paid",
       "dir": "to",
-      "eo": 29,
-      "es": 19,
+      "eo": -20,
       "from": "you",
       "id": "e8",
       "kind": "plain",
       "label": "",
-      "mo": 12,
+      "mo": -362,
       "role": "action",
-      "so": -130,
-      "ss": 21,
       "to": "buy"
     },
     {
@@ -569,115 +533,53 @@
       "to": "duck"
     },
     {
-      "bp": {
-        "dx": 1048,
-        "dy": 462
-      },
+      "_H": true,
       "cost": "central",
-      "dir": "to",
-      "eo": -19,
-      "es": 19,
-      "from": "you",
-      "id": "e_try_you",
-      "kind": "plain",
-      "label": "",
-      "role": "action",
-      "so": -144,
-      "ss": -40,
-      "to": "cffree"
-    },
-    {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
-      "cost": "central",
-      "dir": "to",
-      "eo": -99,
-      "es": -26,
-      "from": "cffree",
-      "id": "e_try_srv",
-      "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "role": "info",
-      "so": 8,
-      "to": "server"
-    },
-    {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
-      "cost": "central",
-      "dir": "to",
-      "eo": -56,
-      "from": "cffree",
+      "dir": "both",
+      "from": "trybook",
       "id": "e_try_friend",
       "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 271,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 638,
-      "to": "friend"
+      "to": "inet"
     },
     {
-      "bp": {
-        "dx": -844,
-        "dy": 550
-      },
       "cost": "central",
       "dir": "to",
-      "eo": -17,
-      "es": 19,
       "from": "you",
       "id": "e_ts_you",
       "kind": "plain",
-      "label": "",
+      "label": "make an account, copy a key",
+      "lw": 5,
+      "mo": -168,
       "role": "action",
-      "so": -142,
-      "ss": -40,
-      "to": "tsname"
+      "to": "tskey"
     },
     {
-      "bp": {
-        "dx": -4,
-        "dy": 62
-      },
+      "_H": false,
       "cost": "central",
       "dir": "to",
-      "eo": -99,
-      "from": "tsname",
+      "from": "tskey",
       "id": "e_ts_srv",
       "kind": "plain",
-      "label": "",
+      "label": "pasted at the end, sent to your server",
       "lw": 5,
+      "mo": 113.7,
       "role": "info",
-      "so": 8,
       "to": "server"
     },
     {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
+      "_H": true,
       "cost": "central",
-      "dir": "to",
-      "eo": -56,
-      "from": "tsname",
+      "dir": "both",
+      "from": "tsbook",
       "id": "e_ts_friend",
       "kind": "plain",
-      "label": "",
-      "lw": 5,
-      "mo": 278,
+      "label": "your friend looks up the ip",
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 644,
-      "to": "friend"
+      "to": "inet"
     },
     {
       "eo": 10,
@@ -736,24 +638,17 @@
       "to": "pbook"
     },
     {
-      "ah": 28,
-      "bp": {
-        "dx": -1289,
-        "dy": 463
-      },
+      "_H": true,
       "cost": "paid",
-      "dir": "to",
-      "eo": -56,
+      "dir": "both",
       "from": "pbook",
       "id": "e_pb_friend",
       "kind": "plain",
-      "label": "your friend looks up your ip",
+      "label": "your friend looks up the ip",
       "lw": 5,
-      "mo": 278,
+      "mo": 148,
       "role": "info",
-      "so": 92,
-      "ss": 658,
-      "to": "friend"
+      "to": "inet"
     },
     {
       "bp": {
@@ -811,9 +706,173 @@
       "role": "action",
       "so": 50,
       "to": "v6warnVM"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "from": "buy",
+      "id": "e_cf_move",
+      "kind": "plain",
+      "lw": 5,
+      "role": "action",
+      "so": 48,
+      "to": "cfbook"
+    },
+    {
+      "cost": "central",
+      "dir": "to",
+      "from": "you",
+      "id": "e_cf_you",
+      "kind": "plain",
+      "label": "account + tunnel → copy its token",
+      "lw": 5,
+      "mo": -129,
+      "role": "action",
+      "to": "cftoken"
+    },
+    {
+      "_H": false,
+      "cost": "central",
+      "dir": "to",
+      "from": "cftoken",
+      "id": "e_cf_tok",
+      "kind": "plain",
+      "label": "pasted into the install",
+      "lw": 5,
+      "mo": 91.7,
+      "role": "info",
+      "to": "server"
+    },
+    {
+      "_H": true,
+      "cost": "central",
+      "dir": "both",
+      "from": "cfbook",
+      "id": "e_cf_net",
+      "kind": "plain",
+      "label": "your friend looks up the ip",
+      "mo": 148,
+      "role": "info",
+      "to": "inet"
+    },
+    {
+      "_H": true,
+      "cost": "paid",
+      "dir": "to",
+      "eo": -26.5,
+      "from": "buy",
+      "id": "e7vm",
+      "kind": "plain",
+      "label": "",
+      "lw": 5,
+      "mo": 209.2,
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ]
+      },
+      "so": 20,
+      "to": "server"
+    },
+    {
+      "cost": "central",
+      "dir": "both",
+      "eo": 21,
+      "from": "you",
+      "id": "e4",
+      "kind": "plain",
+      "label": "",
+      "mo": 382,
+      "role": "action",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "so": 648,
+      "to": "relayTS"
+    },
+    {
+      "_H": true,
+      "cost": "free",
+      "dir": "to",
+      "ef": 0,
+      "eo": -510.5,
+      "es": 100,
+      "from": "you",
+      "id": "e_share",
+      "kind": "plain",
+      "label": "you send your friend the link",
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "so": -275,
+      "ss": -41,
+      "to": "friend"
+    },
+    {
+      "_H": true,
+      "cost": "free",
+      "dir": "to",
+      "ef": 0,
+      "eo": -510.5,
+      "es": 100,
+      "from": "you",
+      "id": "e_sharevm",
+      "kind": "plain",
+      "label": "you send your friend the link",
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "so": -322.5,
+      "ss": -60,
+      "to": "friend"
+    },
+    {
+      "_H": true,
+      "color": "#8b949e",
+      "from": "backupdev",
+      "id": "e_backup",
+      "kind": "pipe",
+      "label": "",
+      "role": "tunnel",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "to": "inet"
     }
   ],
   "meta": {
+    "images": {
+      "jitsi": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTI2LjY2NjUgMi42NjY2M0g1LjMzMzE3QzMuODY2NSAyLjY2NjYzIDIuNjc5ODQgMy44NjY2MyAyLjY3OTg0IDUuMzMzMjlMMi42NjY1IDI5LjMzMzNMNy45OTk4NCAyNEgyNi42NjY1QzI4LjEzMzIgMjQgMjkuMzMzMiAyMi44IDI5LjMzMzIgMjEuMzMzM1Y1LjMzMzI5QzI5LjMzMzIgMy44NjY2MyAyOC4xMzMyIDIuNjY2NjMgMjYuNjY2NSAyLjY2NjYzWk0yNi42NjY1IDIxLjMzMzNINi44OTMxN0w1LjMzMzE3IDIyLjg5MzNWNS4zMzMyOUgyNi42NjY1VjIxLjMzMzNaTTE4LjY2NjUgMTQuMTMzM0wyMi42NjY1IDE3LjMzMzNWOS4zMzMyOUwxOC42NjY1IDEyLjUzMzNWOS4zMzMyOUg5LjMzMzE3VjE3LjMzMzNIMTguNjY2NVYxNC4xMzMzWiIgZmlsbD0iI2ZmZmZmZiIvPgo8L3N2Zz4K",
+      "keepass": "data:image/png;base64,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",
+      "selfprivacy": "data:image/png;base64,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"
+    },
     "parent": null,
     "title": "Setup map",
     "toggles": [
@@ -960,12 +1019,47 @@
             "tailscale": []
           }
         }
+      },
+      {
+        "default": "first",
+        "id": "scenario",
+        "label": "Scenario",
+        "options": [
+          {
+            "label": "First install",
+            "value": "first"
+          },
+          {
+            "label": "Reinstall",
+            "value": "reinstall"
+          },
+          {
+            "label": "Restore a backup",
+            "value": "restore"
+          }
+        ],
+        "optionsWhen": {
+          "reach": {
+            "tailscale": [
+              "first",
+              "reinstall",
+              "restore"
+            ]
+          }
+        },
+        "sameLayout": [
+          [
+            "first",
+            "reinstall",
+            "restore"
+          ]
+        ]
       }
     ],
     "view": {
-      "cx": 993.3,
-      "cy": 166.9,
-      "k": 1.051
+      "cx": 946.5,
+      "cy": 246.6,
+      "k": 0.759
     }
   },
   "nodes": [
@@ -991,10 +1085,11 @@
         ]
       },
       "h": 163,
-      "icon": "server",
+      "icon": "laptop",
       "id": "server",
       "label": "Your new\nprivate server",
       "nodeType": "device",
+      "screen": "img:selfprivacy",
       "w": 147,
       "x": 432,
       "y": -61
@@ -1073,22 +1168,6 @@
       "y": 546
     },
     {
-      "color": "orange",
-      "h": 60,
-      "icon": "tag",
-      "id": "tsname",
-      "label": "Free name: *.ts.net\n(nothing to buy)",
-      "nodeType": "info",
-      "showWhen": {
-        "reach": [
-          "tailscale"
-        ]
-      },
-      "w": 230,
-      "x": 776,
-      "y": -135
-    },
-    {
       "color": "created",
       "h": 94,
       "icon": "relay",
@@ -1103,25 +1182,6 @@
       "w": 190,
       "x": 790,
       "y": 550
-    },
-    {
-      "color": "orange",
-      "h": 60,
-      "icon": "",
-      "id": "cffree",
-      "label": "Free *.trycloudflare.com\n(random name, no account)",
-      "nodeType": "info",
-      "showWhen": {
-        "name": [
-          "trycf"
-        ],
-        "reach": [
-          "cloudflare"
-        ]
-      },
-      "w": 230,
-      "x": 776,
-      "y": -135
     },
     {
       "color": "note",
@@ -1163,10 +1223,10 @@
     {
       "childDiagram": "registrar",
       "color": "red",
-      "h": 85,
+      "h": 100,
       "icon": "cart",
       "id": "buy",
-      "label": "Buy a domain\n(registrar, €/yr)",
+      "label": "Buy a domain\n(registrar, €/yr)\nthen once, by hand: point it\nto Cloudflare's phonebook",
       "nodeType": "action",
       "showWhen": {
         "name": [
@@ -1176,20 +1236,31 @@
           "cloudflare"
         ]
       },
-      "w": 244,
-      "x": 747,
-      "y": -134
+      "w": 240,
+      "x": 700,
+      "y": -360
     },
     {
       "badge": "bolt",
       "color": "orange",
       "entry": "https://yourname.duckdns.org\n→ your ip, like: 123.45.67.89",
+      "entryWhen": {
+        "reach": {
+          "ipv6": "https://yourname.duckdns.org\n→ your ip, like: 2001:db8::1"
+        }
+      },
       "h": 140,
       "id": "duck",
       "label": "DuckDNS (free)",
       "lights": {
-        "answer": "e_duck_srv",
-        "ask": "e_duck",
+        "answer": [
+          "e_duck",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_duck"
+        ],
         "update": "e_duck_srv"
       },
       "nodeType": "phonebook",
@@ -1315,8 +1386,8 @@
         ]
       },
       "w": 300,
-      "x": 938,
-      "y": -32
+      "x": 1295,
+      "y": -150
     },
     {
       "color": "red",
@@ -1340,10 +1411,10 @@
     },
     {
       "color": "red",
-      "h": 215,
+      "h": 230,
       "icon": "warn",
       "id": "tswarn",
-      "label": "Free Tailscale Funnel = at a company\n• needs a Tailscale account (Google/GitHub/… login)\n• name is <machine>.<tailnet>.ts.net — no own domain\n• ONE name only → the app's API, not the\n  cloud. / git. / matrix. / meet. services\n• bandwidth limits (not published) · still beta\n• a new name can take ~10 min to work\n• reinstall → new name, old links stop working\n  (until the box keeps its Tailscale state)",
+      "label": "Free Tailscale Funnel = at a company\n• needs a Tailscale account (Google/GitHub/… login)\n• address: selfprivacy.<tailnet>.ts.net\n  (no own domain)\n• switch Funnel on once, in your browser\n• ONE name only → the app's API, not the\n  cloud. / git. / matrix. / meet. services\n• bandwidth limits (not published) · still beta\n• a new name can take ~10 min to work\n• the relay passes your traffic on but can't\n  read it (the encryption ends on your server)",
       "nodeType": "info",
       "showWhen": {
         "reach": [
@@ -1351,8 +1422,8 @@
         ]
       },
       "w": 310,
-      "x": 956,
-      "y": -55
+      "x": 1295,
+      "y": -150
     },
     {
       "color": "note",
@@ -1688,12 +1759,23 @@
       "childDiagram": "registrar",
       "color": "red",
       "entry": "https://yourdomain.org\n→ your ip, like: 123.45.67.89",
+      "entryWhen": {
+        "reach": {
+          "ipv6": "https://yourdomain.org\n→ your ip, like: 2001:db8::1"
+        }
+      },
       "h": 140,
       "id": "pbook",
       "label": "Buy a domain\n(registrar, €/yr)",
       "lights": {
-        "answer": "e_pb_srv",
-        "ask": "e_pb_friend"
+        "answer": [
+          "e_pb_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_pb_friend"
+        ]
       },
       "nodeType": "phonebook",
       "showWhen": {
@@ -1748,6 +1830,1028 @@
       "w": 270,
       "x": 70,
       "y": 445
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://selfprivacy.tail1234.ts.net\n→ Tailscale's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "tsbook",
+      "label": "Tailscale (free)",
+      "lights": {
+        "answer": [
+          "e_ts_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_ts_friend"
+        ],
+        "update": "e3"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "orange",
+      "h": 88,
+      "icon": "key",
+      "id": "tskey",
+      "label": "Auth key: tskey-auth-…\none-time entry ticket, used\nup when the server joins",
+      "nodeType": "info",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 220,
+      "x": 395,
+      "y": -238
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://yourdomain.org\n→ Cloudflare's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "cfbook",
+      "label": "Cloudflare",
+      "lights": {
+        "answer": [
+          "e_cf_net",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_cf_net"
+        ],
+        "update": "e1"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "orange",
+      "h": 80,
+      "icon": "key",
+      "id": "cftoken",
+      "label": "Tunnel token\n(from your Cloudflare account)",
+      "nodeType": "info",
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 220,
+      "x": 395,
+      "y": -230
+    },
+    {
+      "badge": "bolt",
+      "color": "orange",
+      "entry": "https://pink-owl-sky.trycloudflare.com\n→ Cloudflare's relay, like: 98.76.54.32",
+      "h": 140,
+      "id": "trybook",
+      "label": "Cloudflare (free)",
+      "lights": {
+        "answer": [
+          "e_try_friend",
+          "e_friend"
+        ],
+        "ask": [
+          "e_friend",
+          "e_try_friend"
+        ],
+        "update": "e2"
+      },
+      "nodeType": "phonebook",
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "w": 262,
+      "x": 737,
+      "y": -172
+    },
+    {
+      "color": "red",
+      "h": 275,
+      "hideIn": [
+        "method=cable;net=0a;reach=tailscale;scenario=first"
+      ],
+      "icon": "warn",
+      "id": "tslife",
+      "label": "Keeping the same address\n• the key is used once; after that the\n  server proves who it is with its own\n  ID file on its disk (tailscaled.state)\n• reboot / new home ip: same machine,\n  same address — but today the tunnel\n  only comes back when you re-run the\n  finish step\n• reinstall wipes the ID file → a new\n  machine selfprivacy-1, old links stop\n  working: delete the old machine first\n  (fix planned: keep the ID file)\n• its login runs out after 180 days:\n  switch off key expiry on Tailscale's\n  Machines page",
+      "nodeType": "info",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ]
+      },
+      "w": 280,
+      "x": 50,
+      "y": 215
+    },
+    {
+      "color": "green",
+      "h": 167,
+      "icon": "laptop",
+      "id": "backupdev",
+      "label": "SelfPrivacy\nbackup device",
+      "nodeType": "device",
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "w": 137,
+      "x": 1000,
+      "y": -10
+    }
+  ],
+  "steps": [
+    {
+      "caption": "First you make a Tailscale account and get a one-time auth key from Tailscale.",
+      "id": "ts0",
+      "label": "account",
+      "play": [
+        {
+          "run": "e4"
+        },
+        {
+          "pop": "account ✓"
+        },
+        {
+          "get": "key"
+        },
+        {
+          "back": true,
+          "run": "e4"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "inet",
+        "relayTS",
+        "e_ts_run",
+        "e4"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Make a Tailscale account"
+    },
+    {
+      "caption": "You give the one-time auth key you got from Tailscale to your SelfPrivacy server. That machine registers itself at Tailscale, which keeps a copy of its IP address, and gets a domain name.",
+      "id": "ts1",
+      "label": "install",
+      "play": [
+        {
+          "get": [
+            "key",
+            "light"
+          ]
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "get": "ip"
+        },
+        {
+          "run": "e_ts_up"
+        },
+        {
+          "scene": {
+            "A": "idkey",
+            "B": [
+              "domain",
+              "domain"
+            ]
+          }
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "copy": true,
+          "in": "S.bottom",
+          "put": "ip"
+        },
+        {
+          "walk": "A"
+        },
+        {
+          "in": "A.lock",
+          "put": "key"
+        },
+        {
+          "open": "A"
+        },
+        {
+          "fire": true
+        },
+        {
+          "from": "A.lock",
+          "take": "key"
+        },
+        {
+          "in": "F",
+          "throw": "key"
+        },
+        {
+          "from": "A",
+          "take": "idkey"
+        },
+        {
+          "close": "A"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "in": "B.lock",
+          "put": "idkey"
+        },
+        {
+          "open": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "in": "S.top",
+          "put": "domain"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "from": "B.lock",
+          "take": "idkey"
+        },
+        {
+          "close": "B"
+        },
+        {
+          "walk": "O"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up"
+        },
+        {
+          "in": "server",
+          "put": "ip"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "e_ts_up"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Install, then register at Tailscale"
+    },
+    {
+      "caption": "Tailscale keeps its own DNS phonebook. Its helper takes your domain name and your server's IP address from the shelf and writes them in. The name points to Tailscale's relay, which passes visitors on to your server.",
+      "id": "ts2",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayTS",
+          "who": "yoshi"
+        },
+        {
+          "walk": "S",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.top",
+          "take": "domain",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.bottom",
+          "take": "ip",
+          "who": "yoshi"
+        },
+        {
+          "walk": "O",
+          "who": "yoshi"
+        },
+        {
+          "scene": false
+        },
+        {
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "tsbook"
+        },
+        {
+          "back": true,
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        }
+      ],
+      "show": [
+        "tsbook",
+        "e3"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Tailscale writes the name in its phonebook"
+    },
+    {
+      "caption": "The server keeps its own key (its ID file). You keep a copy, locked in KeePass on your computer, so a reinstall can come back as the same machine (planned: round0 R2). The Tailscale address comes along too.",
+      "id": "tskeep",
+      "label": "backup",
+      "play": [
+        {
+          "in": "server",
+          "put": "idkey"
+        },
+        {
+          "get": "vault"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "copy": "idkey",
+          "from": "server",
+          "in": "vault"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "in": "you",
+          "put": "vault",
+          "screen": true
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Keep a copy of the server's own key"
+    },
+    {
+      "caption": "You send your Tailscale address to a friend, for example in a chat message.",
+      "id": "tsshare",
+      "label": "share",
+      "play": [
+        {
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "friend",
+        "e_share",
+        "e_sharevm"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your friend opens the Tailscale address to call you on Jitsi Meet. The phone looks the name up in the DNS phonebook and gets the address it points to, then goes through the internet, Tailscale's relay and the tunnel to your SelfPrivacy server, and the call comes back the same way.",
+      "id": "ts3",
+      "label": "friend",
+      "play": [
+        {
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_ts_friend",
+          "who": "jazz"
+        },
+        {
+          "lookup": "tsbook",
+          "who": "jazz"
+        },
+        {
+          "run": "e_ts_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_ts_run",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up",
+          "who": "jazz"
+        },
+        {
+          "in": "server",
+          "put": "answer",
+          "who": "jazz"
+        },
+        {
+          "at": "server",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "from": "server",
+          "get": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "run": "e_ts_up",
+          "who": "jazz"
+        },
+        {
+          "run": "e_ts_run",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "at": "friend",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "wait": 1.5
+        }
+      ],
+      "show": [
+        "friend",
+        "e_friend",
+        "e_ts_friend"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "A friend opens the link",
+      "visitors": true
+    },
+    {
+      "caption": "You install again. The one-time auth key was used up by the first install, so you get a new one from Tailscale.",
+      "id": "tsr0",
+      "label": "new key",
+      "play": [
+        {
+          "run": "e4"
+        },
+        {
+          "get": "key"
+        },
+        {
+          "pop": "new key ✓"
+        },
+        {
+          "back": true,
+          "run": "e4"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "inet",
+        "relayTS",
+        "e_ts_run",
+        "e4"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Get a new auth key"
+    },
+    {
+      "caption": "Tailscale still has your old machine: its name and its IP address are still in the closet. They go out first (remove the old machine in Tailscale's admin console), else the new server would get the name selfprivacy-1. Then it registers as before and gets the same name back.",
+      "id": "tsr1",
+      "label": "install again",
+      "play": [
+        {
+          "get": [
+            "key",
+            "light"
+          ]
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "get": "ip"
+        },
+        {
+          "run": "e_ts_up"
+        },
+        {
+          "scene": {
+            "A": "idkey",
+            "B": [
+              "domain",
+              "domain"
+            ],
+            "S.bottom": "oldip",
+            "S.top": "olddomain"
+          }
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "fire": true
+        },
+        {
+          "from": "S.top",
+          "take": "olddomain"
+        },
+        {
+          "in": "F",
+          "throw": "olddomain"
+        },
+        {
+          "from": "S.bottom",
+          "take": "oldip"
+        },
+        {
+          "in": "F",
+          "throw": "oldip"
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "copy": true,
+          "in": "S.bottom",
+          "put": "ip"
+        },
+        {
+          "walk": "A"
+        },
+        {
+          "in": "A.lock",
+          "put": "key"
+        },
+        {
+          "open": "A"
+        },
+        {
+          "fire": true
+        },
+        {
+          "from": "A.lock",
+          "take": "key"
+        },
+        {
+          "in": "F",
+          "throw": "key"
+        },
+        {
+          "from": "A",
+          "take": "idkey"
+        },
+        {
+          "close": "A"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "in": "B.lock",
+          "put": "idkey"
+        },
+        {
+          "open": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "walk": "S"
+        },
+        {
+          "in": "S.top",
+          "put": "domain"
+        },
+        {
+          "walk": "B"
+        },
+        {
+          "from": "B",
+          "take": "domain"
+        },
+        {
+          "from": "B.lock",
+          "take": "idkey"
+        },
+        {
+          "close": "B"
+        },
+        {
+          "walk": "O"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up"
+        },
+        {
+          "in": "server",
+          "put": "ip"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "e_ts_up"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Clean out the old machine, then register again"
+    },
+    {
+      "caption": "Tailscale's helper writes your name in its phonebook again. It points to Tailscale's relay, which now passes visitors on to your new server.",
+      "id": "tsr2",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayTS",
+          "who": "yoshi"
+        },
+        {
+          "walk": "S",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.top",
+          "take": "domain",
+          "who": "yoshi"
+        },
+        {
+          "from": "S.bottom",
+          "take": "ip",
+          "who": "yoshi"
+        },
+        {
+          "walk": "O",
+          "who": "yoshi"
+        },
+        {
+          "scene": false
+        },
+        {
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "tsbook"
+        },
+        {
+          "back": true,
+          "run": "e3",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        }
+      ],
+      "show": [
+        "tsbook",
+        "e3"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Tailscale writes the name again"
+    },
+    {
+      "caption": "Your SelfPrivacy server makes a backup, and you lock a copy of its own key in a KeePass vault (planned: round0 R2). Both go through Tailscale over the internet to your SelfPrivacy backup device, which keeps them on its screen.",
+      "id": "tsb0",
+      "label": "backup",
+      "play": [
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "appear": "server"
+        },
+        {
+          "from": "server",
+          "get": "backup"
+        },
+        {
+          "get": "vault"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "copy": "idkey",
+          "from": "server",
+          "in": "vault"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "run": "e_ts_up"
+        },
+        {
+          "run": "e_ts_run"
+        },
+        {
+          "back": true,
+          "run": "e_backup"
+        },
+        {
+          "in": "backupdev",
+          "put": "backup",
+          "screen": "left"
+        },
+        {
+          "in": "backupdev",
+          "put": "vault",
+          "screen": "right"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "e_ts_up",
+        "relayTS",
+        "e_ts_run",
+        "inet",
+        "backupdev",
+        "e_backup"
+      ],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Back up to your backup device"
+    },
+    {
+      "caption": "Then disaster: your server burns down (or it is stolen, or it breaks). What it held is now only on your backup device.",
+      "id": "tsb1",
+      "label": "fire",
+      "play": [
+        {
+          "burn": "server"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Your server is lost"
+    },
+    {
+      "caption": "You install again, from the backup device: the install light, the backup and the KeePass vault go back to where the server stood. The server is built up again and gets its data back from the backup and its own key from KeePass, so Tailscale knows it as the same machine: the same name and address, nothing to clean out.",
+      "id": "tsb2",
+      "label": "restore",
+      "play": [
+        {
+          "from": "backupdev",
+          "get": "light"
+        },
+        {
+          "from": "backupdev",
+          "get": "backup"
+        },
+        {
+          "from": "backupdev",
+          "get": "vault"
+        },
+        {
+          "run": "e_backup"
+        },
+        {
+          "back": true,
+          "run": "e_ts_run"
+        },
+        {
+          "back": true,
+          "run": "e_ts_up"
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "backup"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "from": "vault",
+          "take": "idkey"
+        },
+        {
+          "in": "server",
+          "put": "idkey"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "reach": [
+          "tailscale"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Restore from the backup"
     }
   ]
 }

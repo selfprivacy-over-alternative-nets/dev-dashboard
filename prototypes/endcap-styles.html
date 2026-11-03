@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>End-cap cable designs</title>
+<style>
+  :root { --bg: #0b0e14; --panel: #11151c; --border: #2a313c; --fg: #c9d1d9; --dim: #8b949e; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px ui-sans-serif, system-ui, sans-serif; }
+  h1 { font-size: 17px; margin: 18px 16px 4px; }
+  p { margin: 0 16px 10px; color: var(--dim); max-width: 900px; }
+  .legend { margin: 0 16px 14px; color: var(--dim); font-size: 12px; line-height: 1.6; }
+  .legend b { color: var(--fg); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; padding: 0 16px 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px 8px; }
+  .card .desc { color: var(--dim); font-size: 11px; min-height: 28px; margin-bottom: 4px; }
+  .card h2 { font-size: 13px; font-weight: 500; margin: 2px 0 5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card h2 b { color: #f0b429; font-size: 14px; margin-right: 5px; }
+  svg { display: block; width: 100%; height: auto; background: var(--bg); border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>20 designs from #8 — opaque, one flat colour, latch lip visible</h1>
+<p>The cable now hides the yellow tunnel (it no longer runs visibly through it), the cable is one flat colour, and every plug shows the latch (on top of the clear head with the gold contacts) you press to unclick it, and the boot keeps its |||| grip ribs. Tell Claude the number you like.</p>
+<div class="grid" id="grid"></div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const shade = (hex, f) => { const m = hex.replace("#", ""); const h = (v) => Math.max(0, Math.min(255, Math.round(v * f))).toString(16).padStart(2, "0");
+  return "#" + h(parseInt(m.slice(0, 2), 16)) + h(parseInt(m.slice(2, 4), 16)) + h(parseInt(m.slice(4, 6), 16)); };
+const D = (pts) => "M " + pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" L ");
+const OL = "#0a140a";
+
+/* ---------- geometry on orthogonal polylines ---------- */
+const dirs = (P) => P.slice(1).map((q, i) => { const L = Math.hypot(q.x - P[i].x, q.y - P[i].y) || 1; return { x: (q.x - P[i].x) / L, y: (q.y - P[i].y) / L }; });
+const lenOf = (P) => P.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - P[i].x, q.y - P[i].y), 0);
+function offset(P, o) {   // mitred parallel polyline at distance o (left normal)
+  const d = dirs(P), n = (v) => ({ x: -v.y, y: v.x });
+  return P.map((p, i) => {
+    const a = d[Math.max(0, i - 1)], b = d[Math.min(d.length - 1, i)], na = n(a), nb = n(b);
+    if (i === 0) return { x: p.x + nb.x * o, y: p.y + nb.y * o };
+    if (i === P.length - 1 || Math.abs(na.x - nb.x) + Math.abs(na.y - nb.y) < 1e-6) return { x: p.x + na.x * o, y: p.y + na.y * o };
+    return { x: p.x + (na.x + nb.x) * o, y: p.y + (na.y + nb.y) * o };
+  });
+}
+function at(P, s) {   // point + tangent + normal at distance s along P
+  const d = dirs(P); let acc = 0;
+  for (let i = 0; i < d.length; i++) { const L = Math.hypot(P[i + 1].x - P[i].x, P[i + 1].y - P[i].y);
+    if (s <= acc + L || i === d.length - 1) { const t = Math.min(L, Math.max(0, s - acc)); return { x: P[i].x + d[i].x * t, y: P[i].y + d[i].y * t, t: d[i], n: { x: -d[i].y, y: d[i].x }, s }; }
+    acc += L; }
+}
+const sample = (P, step) => { const out = [], T = lenOf(P); for (let s = 0; s <= T + 1e-6; s += step) out.push(at(P, s)); return out; };
+const wave = (P, amp, period, phase = 0, step = 1.5) => sample(P, step).map((q) => { const o = amp * Math.sin(q.s / period * 2 * Math.PI + phase); return { x: q.x + q.n.x * o, y: q.y + q.n.y * o }; });
+function part(P, from, to) {   // the stretch of P between distances from..to
+  const out = []; let acc = 0;
+  for (let i = 1; i < P.length; i++) { const A = P[i - 1], B = P[i], l = Math.hypot(B.x - A.x, B.y - A.y), a = Math.max(from, acc), b = Math.min(to, acc + l);
+    if (b > a) { const f = (s) => ({ x: A.x + (B.x - A.x) * (s - acc) / l, y: A.y + (B.y - A.y) * (s - acc) / l }); if (!out.length) out.push(f(a)); out.push(f(b)); }
+    acc += l; }
+  return out;
+}
+const trim = (P, len) => part(P, len, lenOf(P) - len);
+
+/* ---------- shared pieces ---------- */
+function tunnel(g, P, W) {
+  el("path", { d: D(P), fill: "none", stroke: OL, "stroke-width": W + 6, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(P), fill: "none", stroke: "#eab308", "stroke-width": W, "stroke-linejoin": "round" }, g);
+  el("path", { d: D(offset(P, -W * 0.3)), fill: "none", stroke: shade("#eab308", 1.55), "stroke-width": W * 0.18 }, g);
+  el("path", { d: D(offset(P, W * 0.3)), fill: "none", stroke: shade("#eab308", 0.5), "stroke-width": W * 0.18 }, g);
+}
+const stroke = (g, P, c, w, extra = {}) => el("path", { d: D(P), fill: "none", stroke: c, "stroke-width": w, "stroke-linejoin": "round", ...extra }, g);
+function tube(g, J, R, c, op = 0.35) {   // a round see-through jacket: fill, two edges, highlight, shadow
+  stroke(g, J, c, 2 * R, { "stroke-opacity": op });
+  for (const s of [-1, 1]) stroke(g, offset(J, s * R), shade(c, 0.6), 2.2);
+  stroke(g, offset(J, -0.55 * R), shade(c, 1.7), 0.16 * R, { "stroke-opacity": 0.6, "stroke-linecap": "round" });
+  stroke(g, offset(J, 0.6 * R), shade(c, 0.45), 0.14 * R, { "stroke-opacity": 0.5 });
+}
+const across = (g, q, w, c, sw, extra = {}) => el("line", { x1: q.x - q.n.x * w, y1: q.y - q.n.y * w, x2: q.x + q.n.x * w, y2: q.y + q.n.y * w, stroke: c, "stroke-width": sw, ...extra }, g);
+
+const PLUG_LEN = 3.2;
+
+/* ---------- 20 designs from #8 (end-capped duct): opaque, one flat colour, latch lip visible ---------- */
+const DARK = "#1f2328";
+const frame = (q, uo) => { const n = { x: -uo.y, y: uo.x }; return (a, b) => ({ x: q.x + uo.x * a + n.x * b, y: q.y + uo.y * a + n.y * b }); };
+const polyF = (g, pts, attrs) => el("polygon", { points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" "), ...attrs }, g);
+const box = (f, a0, a1, b0, b1) => [f(a0, b0), f(a1, b0), f(a1, b1), f(a0, b1)];
+function body(g, J, w, col, round) {   // the cable / duct: one flat colour, thin dark outline, fully opaque (hides the tunnel)
+  stroke(g, J, DARK, 2 * w + 3, { "stroke-linejoin": round ? "round" : "miter" });
+  stroke(g, J, col, 2 * w, { "stroke-linejoin": round ? "round" : "miter" });
+}
+function cap(g, J, R, w, col, type, atEnd) {   // an end cap where the duct meets the plug; f(a, b): a = toward the plug, b = across
+  const L = lenOf(J), len = 0.9 * R, q = at(J, atEnd ? L - len / 2 : len / 2), uo = atEnd ? q.t : { x: -q.t.x, y: -q.t.y }, f = frame(q, uo), h = len / 2;
+  const A = { fill: col, stroke: DARK, "stroke-width": 1.4 }, W = w + 3;
+  if (type === "square") polyF(g, box(f, -h, h, -W, W), A);
+  if (type === "rounded") { const p = box(f, -h, h, -W, W); const x = Math.min(...p.map((v) => v.x)), y = Math.min(...p.map((v) => v.y));
+    el("rect", { x, y, width: Math.max(...p.map((v) => v.x)) - x, height: Math.max(...p.map((v) => v.y)) - y, rx: 0.35 * R, ...A }, g); }
+  if (type === "flanged") { polyF(g, box(f, -h, h, -W, W), A); polyF(g, box(f, h - 0.25 * R, h, -W - 0.35 * R, W + 0.35 * R), A); }
+  if (type === "stepped") { polyF(g, box(f, -h, 0, -W, W), A); polyF(g, box(f, 0, h, -W + 0.25 * R, W - 0.25 * R), A); }
+  if (type === "chamfer") polyF(g, [f(-h, -W), f(h - 0.3 * R, -W), f(h, -W + 0.3 * R), f(h, W - 0.3 * R), f(h - 0.3 * R, W), f(-h, W)], A);
+  if (type === "tapered") polyF(g, [f(-h, -W), f(h, -W + 0.3 * R), f(h, W - 0.3 * R), f(-h, W)], A);
+  if (type === "ribbed") { polyF(g, box(f, -h, h, -W, W), A); for (const a of [-0.2, 0.05, 0.3]) { const p = f(a * R, -W + 2), r = f(a * R, W - 2); el("line", { x1: p.x, y1: p.y, x2: r.x, y2: r.y, stroke: DARK, "stroke-width": 1 }, g); } }
+  if (type === "screw") { polyF(g, box(f, -h, h, -W, W), A); const c = f(0, 0); el("circle", { cx: c.x, cy: c.y, r: 0.2 * R, fill: col, stroke: DARK, "stroke-width": 1.2 }, g);
+    const p = f(0, -0.13 * R), r = f(0, 0.13 * R); el("line", { x1: p.x, y1: p.y, x2: r.x, y2: r.y, stroke: DARK, "stroke-width": 1 }, g); }
+  if (type === "flush") { const p = f(h - 0.1 * R, -w), r = f(h - 0.1 * R, w); el("line", { x1: p.x, y1: p.y, x2: r.x, y2: r.y, stroke: DARK, "stroke-width": 2 }, g); }
+  if (type === "double") { for (const a of [-h, h - 0.35 * R]) polyF(g, box(f, a, a + 0.35 * R, -W, W), A); }
+  if (type === "ears") { polyF(g, box(f, -h, h, -W, W), A); for (const s of [-1, 1]) polyF(g, box(f, -0.25 * R, 0.25 * R, s * W, s * (W + 0.35 * R)), A); }
+}
+function plug(g, P, u, R, col, latch) {   // tip P, u = out of the cable; a = back from the tip, b = across. Seen from above.
+  const f = (a, b) => ({ x: P.x - u.x * a + -u.y * b, y: P.y - u.y * a + u.x * b }), A = { stroke: DARK, "stroke-width": 1.3 };
+  const ln = (a1, b1, a2, b2, c, w) => { const p = f(a1, b1), q = f(a2, b2); el("line", { x1: p.x, y1: p.y, x2: q.x, y2: q.y, stroke: c, "stroke-width": w }, g); };
+  const HEAD = "#e9edf1", LATCH = "#d3dae1";
+  // flexible boot: tapers from the cable to the head, with the |||| grip ribs of the moulded boot
+  polyF(g, [f(3.2 * R, -1.0 * R), f(3.2 * R, 1.0 * R), f(2.5 * R, 1.25 * R), f(1.4 * R, 1.25 * R), f(1.4 * R, -1.25 * R), f(2.5 * R, -1.25 * R)], { fill: col, ...A });
+  for (let k = 0; k < 5; k++) { const a = (2.45 + k * 0.15) * R, w = 1.22 - k * 0.05; ln(a, -w * R, a, w * R, DARK, 0.07 * R); }
+  // head (clear block) with the 8 gold contacts at the tip
+  polyF(g, box(f, 0, 1.4 * R, -1.25 * R, 1.25 * R), { fill: HEAD, ...A });
+  for (let k = 0; k < 8; k++) { const b = (-0.95 + k * 0.27) * R; ln(0.08 * R, b, 0.45 * R, b, "#c9a43a", Math.max(0.8, 0.09 * R)); }
+  // the latch, ON TOP of the head: hinged just behind the contacts, its free (press) end toward the boot
+  const lat = { fill: LATCH, stroke: DARK, "stroke-width": 1.5 };
+  if (latch === "hooded") {   // a snagless hood from the boot covers the press end; you press the ridged pad
+    polyF(g, [f(0.55 * R, -0.35 * R), f(0.55 * R, 0.35 * R), f(1.0 * R, 0.4 * R), f(1.0 * R, -0.4 * R)], lat);
+    polyF(g, [f(2.6 * R, -0.7 * R), f(2.6 * R, 0.7 * R), f(1.0 * R, 0.6 * R), f(0.85 * R, 0.5 * R), f(0.85 * R, -0.5 * R), f(1.0 * R, -0.6 * R)], { fill: col, ...A });
+    polyF(g, box(f, 1.0 * R, 1.6 * R, -0.42 * R, 0.42 * R), { fill: col, stroke: DARK, "stroke-width": 1.2 });
+    for (const a of [1.12, 1.3, 1.48]) ln(a * R, -0.36 * R, a * R, 0.36 * R, DARK, 1);
+    return;
+  }
+  const end = latch === "lever" || latch === "hook" ? 2.4 : 1.6;   // a lever reaches back over the boot
+  polyF(g, [f(0.55 * R, -0.36 * R), f(0.55 * R, 0.36 * R), f((end - 0.1) * R, 0.46 * R), f(end * R, 0.46 * R), f(end * R, -0.46 * R), f((end - 0.1) * R, -0.46 * R)], lat);
+  ln(0.55 * R, -0.36 * R, 0.55 * R, 0.36 * R, DARK, 2);   // hinge
+  if (latch === "hook") polyF(g, box(f, (end - 0.12) * R, (end + 0.22) * R, -0.7 * R, 0.7 * R), lat);   // finger hook (cross bar)
+  if (latch === "ridged") for (const a of [1.1, 1.27, 1.44]) ln(a * R, -0.38 * R, a * R, 0.38 * R, DARK, 1);
+  if (latch === "arrow") { const c = f((end - 0.35) * R, 0); el("circle", { cx: c.x, cy: c.y, r: 0.24 * R, fill: "#f0b429", stroke: DARK, "stroke-width": 1 }, g);
+    el("circle", { cx: c.x, cy: c.y, r: 0.08 * R, fill: DARK }, g); }   // "press here" mark
+}
+const GREY = "#9aa0a6", SLATE = "#7b828a", BEIGE = "#c4bba8", WHITE = "#d7dadd", TAUPE = "#a39e93", COOL = "#8f979f";
+const DESIGNS = [
+  ["#8, flat", "square caps, short latch tab", { cap: "square", latch: "tab", col: GREY }],
+  ["Rounded caps", "rounded caps, short tab", { cap: "rounded", latch: "tab", col: GREY }],
+  ["Flanged caps + lever", "caps with a flange, latch lever reaching over the boot", { cap: "flanged", latch: "lever", col: SLATE }],
+  ["Stepped caps + ridged tab", "two-step caps, tab with grip ridges", { cap: "stepped", latch: "ridged", col: GREY }],
+  ["Chamfered caps + hood", "chamfered caps, snagless hood with a ridged press pad", { cap: "chamfer", latch: "hooded", col: SLATE }],
+  ["Rounded duct + hook lever", "rounded corners, lever with a finger hook", { cap: "square", latch: "hook", col: COOL, round: true }],
+  ["Ribbed caps (beige)", "ribbed grip caps, short tab", { cap: "ribbed", latch: "tab", col: BEIGE }],
+  ["Screw caps (white)", "caps fixed with a screw, long lever", { cap: "screw", latch: "lever", col: WHITE }],
+  ["Slim duct", "a narrower duct, square caps, tab", { cap: "square", latch: "tab", col: GREY, w: 0.85 }],
+  ["Wide duct + hood", "a wider duct, flanged caps, hooded latch", { cap: "flanged", latch: "hooded", col: TAUPE, w: 1.35 }],
+  ["Press arrow", "square caps, a yellow press-here mark on the latch", { cap: "square", latch: "arrow", col: GREY }],
+  ["Ears", "caps with clip ears, short tab", { cap: "ears", latch: "tab", col: SLATE }],
+  ["Flush seam", "no visible cap, just a seam line; tab", { cap: "flush", latch: "tab", col: GREY }],
+  ["Rounded + arrow", "rounded caps, press-here mark on the latch", { cap: "rounded", latch: "arrow", col: WHITE }],
+  ["Double rings", "two thin rings as caps, short tab", { cap: "double", latch: "tab", col: COOL }],
+  ["Tapered caps", "caps narrowing toward the plug, tab", { cap: "tapered", latch: "tab", col: BEIGE }],
+  ["Ears + lever", "clip-ear caps, long lever", { cap: "ears", latch: "lever", col: GREY }],
+  ["Ribbed + hood", "ribbed caps, hooded latch with press pad", { cap: "ribbed", latch: "hooded", col: GREY }],
+  ["All rounded", "rounded duct, rounded caps, ridged tab", { cap: "rounded", latch: "ridged", col: TAUPE, round: true }],
+  ["Big lip", "square caps, a hook lever that's easy to see", { cap: "square", latch: "hook", col: SLATE }],
+];
+const grid = document.getElementById("grid");
+DESIGNS.forEach(([name, desc, o], i) => {
+  const card = document.createElement("div"); card.className = "card";
+  card.innerHTML = `<h2><b>${i + 1}</b>${name}</h2><div class="desc">${desc}</div>`;
+  const svg = el("svg", { viewBox: "0 0 300 270" }); card.appendChild(svg); grid.appendChild(card);
+  el("rect", { x: 30, y: 8, width: 64, height: 40, rx: 6, fill: "#2a1d10", stroke: "#e3882d", "stroke-width": 3 }, svg);
+  el("rect", { x: 228, y: 202, width: 62, height: 44, rx: 6, fill: "#14181f", stroke: "#6e7681", "stroke-width": 3 }, svg);
+  const P = [{ x: 62, y: 48 }, { x: 62, y: 196 }, { x: 228, y: 196 }], R = 16, w = (o.w || 1.15) * R;
+  tunnel(svg, P, 22);   // the tunnel is still there — the opaque cable covers it
+  const S = trim(P, 4), J = trim(S, PLUG_LEN * R), g = el("g", {}, svg);
+  body(g, J, w, o.col, o.round);
+  cap(g, J, R, w, o.col, o.cap, false); cap(g, J, R, w, o.col, o.cap, true);
+  const end = (A, B) => { const L = Math.hypot(A.x - B.x, A.y - B.y); return [A, { x: (A.x - B.x) / L, y: (A.y - B.y) / L }]; };
+  plug(g, ...end(S[0], S[1]), R, o.col, o.latch); plug(g, ...end(S[S.length - 1], S[S.length - 2]), R, o.col, o.latch);
+});
+</script>
+</body>
+</html>
