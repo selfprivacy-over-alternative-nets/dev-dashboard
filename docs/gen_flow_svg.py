@@ -612,8 +612,9 @@ def flame_svg(x, y, s, begin):   # FR118: a small flickering flame on the bricks
             '</g></g>')
 
 
-def gatehouse_gates_svg(rid, lst, quiet=False):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
+def gatehouse_gates_svg(rid, lst, quiet=False, story=False):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
     # FR126: quiet = nobody comes in in this step: no lights, the wall and the barrier stay shut and still
+    # FR134: story = a step of the view's story: the server's call out over a tunnel isn't shown again — only your friend comes in
     e, poly = lst[0]
     gh = GH[e["id"]]
     F, Pw, G = gate_wins(gh)
@@ -670,9 +671,11 @@ def gatehouse_gates_svg(rid, lst, quiet=False):   # FR118: the fire wall + port 
         o.append(light([red(0.67), _smil("animateMotion", path=d, keyPoints=f"1;1;{fF};{fB};{fB}", keyTimes="0;0.55;0.68;0.75;1", calcMode="linear"),
                         _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes="0;0.54;0.56;0.72;0.78;1")]))
         o.append(cross(_poly_at(poly, dF + gap), 0.68))
-    else:   # a tunnel: your server calls out over the gates, your friend comes back in on that line
+    elif not story:   # a tunnel: your server calls out over the gates, your friend comes back in on that line
         o.append(light(["", _smil("animateMotion", path=d, keyPoints="0;0;1;1;1;0;0", keyTimes="0;0.04;0.26;0.3;0.34;0.58;1", calcMode="linear"),
                         _smil("animate", attributeName="opacity", values="0;1;1;0;0;1;1;0;0", keyTimes="0;0.04;0.25;0.28;0.33;0.35;0.57;0.61;1")]))
+    # (FR134 / FR136: in a story step neither — a runner (Jazz) takes your friend's way through the tunnel)
+    if not row:   # …and a stranger at the front door
         fr = [(gh["mq"], G["rowY"]), (gh["mp"], G["rowY"])]
         Lr = abs(gh["mq"] - gh["mp"]) or 1
         fS, fSb = f3((abs(gh["mq"] - F["cx"]) - gap) / Lr), f3((abs(gh["mq"] - F["cx"]) - gap - 40) / Lr)
@@ -702,9 +705,12 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         return ";".join(F(t) for t, _ in v), ";".join(x if isinstance(x, str) else F(x) for _, x in v)
 
     wr = lt.get("write")   # FR129: written by a runner in this step — the book plays once, from then (no update light: the runner brings the entry)
-    rc = f'repeatCount="1" fill="freeze" begin="{_f3(wr["t"])}s"' if wr else 'repeatCount="indefinite"'
+    once = wr or lt.get("read")   # FR136: or read
+    rc = f'repeatCount="1" fill="freeze" begin="{_f3(once["t"])}s"' if once else 'repeatCount="indefinite"'
 
     def anim(**a):
+        if lt.get("still"):   # FR136: shut, nothing moves
+            return ""
         tag = "animateMotion" if "path" in a else "animateTransform" if "type" in a else "animate"
         return f'<{tag} dur="{F(T)}s" {rc} ' + " ".join(f'{q}="{v}"' for q, v in a.items()) + "/>"
 
@@ -795,7 +801,7 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         pts = " ".join(f"{F(bx0 + a)},{c - 19}" for a, c in ((9, 0), (0, 15), (7, 15), (3, 28), (16, 10), (9, 10), (13, 0)))
         o.append(f'<polygon points="{pts}" fill="#fde047" stroke="{DARK}" stroke-width="1.2"/>')
     # found: the white light's address matches an ip — or, with no lookup (FR124), the entry was written
-    cap_t = ((("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)) if lt["ask"]
+    cap_t = ((("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)) if lt["ask"] or lt.get("read")
              else (("✎ ", "#f97316"), (url, "#ffffff"), (" → ", "#8b949e"), ("ip " + ip, GRAY), (" written", "#8b949e")))
     spans = "".join(f'<tspan fill="{c}">{html.escape(t)}</tspan>' for t, c in cap_t)
     o.append(txt(0, -24, "", spans + fade([(0, 0), (0.41, 0), (0.43, 1), (0.62, 1), (0.65, 0), (1, 0)]), text_anchor="middle", font_size=12, opacity=0, **{"class": "pb-anim"}))
@@ -1075,7 +1081,7 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 # ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
 ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26, "BLOW": 0.5,   # px/s · s — mirrors flow.js ACT
        "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "give": 0.7, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
-             "throw": 1.0, "copy": 1.2, "write": 6.0}}
+             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6}}
 ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
     "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
     "idkey":   {"icon": "key", "color": "#3fb950", "dx": -14, "dy": -32, "tag": "own key"},
@@ -1083,8 +1089,11 @@ ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above 
     "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -40},   # FR130: a small safe locked with the KeePass logo, above its head
     "ip":      {"text": "Your SelfPrivacy IP address:\n192.42.69.314", "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR132: two lines, the last one at dy
     "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -60},
+    "answer":  {"book": True, "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR136: the address a book gives for a name — its text comes from the book's entry
+    "jitsi":   {"img": "jitsi", "color": "#4aa3ff", "dx": 0, "dy": -40, "tag": "Jitsi call"},   # FR136: the call — the Jitsi Meet logo on a blue badge
 }
-ACTORS = ["mario", "yoshi"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
+VAULT = {"w": 34, "h": 28, "inset": 3, "lock": 14, "IN": {"x": -2, "y": 0, "s": 0.7}}   # FR135: the KeePass vault — mirrors flow.js VAULT
+ACTORS = ["mario", "yoshi", "jazz"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
 # FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with two boards) — mirrors flow.js SCENE
 # FR132: the safes a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304)
 SCENE = {"x0": -84, "x1": 284, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w": 44, "h": 52, "inset": 5, "lock": 17},
@@ -1123,11 +1132,12 @@ def scene_geo(O):   # where the ledge, the safes, the fire bowl and the shelf ar
     return g
 
 
-def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lambda i: None):   # one step's plan — mirrors flow.js actorPlan
+def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lambda i: None, entry_at=lambda i: ""):   # one step's plan — mirrors flow.js actorPlan
     by = {e["id"]: e for e in edges}
     st0 = (start or {}).get("actors") or {}
     T = ACT["FADE"] if first or not st0.get("mario") else 0.0
     W, writes, ACTS = {}, [], {}
+    reads, shown, texts = [], [], dict((start or {}).get("texts") or {})   # FR136: books looked up, things shown on boxes, texts from books
     sc, n_inst = None, [0]
 
     def carry(R, i, on):   # (already holding it: nothing changes)
@@ -1146,7 +1156,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             return ACTS[who]
         s0 = st0.get(who)
         fc = s0["face"] if s0 and s0.get("face") else 1
-        R = ACTS[who] = {"who": who, "pts": [], "kf": [], "dist": 0.0, "runs": [], "acts": [], "pops": [], "items": {}, "inst": {}, "spot": None, "at": None,
+        R = ACTS[who] = {"who": who, "pts": [], "kf": [], "dist": 0.0, "runs": [], "acts": [], "pops": [], "items": {}, "inst": {}, "doors": {}, "inside": {}, "spot": None, "at": None,
                          "facing": fc, "face": [[0, fc]], "op": [[0, 1 if s0 else 0]], "gone": False}
         if s0:
             R["spot"], R["at"] = s0["spot"], s0["at"]
@@ -1257,6 +1267,21 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             R["dist"] += L
             R["kf"].append([T, R["dist"]])
             R["spot"], R["at"] = p[-1], (e["from"] if a.get("back") else e["to"])
+        elif a.get("get") is not None and a.get("from") is not None:   # FR136: a copy of what is shown on a box comes off it into its hand
+            i = str(a["get"])
+            v = next((x for x in shown if x["id"] == i and x["at"] == str(a["from"])), None) if R["spot"] else None
+            if not v:
+                continue
+            inst = new_inst(i)
+            w, t1 = track(inst), T + ACT["T"]["show"]
+            turn(R, T, v["x"] - R["spot"][0])
+            w_move(inst, T, T, [(v["x"], v["y"])])
+            w_move(inst, T, t1, [hand(R, i)])
+            w["vis"].append([T, t1])
+            w["sc"] += [[T, v["s"]], [t1, 1]]
+            carry(R, i, t1)
+            R["inst"][i] = inst
+            T = t1 + 0.2
         elif a.get("get") is not None:
             for i in (a["get"] if isinstance(a["get"], list) else [a["get"]]):
                 if i in ACT_ITEMS:
@@ -1378,6 +1403,13 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             if sc["lock"].get(k):
                 w_move(sc["lock"][k], T, T + d, [q["open"] if opening else q["lock"]])
             T += d
+        elif (a.get("open") is not None or a.get("close") is not None) and ACT_ITEMS.get(a["open"] if a.get("open") is not None else a["close"], {}).get("vault") \
+                and any(v[1] is None for v in R["items"].get(a["open"] if a.get("open") is not None else a["close"], [])):   # FR135: the door of the vault it holds swings open / shut
+            opening = a.get("open") is not None
+            i = a["open"] if opening else a["close"]
+            d = ACT["T"]["open"] if opening else ACT["T"]["close"]
+            R["doors"].setdefault(i, []).extend([[T, 1 if opening else SCENE["OPEN"]], [T + d, SCENE["OPEN"] if opening else 1]])
+            T += d
         elif sc and a.get("fire"):   # a fire starts in the bowl
             sc["fire"] += [[T, 0], [T + ACT["T"]["fire"], 1]]
             T += ACT["T"]["fire"]
@@ -1438,12 +1470,20 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             if not b:
                 continue
             inst = new_inst(a["copy"])
-            w, frm, to, t1 = track(inst), middle(b), hand(R, str(a["in"])), T + 0.8
+            into = str(a["in"])
+            w, frm, h, t1 = track(inst), middle(b), hand(R, into), T + 0.8
             turn(R, T, frm[0] - R["spot"][0])
             w_move(inst, T, T, [frm])
-            w_move(inst, T + 0.2, t1, [to])
-            w["vis"].append([T, t1 + 0.2])
-            w["sc"] += [[T, 0.6], [T + 0.2, 1], [t1, 1], [t1 + 0.2, 0.3]]
+            if ACT_ITEMS[into].get("vault"):   # FR135: into the (open) vault — over the runner, it lands inside and lies there
+                w_move(inst, T + 0.2, t1, [(h[0] + VAULT["IN"]["x"], h[1] + VAULT["IN"]["y"])])
+                w["vis"].append([T, t1])
+                w["sc"] += [[T, 0.6], [T + 0.2, 1], [t1, VAULT["IN"]["s"]]]
+                w["over"] = True
+                R["inside"].setdefault(into, []).append({"id": a["copy"], "on": t1})
+            else:
+                w_move(inst, T + 0.2, t1, [h])
+                w["vis"].append([T, t1 + 0.2])
+                w["sc"] += [[T, 0.6], [T + 0.2, 1], [t1, 1], [t1 + 0.2, 0.3]]
             T += ACT["T"]["copy"]
         elif a.get("write") is not None and R["spot"]:   # FR129: the book opens, what the runner brings goes in, the entry is written
             b = box_at(str(a["write"]))
@@ -1461,6 +1501,73 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                     w["vis"].append([T + 3.4, T + 3.9])
                     w["sc"] += [[T + 3.4, 1], [T + 3.9, 0.3]]
             T += ACT["T"]["write"]
+        elif a.get("lookup") is not None and R["spot"]:   # FR136: the book opens; the name it brings goes in, the address on that line comes out into its hand
+            b = box_at(str(a["lookup"]))
+            if not b:
+                continue
+            m = IP_RE.search(" ".join(entry_at(str(a["lookup"])).split("\n")[1:]))
+            t0, c = T + 0.2, middle(b)
+            reads.append({"book": str(a["lookup"]), "t": t0})
+            texts["answer"] = "ip " + (m.group(0) if m else "?")
+            turn(R, T, c[0] - R["spot"][0])
+            for i in list(R["items"].keys()):   # (once the book is open at the entry)
+                if ACT_ITEMS[i].get("text") and any(v[1] is None for v in R["items"][i]):
+                    inst = inst_of(R, i)
+                    w = track(inst)
+                    R["inst"].pop(i, None)
+                    drop(R, i, t0 + 3.0)
+                    w_move(inst, t0 + 3.0, t0 + 3.0, [hand(R, i)])
+                    w_move(inst, t0 + 3.0, t0 + 3.5, [c])
+                    w["vis"].append([t0 + 3.0, t0 + 3.5])
+                    w["sc"] += [[t0 + 3.0, 1], [t0 + 3.5, 0.3]]
+            inst = new_inst("answer")   # (when the book lets the address go, FR121)
+            w, u0 = track(inst), t0 + 0.48 * PB["T"]
+            u1 = u0 + 0.5
+            w_move(inst, u0, u0, [c])
+            w_move(inst, u0, u1, [hand(R, "answer")])
+            w["vis"].append([u0, u1])
+            w["sc"] += [[u0, 0.3], [u1, 1]]
+            carry(R, "answer", u1)
+            R["inst"]["answer"] = inst
+            T = u1 + 0.1
+        elif a.get("give") is not None and a["give"] in ACT_ITEMS and R["spot"]:   # FR136: hand to hand, to another runner
+            O, i = ACTS.get(a.get("to")), a["give"]
+            if not O or not O["spot"] or O is R or not any(v[1] is None for v in R["items"].get(i, [])):
+                continue
+            inst = inst_of(R, i)
+            w, t1 = track(inst), T + ACT["T"]["hand"]
+            R["inst"].pop(i, None)
+            turn(R, T, O["spot"][0] - R["spot"][0])
+            turn(O, T, R["spot"][0] - O["spot"][0])
+            drop(R, i, T)
+            w_move(inst, T, T, [hand(R, i)])
+            w_move(inst, T, t1, [hand(O, i)])
+            w["vis"].append([T, t1])
+            w["sc"].append([T, 1])
+            carry(O, i, t1)
+            O["inst"][i] = inst
+            T = t1
+        elif a.get("show") is not None and a["show"] in ACT_ITEMS and R["spot"]:   # FR136: on a box, for all to see (the call on the server, then on the phone)
+            b = box_at(str(a.get("at") or ""))
+            if not b:
+                continue
+            i, to, s = a["show"], middle(b), 1.3
+            held = any(v[1] is None for v in R["items"].get(i, []))
+            inst = inst_of(R, i) if held else new_inst(i)
+            w = track(inst)
+            if held:
+                R["inst"].pop(i, None)
+                turn(R, T, to[0] - R["spot"][0])
+                drop(R, i, T)
+                w_move(inst, T, T, [hand(R, i)])
+                w_move(inst, T, T + ACT["T"]["show"], [to])
+                w["sc"] += [[T, 1], [T + ACT["T"]["show"], s]]
+            else:
+                w_move(inst, T, T, [to])
+                w["sc"] += [[T, 0.3], [T + ACT["T"]["show"], s]]
+            w["vis"].append([T, None])
+            shown.append({"id": i, "at": str(a["at"]), "x": to[0], "y": to[1], "s": s})
+            T += ACT["T"]["show"] + 0.2
         elif _num(a.get("wait")):
             T += max(0, a["wait"])
     all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
@@ -1479,9 +1586,9 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         T += ACT["FADE"]
         for R in all_:
             R["kf"].append([T, R["dist"]])
-    out = {"T": T, "W": W, "scene": sc, "writes": writes, "last": last, "end": {"actors": {}, "scene": None},
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "end": {"actors": {}, "scene": None, "texts": texts},
            "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
-                       "items": R["items"], "face": R["face"], "op": R["op"]} for R in all_]}
+                       "items": R["items"], "doors": R["doors"], "inside": R["inside"], "face": R["face"], "op": R["op"]} for R in all_]}
     for R in all_:
         if not R["gone"]:
             out["end"]["actors"][R["who"]] = {"spot": R["spot"], "at": R["at"], "face": R["facing"], "items": [i for i, ivs in R["items"].items() if any(v[1] is None for v in ivs)]}
@@ -1490,11 +1597,11 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
     return out
 
 
-def step_plans(steps_now, step, epoly, edges, box_at):   # FR125 / FR129: the plans of steps 0…step, each starting where the one before ended — mirrors flow.js stepPlans
+def step_plans(steps_now, step, epoly, edges, box_at, entry_at=lambda i: ""):   # FR125 / FR129: the plans of steps 0…step, each starting where the one before ended — mirrors flow.js stepPlans
     P = prev = None
     durs = []
     for k in range(step + 1):
-        P = actor_plan(steps_now[k], epoly, edges, prev, k == 0, k == len(steps_now) - 1, box_at)
+        P = actor_plan(steps_now[k], epoly, edges, prev, k == 0, k == len(steps_now) - 1, box_at, entry_at)
         prev = P["end"] if P else None
         durs.append(P["T"] if P else (steps_now[k]["dur"] if _num(steps_now[k].get("dur")) else ACT["STAND"]))
     return {"P": P, "durs": durs}
@@ -1540,7 +1647,7 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         return [v for i, v in enumerate(kv) if not i or v[0] >= kv[i - 1][0]]
     varies = lambda kv: any(v[1] != kv[0][1] for v in kv)
 
-    def look(i, x, y, s, plain, ivs=None, opacity=None):   # a thing's look at (x, y), scaled: its icon (+ tag, unless plain), the vault, or its text
+    def look(i, x, y, s, plain, ivs=None, opacity=None, box=None):   # a thing's look at (x, y), scaled: its icon (+ tag, unless plain), the vault (box: its door + inside), or its text
         it = ACT_ITEMS[i]
         c, a = fade_kv(ivs) if ivs is not None else (opacity, "")
         o = [f'<g transform="translate({_f4(x)} {_f4(y)})' + (f' scale({_f4(s)})' if s != 1 else "") + f'" opacity="{0 if c is None else c}">']
@@ -1548,15 +1655,33 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             o.append(f'<use href="#ic-{it["icon"]}" x="-9" y="-9" width="18" height="18" style="color:{it["color"]}"/>')
         elif it.get("light"):
             o.append(f'<circle r="9" fill="{it["color"]}" opacity="0.35"/><circle r="4.5" fill="#fffbe0"/>')
-        elif it.get("vault"):   # FR130: locked with the KeePass logo
-            o.append(f'<rect x="-14" y="-12" width="28" height="24" rx="3" fill="#2d333b" stroke="{it["color"]}" stroke-width="1.5"/>')
+        elif it.get("vault"):   # FR135: a small safe — its inside, what lies in it, and its door (hinged left) with the KeePass logo as the lock
+            V = VAULT
+            iw, ih = V["w"] - 2 * V["inset"], V["h"] - 2 * V["inset"]
+            lx, ly = iw - V["lock"] - 2, (ih - V["lock"]) / 2
+            o.append(f'<rect x="{_f4(-V["w"] / 2)}" y="{_f4(-V["h"] / 2)}" width="{V["w"]}" height="{V["h"]}" rx="3" fill="#2d333b" stroke="{it["color"]}" stroke-width="1.5"/>'
+                     f'<rect x="{_f4(-iw / 2)}" y="{_f4(-ih / 2)}" width="{iw}" height="{ih}" fill="#0b0e14"/>')
+            for v in (box or {}).get("inside") or []:
+                o.append(look(v["id"], V["IN"]["x"], V["IN"]["y"], V["IN"]["s"], True, ivs=[[v["on"], None]]))
+            o.append(f'<g transform="translate({_f4(-iw / 2)} {_f4(-ih / 2)})"><g>'
+                     f'<rect x="0" y="0" width="{iw}" height="{ih}" fill="#3d444d" stroke="#c9d1d9" stroke-width="1"/>')
             src = images.get(it["vault"])
-            o.append(f'<image href="{html.escape(src, quote=True)}" x="-9" y="-9" width="18" height="18"/>' if src else '<circle r="4" fill="#facc15"/>')
-        label = it.get("text") or (None if plain else it.get("tag"))
+            o.append(f'<image href="{html.escape(src, quote=True)}" x="{_f4(lx)}" y="{_f4(ly)}" width="{V["lock"]}" height="{V["lock"]}"/>' if src
+                     else f'<circle cx="{_f4(lx + V["lock"] / 2)}" cy="{_f4(ly + V["lock"] / 2)}" r="3" fill="#facc15"/>')
+            dk = keyed((box or {}).get("door") or [])
+            if varies(dk):
+                o.append(anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} 1" for v in dk), keyTimes=";".join(tk(v[0]) for v in dk)))
+            o.append("</g></g>")
+        elif it.get("img"):   # FR136: a logo on a blue badge (Jitsi Meet)
+            o.append('<rect x="-9" y="-9" width="18" height="18" rx="4" fill="#1d76ba" stroke="#c9d1d9" stroke-width="1"/>')
+            src = images.get(it["img"])
+            if src:
+                o.append(f'<image href="{html.escape(src, quote=True)}" x="-7" y="-7" width="14" height="14"/>')
+        label = it.get("text") or (it.get("book") and (P.get("texts") or {}).get(i)) or (None if plain else it.get("tag"))   # FR136: a book's address carries the text the book gave
         if label:   # FR132: more lines stack upwards, the last one where a single line would be
             ls = label.split("\n")
             body = html.escape(label) if len(ls) == 1 else "".join(f'<tspan x="0" y="{_f4(3.5 - (len(ls) - 1 - j) * 11)}">{html.escape(l)}</tspan>' for j, l in enumerate(ls))
-            o.append(f'<text x="0" y="{3.5 if it.get("text") else -12}" text-anchor="middle" fill="{it["color"]}" font-size="10"{HALO}>{body}</text>')
+            o.append(f'<text x="0" y="{3.5 if it.get("text") or it.get("book") else -12}" text-anchor="middle" fill="{it["color"]}" font-size="10"{HALO}>{body}</text>')
         o.append(a + "</g>")
         return "".join(o)
     o = ['<g class="actor" pointer-events="none" font-family="ui-sans-serif, system-ui, sans-serif"><style>@media (prefers-reduced-motion: reduce){.actor{display:none}}</style>']
@@ -1628,7 +1753,7 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
                     if varies(fk) else f'<g transform="scale({_f4(fk[0][1]) if fk else 0})">')
                  + flame_svg(-6, 0, 1.2, 0) + flame_svg(0, 0, 1.7, 0.3) + flame_svg(6, 0, 1.2, 0.55) + "</g></g></g>")
         o.append("</g>")
-    for inst, w in P["W"].items():   # things away from the runners — into a keyhole, a safe, a shelf, the fire or a box, and back
+    def track_svg(w):   # things away from the runners — into a keyhole, a safe, a shelf, the fire or a box, and back
         kk, sk, rk = keyed(w["kf"]), keyed(w["sc"]), keyed(w["rot"])
         c, fa = fade_kv(w["vis"])
         o.append(f'<g opacity="{0 if c is None else c}"' + ("" if w["d"] > 0 else f' transform="translate({_f4(w["pts"][0][0])} {_f4(w["pts"][0][1])})"') + ">")
@@ -1642,6 +1767,9 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         if varies(rk):
             o.append(anim(attributeName="transform", type="rotate", values=";".join(_f4(v[1]) for v in rk), keyTimes=";".join(tk(v[0]) for v in rk)))
         o.append(look(w["id"], 0, 0, 1, True, opacity=1) + "</g></g></g>")
+    for w in P["W"].values():   # (FR135: what lands in a vault a runner holds goes over the runner)
+        if not w.get("over"):
+            track_svg(w)
     for A in P["actors"]:   # the runners: along their paths, or standing where the step before left them
         ro = keyed(A["op"])   # it fades in / out where it appears and vanishes, and at the story's ends
         const_o = None if varies(ro) else (ro[0][1] if ro else 1)
@@ -1676,10 +1804,13 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
                          f' begin="{_f4(a["t0"])}s" repeatCount="indefinite"/></g>')
         o.append("</g>")
         for i, ivs in A["items"].items():
-            o.append(look(i, ACT_ITEMS[i]["dx"], ACT_ITEMS[i]["dy"], 1, False, ivs=ivs))
+            o.append(look(i, ACT_ITEMS[i]["dx"], ACT_ITEMS[i]["dy"], 1, False, ivs=ivs, box={"door": A.get("doors", {}).get(i), "inside": A.get("inside", {}).get(i)}))
         for text, t0, t1 in A["pops"]:
             o.append(f'<text x="0" y="-46" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
         o.append("</g></g>")
+    for w in P["W"].values():
+        if w.get("over"):
+            track_svg(w)
     if sc:
         for text, x, y, t0, t1 in sc["pops"]:   # a sign above a safe
             o.append(f'<text x="{_f4(x)}" y="{_f4(y)}" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
@@ -1910,7 +2041,10 @@ def render(d):
                     f'width="{w}" height="{h}" font-family="ui-sans-serif, system-ui, sans-serif">')
             o[2] = f'<rect x="{int(round(x0))}" y="{int(round(y0))}" width="{w}" height="{h}" fill="{bg}"/>'
     nodes_at = len(o)   # FR121: the lights coming into a book go here — over the lines, UNDER the books
-    SP = step_plans(steps_now, step, epoly, edges, lambda nid: anc(nid) if nid in box else None) if step is not None else None   # FR129: before the books are drawn (a runner may write one)
+    nodes_by = {n["id"]: n for n in nodes}
+    SP = (step_plans(steps_now, step, epoly, edges, lambda nid: anc(nid) if nid in box else None,
+                     lambda nid: entry_of(nodes_by[nid], state) if nid in nodes_by else "")   # FR136: a runner may look a name up in a book
+          if step is not None else None)   # FR129: before the books are drawn (a runner may write one)
 
     rank = lambda n: 2 if active_container(n, state) else (0 if is_container(n, vis, vis_ids, state) else 1)
     open_new = False   # FR125: a box this step adds is wrapped in <g class="stepnew"> (closed at the next box, or after the loop)
@@ -1936,6 +2070,17 @@ def render(d):
             wr = next((w for w in SP["P"]["writes"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
             if wr:   # FR129: a runner writes it in this step
                 lt["update"], lt["write"] = None, wr
+            rd = next((w for w in SP["P"]["reads"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
+            if rd:   # FR136: a runner looks it up in this step (it is the lights)
+                lt["ask"] = lt["answer"] = lt["update"] = None
+                lt["read"] = rd
+            if any(a.get("write") == n["id"] for st in steps_now for a in st.get("play") or []):   # FR133: it opens the way it was written
+                lt["dir"] = 1
+                if step is not None:   # FR134: in the story the runner brought the entry — no update light on any step
+                    lt["update"] = None
+                if step is not None and not wr and not rd:   # FR136: …and it only opens to be written or read
+                    lt["ask"] = lt["answer"] = None
+                    lt["still"] = True
             far = lt["answer"] and lt["answer"]["far"]
             if far and far in box:   # where the answer lands
                 fb = anc(far)
@@ -1981,7 +2126,7 @@ def render(d):
     for rid, lst in houses.items():   # FR118: the gates + moving lights, over the pipes (mirrors flow.js gatehouseGates)
         if rid in vis_ids:
             mark = len(o)
-            o.append(gatehouse_gates_svg(rid, lst, quiet=step is not None and not steps_now[step].get("visitors")))   # FR126
+            o.append(gatehouse_gates_svg(rid, lst, quiet=step is not None and not steps_now[step].get("visitors"), story=step is not None))   # FR126 / FR134
             wrap_new(rid, mark)
     o.extend(front)   # FR102: "front" lines go above the gate badges too
     o[nodes_at:nodes_at] = pb_under   # FR121 (mirrors flow.js pbUnder / pbOver)

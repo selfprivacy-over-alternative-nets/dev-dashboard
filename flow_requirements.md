@@ -1276,6 +1276,65 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   line + book parity, overlap scan, `./dash setups --check`, all views open; frames of the copy going onto the shelf, the
   safes, the domain on the top board, Mario walking down with three labels, the IP going back into the server, Yoshi at
   the shelf and writing the book (cable, VM) looked at.
+- **FR133. The book opens and is read the way Yoshi wrote it.** (User: *Yoshi writes at Y under the right page with the
+  book opening from left to right, but the friend reads it at the left page with the book opening from right to left.
+  Make it both open and read like Yoshi writes it.*) FR121 opens the cover toward the line the question comes in on; the
+  friend's lookup comes in from the right, so in step 5 (and the whole view) the Tailscale book turned spine-right with
+  the entry on the left-hand page, while in step 2 (no question line) Yoshi wrote it spine-left on the right-hand page.
+  Now a book a runner writes anywhere in the view's story (`{"write": <book>}` in a step's script) always opens
+  spine-left, the entry on the right-hand page — in every step and in the whole view, also when the question comes in
+  from its right. Other books keep FR121. Verified: `parity_steps.py`, `parity_phonebook.py` (the book's root the same
+  in the editor and the SVG), frames of step 2 (writing) and step 5 (the friend's light landing on the right-hand page).
+- **FR134. After Yoshi wrote the entry, no update light and no light from the server up to Tailscale.** (User: *after
+  Yoshi has written, a light with the ip goes from Tailscale up to the phonebook — remove that light. Also, after that,
+  a light goes from your new SelfPrivacy server to Tailscale — remove that light.*) **The update light:** in the steps
+  of a view's story, a book a runner writes gets no update light (`n.lights.update`, *ip …* on `e3`) in any step — the
+  runner brought the entry (before, only the writing step left it out; steps 3–5 still had it). The whole view keeps it:
+  there it is how *Tailscale writes your name* is shown. **The tunnel light:** in a story step, a tunnel through the
+  router's gates no longer shows your server calling out (the light from the server up the tunnel); only your friend's
+  light coming in on it (and the stranger bouncing off the shut fire wall) remain. The whole view keeps the call out.
+  **Step 5** lasts one lookup now, 9 s (was 10.6 s = the update + a lookup). Verified: `parity_steps.py` (gate lights
+  and book animations the same in the editor and the SVG), `ui_steps.py` (⏩ round from step 5 in 5 clicks, step 5 → 0
+  after 9 s + fade), line + book parity, all views open; a list of every moving light in steps 3 and 5 and the whole
+  view, and frames of step 5 looked at.
+- **FR135. The own key goes into a vault that has the KeePass logo as its lock — not into the logo.** (User: *after step
+  phonebook, Mario should put the own key in a vault that has the KeePass lock as lock, not in the KeePass lock itself.*)
+  Before, the vault was a small box filled by the KeePass logo, so the copy of the key flew into the logo. Now the vault
+  is a small safe (`VAULT` in both renderers, 34 × 28): a dark inside, a door hinged on the left, and the KeePass logo
+  (14 × 14) on the door's right as its lock. Step 3 opens it, puts the copy in, and shuts it:
+  `{"get": "vault"}, {"open": "vault"}, {"copy": "idkey", "from": "server", "in": "vault"}, {"close": "vault"}`.
+  `open` / `close` work on a vault the runner holds (its door swings like a safe's, `SCENE.OPEN`); a `copy` into a vault
+  flies from the box into its inside and lies there (`VAULT.IN`, drawn over the runner while it flies, so the vault
+  doesn't hide it); the shut door covers it on the way home. Verified: `parity_steps.py` (the door and what lies inside
+  animate the same in the editor and the SVG), `ui_steps.py`, line + book parity, overlap scan, all views open; editor
+  and static-SVG frames of the vault shut with the logo, opening, the key going in and lying inside, and the door shutting.
+- **FR136. The book opens only to be written and to be read; Jazz Jackrabbit makes your friend's call.** (User: *the DNS
+  phonebook opens twice after Yoshi wrote the domain and ip in it, then a 3rd time to read out the friend's ip. Only open
+  it when Yoshi writes to it, and then when the friend looks up the ip with the domain it got from Mario. Make Jazz
+  Jackrabbit receive the domain from Mario at the friend's phone, run with it through the internet to the DNS phonebook,
+  get the ip address from the line Yoshi wrote, run back through the internet, through the tunnel via Tailscale to the
+  SelfPrivacy server and pick up this Jitsi Meet icon, and run it back through the tunnels to the friend's phone — whilst
+  also showing the icon at the SelfPrivacy server, to show they are making a call.*) **The book:** in the steps of a view's
+  story, a book a runner writes is shut and still in every step where nobody writes or reads it (steps 3 and 4 — before,
+  it looped open and shut there); it plays once when Yoshi writes it (step 2) and once when Jazz reads it (step 5). The
+  whole view keeps its looping lookup. **Step 5** has a script now (it lasts its script, ≈ 32 s): Jazz (new sprite
+  `ic-jazz`, a green rabbit with a red bandana; also in the icon picker) comes out of the phone; Mario, who brought the
+  address in step 4 and still holds it (step 4 no longer puts it into the phone), hands it over (`{"give": "domain", "to":
+  "jazz"}`); Jazz runs `e_friend` to the internet and `e_ts_friend` up to the book and looks the name up (`{"lookup":
+  "tsbook"}`): the book opens, the name goes in, the entry lights up (*✓ … matches ip …*) and the address on that line
+  comes out into Jazz's hand (`answer` — its text is the book's own, *ip 98.76.54.32*). Then back over the internet,
+  `e_ts_run` to Tailscale and down the tunnel `e_ts_up` to your server; the address goes in, the call shows up on the
+  server (`{"show": "jitsi", "at": "server"}` — the Jitsi Meet icon from the user, drawn white on a blue badge, kept as
+  `meta.images.jitsi` by `handover17-checks/fr136_jitsi_apply.py`; it stays there); Jazz takes a copy (`{"get": "jitsi",
+  "from": "server"}`, tag *Jitsi call*) back up the tunnel, through Tailscale and the internet to the phone, where it shows
+  up too (`{"show": "jitsi", "at": "friend"}`). Jazz replaces the book's white / gray lights in that step, and in a story
+  step the tunnel's gate light is left out too (Jazz takes your friend's way); the stranger still bounces off the shut
+  fire wall. New script actions: `give` (hand to hand), `lookup` (a book), `show` (on a box, kept in view), `get … from`
+  (a copy of what a box shows). Verified: `parity_steps.py` (now also step 5 in the wifi, USB and VM views; every runner
+  animation, the book's and the gates' the same in the editor and the SVG), step 5's 14 shapes and texts the same in both,
+  `ui_steps.py` (the book shut in steps 3 and 4; step 5 has Mario and Jazz, its book plays once from Jazz's lookup, it hands
+  over to step 0 after its ≈ 32 s), line + book parity, overlap scan, `./dash setups --check`, all views open; frames of
+  the hand-over at the phone, the lookup, the call showing up on the server and the static SVG with the call on both ends.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
