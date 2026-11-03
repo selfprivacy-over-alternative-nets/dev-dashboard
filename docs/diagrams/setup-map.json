@@ -2189,7 +2189,8 @@
         },
         {
           "in": "you",
-          "put": "vault"
+          "put": "vault",
+          "screen": true
         },
         {
           "wait": 0.6
@@ -2242,6 +2243,13 @@
         {
           "give": "domain",
           "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
         },
         {
           "run": "e_friend",

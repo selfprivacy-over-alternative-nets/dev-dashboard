@@ -1119,6 +1119,8 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   every runner animation, caption, hash — 7 step views), `ui_steps.py` (buttons, ‹ ›, ☐ in step, hash, a view
   without steps), line + book parity, overlap scan, all views open, frames of both runner loops looked at. Not done:
   `1.I`'s ladder / flag-pole movement (the runner hops along every line); steps for the other reaches.
+  *Changed since:* the steps are now run from the caption box, not a Steps group in the top bar, and the caption is
+  edited by double-clicking it (FR137); the story has six steps (FR130).
 - **FR125. The steps play one after another; a click starts a step from its start; one step's end is the next one's
   start.** (User: *make it loop through the steps automatically; each time a person clicks a step it should start at
   the start state of that step, and the end state of the previous step should be identical to the start state of the
@@ -1136,7 +1138,8 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `stepnew`, also in the static render) as the step starts. The static render of step i chains the plans 0…i the same
   way. Verified: `parity_steps.py` (now also repeatCount / fill), `ui_steps.py` (⏸ pauses and `;play=0`, the standing
   runner in step 2, step 3 hands over to step 0 after 11.6 s), line + book parity, overlap scan, all views open,
-  frames of the hand-over 0 → 1 looked at.
+  frames of the hand-over 0 → 1 looked at. *Changed since:* ▶ / ⏸ and choosing a step live in the caption box only
+  (⏮ / ⏭, FR137).
 - **FR126. In a step nobody comes in unless the step says so; a step's loops start with the step.** (User: *for step
   1 install don't let the light go through e_ts_up; don't let the light be bounced by the firewall, there is nothing
   coming in at that time. I like to keep the diagram clean.*) FR118's moving parts at the router — the light in
@@ -1152,6 +1155,8 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `ui_steps.py` (step 2's book begins at the click; no gate lights in steps 1 + 2; both in step 3; the whole view keeps
   them on the page's clock), line + book parity, overlap scan, all views open; frames of step 1 at the router at 1.0 /
   3.5 / 6.2 / 12 s (only the runner moves) and of step 3 (the friend's light and the stranger) looked at.
+  *Changed since:* in a story step the tunnel shows neither the server calling out (FR134) nor the friend's light —
+  Jazz takes that way (FR136); only the stranger at the shut fire wall is left.
 - **FR127. A picture on an icon's screen: the SelfPrivacy logo on the server's laptop.** (User: *on the screen of the
   laptop icon of "your private server" put the `Screenshot From 2026-11-01 18-56-58.png` icon* — the SelfPrivacy logo;
   the user had just switched the server's icon from `server` to `laptop`.) An icon can declare its screen in
@@ -1198,7 +1203,9 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   editor and the SVG, in the box, USB and VM views), `ui_steps.py` (⏸ freezes at once and stays frozen, ⏪ / ⏩ clicks =
   2 s, held ≈ 4×, into step 0 and back, stops at the start, goes round from step 3), line + book parity, overlap scan,
   all views open; frames of the whole scene looked at (key into the lock, door open with the key, fire, the throw,
-  green key, IP in / domain out, *ip stored ✓*, the way back).
+  green key, IP in / domain out, *ip stored ✓*, the way back). *Changed since:* the *ip stored ✓* sign became a shelf
+  and the fire moved left of the safes (FR129); the IP reads *Your SelfPrivacy IP address: 192.42.69.314* and the
+  safes sit a safe's width further right (FR132).
 - **FR129. Step 1 stores the IP and a copy of the domain on Tailscale's shelf; in step 2 Yoshi writes the phonebook.**
   (User: *instead of showing "ip stored", show it stores the ip in a shelf, and put on the top shelf a COPY of the domain
   it gets out of the vault (or just show the domain twice in the vault, put one on the shelf and let Mario bring one with
@@ -1220,7 +1227,9 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   relay's, not your server's: Tailscale's phonebook points to its relay (as the book's entry already says), so your
   server's IP stays on the shelf. Step 2's caption says so. Verified: `parity_steps.py` (every runner animation and the
   book's write-mode animations the same in the editor and the SVG, box + VM), `ui_steps.py`, frames of the shelf, Yoshi
-  at the shelf, his way down and the book being written looked at.
+  at the shelf, his way down and the book being written looked at. *Changed since:* the shelf has two boards and no
+  relay address; Mario puts a copy of the IP on the bottom board first, and Yoshi carries the domain and the IP (FR132).
+  The book opens spine-left, the way Yoshi writes it, also when it is read (FR133).
 - **FR130. Two steps before the friend: back up the server's key in KeePass, send the link.** (User: *let Mario after
   step phonebook put a COPY of the orange state key into a vault locked with the KeePass lock icon at "your new private
   server", then carry that vault (above his head) back to "your computer" along with the Tailscale url. Then add a step
@@ -1237,6 +1246,9 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   where your computer is a box around the server); Mario carries the address along it and puts it into the phone.
   **5 friend:** as before (the lookup, visitors at the gates). The static SVG's legend now also stays above the highest
   line. Verified as FR129, plus frames of the vault being filled and carried home and of the share line.
+  *Changed since:* the vault is a small safe with a door locked by the KeePass logo (FR135, from a parallel chat); in
+  step 4 Mario keeps the address and hands it to Jazz in step 5, which is now Jazz's trip to the book and the server
+  and back with the Jitsi call (FR136).
 - **FR131. In step 1 the light goes into the laptop, which is hammered and built up out of it; a real hammer.** (User: *I
   want the light in step 1 install to go from Mario towards the middle of the SelfPrivacy laptop, which then is hammered
   and built up from the light. I want the hammer icon to be an actual hammer icon.*) **The light:** where Mario hammers,
@@ -1296,7 +1308,8 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   **Step 5** lasts one lookup now, 9 s (was 10.6 s = the update + a lookup). Verified: `parity_steps.py` (gate lights
   and book animations the same in the editor and the SVG), `ui_steps.py` (⏩ round from step 5 in 5 clicks, step 5 → 0
   after 9 s + fade), line + book parity, all views open; a list of every moving light in steps 3 and 5 and the whole
-  view, and frames of step 5 looked at.
+  view, and frames of step 5 looked at. *Changed since:* step 5 lasts its script (Jazz, ≈ 32 s) and the book stays
+  shut in steps 3 and 4 (FR136).
 - **FR135. The own key goes into a vault that has the KeePass logo as its lock — not into the logo.** (User: *after step
   phonebook, Mario should put the own key in a vault that has the KeePass lock as lock, not in the KeePass lock itself.*)
   Before, the vault was a small box filled by the KeePass logo, so the copy of the key flew into the logo. Now the vault
@@ -1335,6 +1348,35 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `ui_steps.py` (the book shut in steps 3 and 4; step 5 has Mario and Jazz, its book plays once from Jazz's lookup, it hands
   over to step 0 after its ≈ 32 s), line + book parity, overlap scan, `./dash setups --check`, all views open; frames of
   the hand-over at the phone, the lookup, the call showing up on the server and the static SVG with the call on both ends.
+- **FR137. The steps are run from the caption only; the caption is edited by double-clicking it.** (User: *besides the
+  fast forward and reverse buttons add a "next step" / "previous step" in the bottom right, then remove the Steps (0
+  account … all … in step, caption) row from the top menu. Just let me edit the caption by double-clicking the caption
+  text.*) **The caption box** (bottom right) has `⏮ ⏪ ▶/⏸ ⏩ ⏭ ✕`: ⏮ / ⏭ = the previous / next step (round and round,
+  like playing; the tooltip names it), ✕ = the whole view. **The top bar** has no Steps group any more (no step buttons,
+  no *all*, no ▶, no *☐ in step*, no *✎ caption*). **The whole view** of a view with a story shows a `▶ step by step`
+  button bottom right instead of the caption; it goes back to the step you left with ✕ (else step 0). **The caption**:
+  a double-click on its text (when the editor can save) makes it editable in place, all of it selected; Enter or
+  clicking away keeps it (the diagram is then unsaved), Esc drops it; while you type the story waits (no next step) and
+  the editor's keys stay off (typing Backspace doesn't delete the selected box). **☐ in step** moved into the caption
+  box: it shows under the text while a box or line is selected. Editor only — the static SVG's caption has no buttons.
+  Verified: `ui_steps.py` (rewritten for the caption: ▶ step by step, ⏭ through all 6 steps and round, ⏮ round back,
+  ⏸ / ⏪ / ⏩ as before, ☐ in step from the caption, the double-click edit with Esc / Enter and Backspace not reaching the
+  editor, ✕ to the whole view, no Steps group), `parity_steps.py`, all views open; screenshots of the top bar, the
+  whole view's button, the caption box and the caption being edited looked at.
+- **FR138. The vault stays on Your computer's screen; Mario goes home after handing over the address.** (User: *when
+  Mario returns the vault to "your computer", ensure the vault is stored on the screen of "your computer", so that it
+  doesn't disappear. Ensure Mario returns from your friend's phone to your computer once he dropped off the hostname —
+  after he handed it to Jazz Jackrabbit, not before.*) **On a screen:** `{"put": X, "in": <box>, "screen": true}` (or
+  `"left"` / `"right"`: that half) puts a thing onto the screen of a box drawn as a laptop (its icon's `data-screen`, FR127)
+  instead of into it: it flies there, shrinks to fit and **stays** — also in every later step of the story (the step's end
+  state carries what lies on which screen, `end.stored`). A copy of it can be got off the screen
+  (`{"get": X, "from": <box>}`, FR136); a vault's copy holds what the vault holds. A box without a screen (the VM views'
+  *Your computer*, a box around the server) takes the thing in as before. Step 3 now ends with the KeePass vault on Your
+  computer's screen, where it stays in steps 4 and 5. **Home again:** step 5 has Mario run back along the share line
+  right after Jazz took the address (`{"give": "domain", "to": "jazz"}`, then `{"run": ["e_share", "e_sharevm"], "back":
+  true}`); then Jazz makes the call; Mario fades out at Your computer at the story's end. Verified: `parity_steps.py`
+  (steps 3–5 in the box, USB, wifi and VM views), `ui_steps.py`, line + book parity, overlap scan, all views open;
+  frames of the vault landing on the screen, still there in steps 4–5, and of Mario running home looked at.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

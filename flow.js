@@ -1117,7 +1117,7 @@
   // one step's end state is the next one's start state; mario fades in only at the story's first step (or with nothing to follow
   // on from), every runner fades out only at its last step; a step without a script lasts its `dur`. The plan runs ONCE
   // (repeatCount 1, frozen at its end); the next step takes over from there.
-  function actorPlan(step, epoly, start, first, last, boxAt) {
+  function actorPlan(step, epoly, start, first, last, boxAt, screenAt) {
     const edgeOf = (id) => S.data.edges.find((e) => e.id === id), st0 = (start && start.actors) || {};
     let T = first || !st0.mario ? ACT.FADE : 0, sc = null, nInst = 0;
     const W = {}, writes = [], ACTS = {}, reads = [], shown = [], texts = { ...((start && start.texts) || {}) };   // FR136: books looked up, things shown on boxes, texts from books
@@ -1147,6 +1147,14 @@
       : k === "A" || k === "B" ? { at: sc.g[k].inside, safe: true } : { at: sc.g[k], safe: false };
     const inScale = (id, safe) => ACT_ITEMS[id].text ? (safe ? SCENE.IN.safe : SCENE.IN.shelf) : SCENE.IN.icon;
     const middle = (b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    // FR138: things stored on a box's screen (the vault on Your computer, the backup + vault on the backup laptop) stay there,
+    // into the next steps; a copy can be got off them (`get` … `from`), a vault with what lies in it
+    const stored = ((start && start.stored) || []).map((v) => ({ ...v, on: 0, off: null }));
+    for (const v of stored) shown.push({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside });
+    const itemSize = (id) => ACT_ITEMS[id].vault ? [VAULT.w, VAULT.h] : ACT_ITEMS[id].text ? [60, 12] : [18, 18];
+    const slotOn = (r, slot, id) => {   // a place on a screen: the middle, or its left / right half; the thing made to fit it
+      const half = slot === "left" || slot === "right", w = half ? r.w / 2 : r.w, [iw, ih] = itemSize(id);
+      return { x: r.x + (slot === "left" ? w / 2 : slot === "right" ? r.w - w / 2 : r.w / 2), y: r.y + r.h / 2, s: +Math.min(0.9 * w / iw, 0.85 * r.h / ih).toFixed(4) }; };
     if (start && start.scene) {   // FR129: the scene the step before left standing — as it was, the doors shut, the fire out
       sc = { g: sceneGeo(start.scene.O), t0: 0, fadeIn: false, t1: null, doors: { A: [], B: [] }, lock: {}, fire: [], pops: [],
         inside: start.scene.inside.map((v) => ({ id: v.id, k: v.k, inst: null, on: 0, off: null, x: v.x, y: v.y, s: v.s })) };
@@ -1167,7 +1175,10 @@
         R.runs.push([T, T + dur]); T += dur; R.dist += L; R.kf.push([T, R.dist]);
         R.spot = p[p.length - 1]; R.at = a.back ? e.from : e.to;
       } else if (a.get != null && a.from != null) {   // FR136: a copy of what is shown on a box comes off it into its hand
-        const id = String(a.get), v = R.spot && shown.find((x) => x.id === id && x.at === String(a.from)); if (!v) continue;
+        const id = String(a.get); let v = R.spot && ACT_ITEMS[id] && shown.find((x) => x.id === id && x.at === String(a.from));
+        if (!v && R.spot && ACT_ITEMS[id]) { const b = boxAt(String(a.from)); if (b) v = { ...middle(b), s: 0.3 }; }   // FR138: out of the box itself (the light, the backup)
+        if (!v) continue;
+        if (v.inside && v.inside.length) R.inside[id] = v.inside.map((x) => ({ id: x, on: T + ACT.T.show, off: null }));   // FR138: the vault's copy holds what the vault holds
         const inst = newInst(id), w = track(inst), t1 = T + ACT.T.show; turn(R, T, v.x - R.spot.x);
         wMove(inst, T, T, [{ x: v.x, y: v.y }]); wMove(inst, T, t1, [hand(R, id)]); w.vis.push([T, t1]); w.sc.push([T, v.s], [t1, 1]);
         carry(R, id, t1); R.inst[id] = inst; T = t1 + 0.2;
@@ -1207,7 +1218,8 @@
       } else if (a.put != null && ACT_ITEMS[a.put] && R.spot) {   // into a keyhole ("A.lock"), a safe or onto a shelf board ("B", "S.top"), or into a box ("server")
         const id = a.put, into = String(a.in || ""), [k, part] = into.split("."), lock = part === "lock" && sc && (k === "A" || k === "B");
         const h = lock ? null : holder(into), b = !lock && !h ? boxAt(into) : null;
-        const to = lock ? sc.g[k].lock : h ? { x: h.at.x, y: h.at.y + sc.inside.filter((v) => v.k === into && v.off == null).length * 8 } : b ? middle(b) : null;
+        const scr = b && a.screen && screenAt ? screenAt(into) : null, slot = scr ? slotOn(scr, a.screen, id) : null;   // FR138: onto its screen, to stay
+        const to = lock ? sc.g[k].lock : h ? { x: h.at.x, y: h.at.y + sc.inside.filter((v) => v.k === into && v.off == null).length * 8 } : slot ? { x: slot.x, y: slot.y } : b ? middle(b) : null;
         if (!to) continue;
         const keep = a.copy === true && !lock;   // FR132: {"copy": true} — a copy comes off what it holds and goes there; the runner keeps its own
         const inst = keep ? newInst(id) : instOf(R, id), w = track(inst), t0 = T + (keep ? 0.2 : 0), t1 = T + (lock ? 0.5 : keep ? 0.8 : 0.6);
@@ -1216,6 +1228,9 @@
         wMove(inst, t0, t1, [to]);
         if (lock) { w.sc.push([t1, 0.8]); w.rot.push([t1, 0], [T + ACT.T.put, 90]); sc.lock[k] = inst; T += ACT.T.put; }
         else if (h) { const s = inScale(id, h.safe); w.sc.push([t1, s]); w.vis[w.vis.length - 1][1] = t1; sc.inside.push({ id, k: into, inst, on: t1, off: null, x: to.x, y: to.y, s }); T += keep ? ACT.T.copy : ACT.T.putIn; }
+        else if (slot) { const inside = (R.inside[id] || []).filter((v) => v.off == null).map((v) => v.id);   // FR138: it lies on the screen from now on
+          w.sc.push([t1, slot.s]); w.vis[w.vis.length - 1][1] = t1; stored.push({ id, at: into, x: to.x, y: to.y, s: slot.s, inside, on: t1, off: null });
+          shown.push({ id, at: into, x: to.x, y: to.y, s: slot.s, inside }); T += keep ? ACT.T.copy : ACT.T.putIn; }
         else { w.sc.push([t1, 0.3]); w.vis[w.vis.length - 1][1] = t1; T += keep ? ACT.T.copy : ACT.T.putIn; }   // FR130: into a box — it goes in and is kept there
       } else if (sc && (a.open != null || a.close != null) && ["A", "B"].includes(a.open != null ? a.open : a.close)) {   // the door swings open / shut; a key in its lock goes with it
         const k = a.open != null ? a.open : a.close, q = sc.g[k], opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close;
@@ -1227,6 +1242,11 @@
         const id = a.open != null ? a.open : a.close, opening = a.open != null, d = opening ? ACT.T.open : ACT.T.close, l = R.doors[id] = R.doors[id] || [];
         l.push([T, opening ? 1 : SCENE.OPEN], [T + d, opening ? SCENE.OPEN : 1]); T += d;
       } else if (sc && a.fire) { sc.fire.push([T, 0], [T + ACT.T.fire, 1]); T += ACT.T.fire;   // a fire starts in the bowl
+      } else if (a.take != null && ACT_ITEMS[a.take] && R.spot && (ACT_ITEMS[String(a.from || "")] || {}).vault) {   // FR138: out of the vault it holds (over the runner)
+        const box = String(a.from), v = (R.inside[box] || []).find((x) => x.id === a.take && x.off == null); if (!v) continue;
+        const h = hand(R, box), inst = newInst(a.take), w = track(inst), t1 = T + ACT.T.take; v.off = T; w.over = true;
+        wMove(inst, T, T, [{ x: h.x + VAULT.IN.x, y: h.y + VAULT.IN.y }]); wMove(inst, T, t1, [hand(R, a.take)]); w.vis.push([T, t1]); w.sc.push([T, VAULT.IN.s], [t1, 1]);
+        carry(R, a.take, t1); R.inst[a.take] = inst; T = t1;
       } else if (a.take != null && ACT_ITEMS[a.take] && R.spot) {   // out of a keyhole ("A.lock"), out of a safe or off a shelf board ("A", "S.top")
         const id = a.take, from = String(a.from || ""), [k, part] = from.split(".");
         if (part === "lock" && sc && (k === "A" || k === "B")) { const inst = sc.lock[k]; if (!inst) continue;
@@ -1282,11 +1302,11 @@
       } else if (typeof a.wait === "number") T += Math.max(0, a.wait);
     }
     const all = ACTORS.map((who) => ACTS[who]).filter((R) => R && R.pts.length);
-    if (!all.length && !sc) return null;   // no runner and no scene in this step
+    if (!all.length && !sc && !stored.length) return null;   // no runner, no scene and nothing stored on a screen in this step
     if (typeof step.dur === "number") T = Math.max(T, step.dur); else if (!(step.play || []).length) T = Math.max(T, ACT.STAND);   // standing time
     for (const R of all) R.kf.push([T, R.dist]);
     if (last) { for (const R of all) if (!R.gone) R.op.push([T, 1], [T + ACT.FADE, 0]); T += ACT.FADE; for (const R of all) R.kf.push([T, R.dist]); }
-    const out = { T, W, scene: sc, writes, reads, texts, last, end: { actors: {}, scene: null, texts },
+    const out = { T, W, scene: sc, writes, reads, texts, last, stored, end: { actors: {}, scene: null, texts, stored: stored.filter((v) => v.off == null).map((v) => ({ id: v.id, at: v.at, x: v.x, y: v.y, s: v.s, inside: v.inside })) },
       actors: all.map((R) => ({ who: R.who, pts: R.pts, L: polyLen(R.pts), kf: R.kf, runs: R.runs, acts: R.acts, pops: R.pops, items: R.items, doors: R.doors, inside: R.inside, face: R.face, op: R.op })) };
     for (const R of all) if (!R.gone) out.end.actors[R.who] = { spot: R.spot, at: R.at, face: R.facing, items: Object.keys(R.items).filter((id) => R.items[id].some((v) => v[1] == null)) };
     if (sc && sc.t1 == null) out.end.scene = { O: sc.g.O, inside: sc.inside.filter((v) => v.off == null).map((v) => ({ id: v.id, k: v.k, x: v.x, y: v.y, s: v.s })) };
@@ -1320,7 +1340,7 @@
         const V = VAULT, iw = V.w - 2 * V.inset, ih = V.h - 2 * V.inset, lx = iw - V.lock - 2, ly = (ih - V.lock) / 2;
         el("rect", { x: -V.w / 2, y: -V.h / 2, width: V.w, height: V.h, rx: 3, fill: "#2d333b", stroke: it.color, "stroke-width": 1.5 }, g);
         el("rect", { x: -iw / 2, y: -ih / 2, width: iw, height: ih, fill: "#0b0e14" }, g);
-        for (const v of (box && box.inside) || []) fadeIv(look(g, v.id, V.IN.x, V.IN.y, V.IN.s, true), [[v.on, null]]);
+        for (const v of (box && box.inside) || []) fadeIv(look(g, v.id, V.IN.x, V.IN.y, V.IN.s, true), [[v.on, v.off == null ? null : v.off]]);
         const D = el("g", {}, el("g", { transform: `translate(${-iw / 2} ${-ih / 2})` }, g));
         el("rect", { x: 0, y: 0, width: iw, height: ih, fill: "#3d444d", stroke: "#c9d1d9", "stroke-width": 1 }, D);
         const src = imgSrc("img:" + it.vault);
@@ -1351,6 +1371,7 @@
         el("rect", { x: f(x), y: f(y), width: f(w), height: f(h), fill: (S.data.meta && S.data.meta.background) || "#0b0e14", mask: `url(#${id})` }, G);
       }
     }
+    for (const v of P.stored || []) fadeIv(look(G, v.id, v.x, v.y, v.s, true), [[v.on, v.off]]);   // FR138: what lies on a screen
     const sc = P.scene;
     if (sc) {   // FR128 / FR129: the ledge, the safes, the fire bowl and the shelf — they fade in when the scene starts and out when it ends
       const g = sc.g, s = SCENE.safe, SG = el("g", { opacity: 0 }, G);
@@ -1427,27 +1448,40 @@
   function stepPlans(epoly, boxOf) {   // FR125 / FR129: the plans of steps 0…step, each starting where the one before ended (and every step's length)
     const st = stepsNow(); if (S.step == null || !st[S.step]) return null;
     const boxAt = (id) => { const n = node(id); return n && boxOf[id] ? anchorBox(n, boxOf[id]) : null; };
+    const screenAt = (id) => { const n = node(id), b = boxOf[id], q = n && ICON_SCREEN[n.icon]; if (!b || !q || !isPictogram(n)) return null;   // FR138: its screen (the laptop's)
+      const g = pictoGeom(b, String(n.label || "").split("\n")), k = g.s / 24; return { x: g.x + q[0] * k, y: g.y + q[1] * k, w: q[2] * k, h: q[3] * k }; };
     let P = null, prev = null; const durs = [];
-    for (let k = 0; k <= S.step; k++) { P = actorPlan(st[k], epoly, prev, k === 0, k === st.length - 1, boxAt); prev = P && P.end;
+    for (let k = 0; k <= S.step; k++) { P = actorPlan(st[k], epoly, prev, k === 0, k === st.length - 1, boxAt, screenAt); prev = P && P.end;
       durs.push(P ? P.T : (typeof st[k].dur === "number" ? st[k].dur : ACT.STAND)); }
     return { P, durs };
   }
   function drawStep(SP, boxOf) {   // the active step's caption (bottom-right) and its runners
     const cap = $("stepcap"), st = stepsNow(), s = S.step != null && st[S.step];
-    if (!s) { cap.hidden = true; S.stepDur = 0; return; }
-    const m = $("stepmember");   // the ☐ in step button follows the selection (built with the toggle bar, refreshed every render)
-    if (m) { const o = selObj(), inS = o && (s.show || []).includes(o.id); m.disabled = !o; m.textContent = inS ? "☑ in step" : "☐ in step";
-      m.title = o ? `${o.id}: ${inS ? "take out of" : "show from"} step ${S.step} on` : "select a box or line first (pick it in 'all', then come back)"; }
-    cap.hidden = false; cap.textContent = "";
-    const head = document.createElement("div"); head.className = "sc-head";
-    const no = document.createElement("span"); no.textContent = `step ${S.step}`;
-    const title = document.createElement("b"); title.textContent = s.title || s.id;
-    const btn = (text, tip) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = text; b.title = tip; return b; };
-    const rw = btn("⏪", "back 2 s — hold: play backwards (4×)"), ff = btn("⏩", "ahead 2 s — hold: fast forward (4×)");   // FR128
-    rw.onpointerdown = (ev) => { ev.preventDefault(); seekStart(-1); }; ff.onpointerdown = (ev) => { ev.preventDefault(); seekStart(1); };
-    const pl = btn(S.play ? "⏸" : "▶", S.play ? "pause — everything stops where it is" : "play on, the steps one after another"); pl.onclick = togglePlay;   // FR125 / FR128
-    head.append(no, title, rw, pl, ff); cap.appendChild(head);
-    const body = document.createElement("div"); body.className = "sc-body"; body.textContent = s.caption || ""; cap.appendChild(body);
+    $("stepenter").hidden = !!s || !st.length;   // FR137: the whole view of a story offers to tell it step by step
+    if (!s) { cap.hidden = true; S.capEdit = null; S.stepDur = 0; return; }
+    if (S.capEdit !== s) {   // (left as it is while its text is being edited)
+      S.capEdit = null; cap.hidden = false; cap.textContent = "";
+      const head = document.createElement("div"); head.className = "sc-head";
+      const no = document.createElement("span"); no.textContent = `step ${S.step}`;
+      const title = document.createElement("b"); title.textContent = s.title || s.id;
+      const btn = (text, tip) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = text; b.title = tip; return b; };
+      const n = st.length, ip = (S.step - 1 + n) % n, inx = (S.step + 1) % n, name = (i) => `${i} ${st[i].label || st[i].title || st[i].id}`;
+      const prev = btn("⏮", `previous step (${name(ip)})`), next = btn("⏭", `next step (${name(inx)})`);   // FR137: round and round, like playing
+      prev.onclick = () => setStep(ip); next.onclick = () => setStep(inx);
+      const rw = btn("⏪", "back 2 s — hold: play backwards (4×)"), ff = btn("⏩", "ahead 2 s — hold: fast forward (4×)");   // FR128
+      rw.onpointerdown = (ev) => { ev.preventDefault(); seekStart(-1); }; ff.onpointerdown = (ev) => { ev.preventDefault(); seekStart(1); };
+      const pl = btn(S.play ? "⏸" : "▶", S.play ? "pause — everything stops where it is" : "play on, the steps one after another"); pl.onclick = togglePlay;   // FR125 / FR128
+      const all = btn("✕", "the whole view (no steps)"); all.onclick = () => setStep(null);
+      head.append(no, title, prev, rw, pl, ff, next, all); cap.appendChild(head);
+      const body = document.createElement("div"); body.className = "sc-body"; body.textContent = s.caption || ""; cap.appendChild(body);
+      if (S.backend) { body.classList.add("editable"); body.title = "double-click to edit · Enter keeps it, Esc drops it";   // FR137: the caption is edited in place
+        body.ondblclick = (ev) => { ev.stopPropagation(); editCaption(body, s); }; }
+      const o = S.backend && selObj();   // editing the story: the selected box or line in this step or not
+      if (o) { const inS = (s.show || []).includes(o.id), foot = document.createElement("div"); foot.className = "sc-foot";
+        const m = btn(inS ? "☑ in step" : "☐ in step", `${o.id}: ${inS ? "take out of" : "show from"} step ${S.step} on`); m.id = "stepmember";
+        m.onclick = () => { s.show = inS ? s.show.filter((x) => x !== o.id) : [...(s.show || []), o.id]; markDirty(true); render(); };
+        foot.appendChild(m); cap.appendChild(foot); }
+    }
     // FR125: this step's runners follow on from the previous steps' (the end of one is the start of the next)
     S.stepDurs = SP ? SP.durs : [];   // FR128: every step's length so far (⏪ goes back into them)
     S.stepDur = S.stepDurs[S.step] != null ? S.stepDurs[S.step] : ACT.STAND;   // how long the step plays before the next one
@@ -1919,30 +1953,7 @@
       }
       wrap.appendChild(seg); bar.appendChild(wrap);
     }
-    const st = stepsNow();   // FR124: this view's story, step by step (+ all = the whole view)
-    if (st.length) {
-      clampStep();
-      const wrap = document.createElement("span"); wrap.className = "tg";
-      const lab = document.createElement("label"); lab.textContent = "Steps"; wrap.appendChild(lab);
-      const seg = document.createElement("span"); seg.className = "seg";
-      const btn = (text, on, title, fn) => { const b = document.createElement("button"); b.textContent = text; b.className = on ? "on" : ""; b.title = title; b.onclick = fn; seg.appendChild(b); };
-      st.forEach((s, i) => btn(`${i} ${s.label || ""}`.trim(), S.step === i, s.title || "", () => setStep(i)));
-      btn("all", S.step == null, "the whole view", () => setStep(null));
-      wrap.appendChild(seg);
-      const pl = document.createElement("button"); pl.className = "btn"; pl.id = "stepplay";   // FR125: the steps play one after another
-      pl.textContent = S.play ? "⏸" : "▶"; pl.title = S.play ? "pause — a step then plays once and stays at its end" : "play the steps one after another, round and round";
-      pl.onclick = togglePlay; wrap.appendChild(pl);
-      if (S.step != null && S.backend) {   // editing the story: the selected item's membership (drawStep keeps its label current), the caption
-        const s = st[S.step];
-        const m = document.createElement("button"); m.className = "btn"; m.id = "stepmember"; m.disabled = true; m.textContent = "☐ in step";
-        m.onclick = () => { const o = selObj(); if (!o) return; s.show = (s.show || []).includes(o.id) ? s.show.filter((x) => x !== o.id) : [...(s.show || []), o.id]; markDirty(true); render(); };
-        wrap.appendChild(m);
-        const c = document.createElement("button"); c.className = "btn"; c.textContent = "✎ caption"; c.title = "the text shown bottom-right in this step";
-        c.onclick = () => { const v = prompt(`Caption for step ${S.step} (${s.title || s.id}):`, s.caption || ""); if (v == null) return; s.caption = v; markDirty(true); render(); };
-        wrap.appendChild(c);
-      }
-      bar.appendChild(wrap);
-    }
+    if (stepsNow().length) clampStep();   // FR124: this view's story — FR137: run from the caption bottom-right (drawStep), not from here
     bar.appendChild(anchorButton());   // FR104
     bar.appendChild(nailButton());     // FR106
   }
@@ -1991,9 +2002,22 @@
     status(S.play ? "playing the steps one after another" : "paused — everything stops where it is; ⏪ ⏩ still move it");
   }
   function setStep(i) {
+    if (i == null && S.step != null) S.lastStep = S.step;   // FR137: ▶ step by step comes back to it
     startStep(i);
     const s = S.step != null && stepsNow()[S.step], o = selObj();
     status(s ? `step <b>${S.step}</b> — ${s.title || s.id}${o && !visible(o) ? ` · <b>${o.id}</b> is not in this step — ☐ in step adds it` : ""}` : "the whole view");
+  }
+  $("stepenter").onclick = () => setStep(S.lastStep != null ? S.lastStep : 0);
+  function editCaption(body, s) {   // FR137: a double-click on the caption edits it in place — Enter (or clicking away) keeps it, Esc drops it
+    if (!S.backend || S.capEdit) return;
+    S.capEdit = s; clearTimeout(S.playTimer); S.playTimer = null;   // the story waits while you type
+    body.contentEditable = "true"; body.focus(); getSelection().selectAllChildren(body);
+    const done = (keep) => { if (S.capEdit !== s) return; S.capEdit = null; body.contentEditable = "false";
+      const v = body.textContent.replace(/\s+/g, " ").trim();
+      if (keep && v !== (s.caption || "")) { s.caption = v; markDirty(true); status(`caption of step <b>${S.step}</b> changed`); }
+      render(); schedule(); };
+    body.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === "Enter") { ev.preventDefault(); done(true); } else if (ev.key === "Escape") { ev.preventDefault(); done(false); } };
+    body.onblur = () => done(true);
   }
 
   /* ---------- breadcrumbs + picker ---------- */
@@ -2765,7 +2789,7 @@
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Control" || ev.key === "Meta") setCtrl(true);
-    const textField = ev.target.tagName === "TEXTAREA" || (ev.target.tagName === "INPUT" && !["range", "color", "button", "checkbox"].includes(ev.target.type));
+    const textField = ev.target.tagName === "TEXTAREA" || ev.target.isContentEditable || (ev.target.tagName === "INPUT" && !["range", "color", "button", "checkbox"].includes(ev.target.type));   // (FR137: the caption)
     if (textField) return;   // typing keeps the browser's own keys (incl. its own undo); sliders/pickers don't
     const mod = ev.ctrlKey || ev.metaKey, k = ev.key.toLowerCase();
     if (mod && !ev.altKey && (k === "z" || k === "y")) {   // FR97

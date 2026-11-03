@@ -1132,7 +1132,7 @@ def scene_geo(O):   # where the ledge, the safes, the fire bowl and the shelf ar
     return g
 
 
-def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lambda i: None, entry_at=lambda i: ""):   # one step's plan — mirrors flow.js actorPlan
+def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lambda i: None, entry_at=lambda i: "", screen_at=lambda i: None):   # one step's plan — mirrors flow.js actorPlan
     by = {e["id"]: e for e in edges}
     st0 = (start or {}).get("actors") or {}
     T = ACT["FADE"] if first or not st0.get("mario") else 0.0
@@ -1227,6 +1227,18 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         return {"at": sc["g"][k]["inside"], "safe": True} if k in ("A", "B") else {"at": sc["g"][k], "safe": False}
     in_scale = lambda i, safe: (SCENE["IN"]["safe"] if safe else SCENE["IN"]["shelf"]) if ACT_ITEMS[i].get("text") else SCENE["IN"]["icon"]
     middle = lambda b: (b[0] + b[2] / 2, b[1] + b[3] / 2)
+    # FR138: things stored on a box's screen stay there, into the next steps; a copy can be got off them, a vault with what lies in it
+    stored = [dict(v, on=0, off=None) for v in ((start or {}).get("stored") or [])]
+    for v in stored:
+        shown.append({"id": v["id"], "at": v["at"], "x": v["x"], "y": v["y"], "s": v["s"], "inside": v.get("inside")})
+    item_size = lambda i: (VAULT["w"], VAULT["h"]) if ACT_ITEMS[i].get("vault") else (60, 12) if ACT_ITEMS[i].get("text") else (18, 18)
+
+    def slot_on(r, slot, i):   # a place on a screen: the middle, or its left / right half; the thing made to fit it
+        half = slot in ("left", "right")
+        w = r[2] / 2 if half else r[2]
+        iw, ih = item_size(i)
+        return (r[0] + (w / 2 if slot == "left" else r[2] - w / 2 if slot == "right" else r[2] / 2), r[1] + r[3] / 2,
+                float(_f4(min(0.9 * w / iw, 0.85 * r[3] / ih))))
     if start and start.get("scene"):   # FR129: the scene the step before left standing — as it was, the doors shut, the fire out
         sc = {"g": scene_geo(start["scene"]["O"]), "t0": 0, "fadeIn": False, "t1": None, "doors": {"A": [], "B": []}, "lock": {}, "fire": [], "pops": [],
               "inside": [{"id": v["id"], "k": v["k"], "inst": None, "on": 0, "off": None, "x": v["x"], "y": v["y"], "s": v["s"]} for v in start["scene"]["inside"]]}
@@ -1269,9 +1281,15 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             R["spot"], R["at"] = p[-1], (e["from"] if a.get("back") else e["to"])
         elif a.get("get") is not None and a.get("from") is not None:   # FR136: a copy of what is shown on a box comes off it into its hand
             i = str(a["get"])
-            v = next((x for x in shown if x["id"] == i and x["at"] == str(a["from"])), None) if R["spot"] else None
+            v = next((x for x in shown if x["id"] == i and x["at"] == str(a["from"])), None) if R["spot"] and i in ACT_ITEMS else None
+            if not v and R["spot"] and i in ACT_ITEMS:   # FR138: out of the box itself (the light, the backup)
+                b = box_at(str(a["from"]))
+                if b:
+                    v = {"x": middle(b)[0], "y": middle(b)[1], "s": 0.3}
             if not v:
                 continue
+            if v.get("inside"):   # FR138: the vault's copy holds what the vault holds
+                R["inside"][i] = [{"id": x, "on": T + ACT["T"]["show"], "off": None} for x in v["inside"]]
             inst = new_inst(i)
             w, t1 = track(inst), T + ACT["T"]["show"]
             turn(R, T, v["x"] - R["spot"][0])
@@ -1366,7 +1384,9 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             lock = bool(part == "lock" and sc and k in ("A", "B"))
             h = None if lock else holder(into)
             b = box_at(into) if not lock and not h else None
-            to = sc["g"][k]["lock"] if lock else (h["at"][0], h["at"][1] + len([v for v in sc["inside"] if v["k"] == into and v["off"] is None]) * 8) if h else middle(b) if b else None
+            scr = screen_at(into) if b and a.get("screen") else None   # FR138: onto its screen, to stay
+            slot = slot_on(scr, a["screen"], i) if scr else None
+            to = sc["g"][k]["lock"] if lock else (h["at"][0], h["at"][1] + len([v for v in sc["inside"] if v["k"] == into and v["off"] is None]) * 8) if h else (slot[0], slot[1]) if slot else middle(b) if b else None
             if not to:
                 continue
             keep = a.get("copy") is True and not lock   # FR132: {"copy": true} — a copy comes off what it holds and goes there; the runner keeps its own
@@ -1391,6 +1411,13 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                 w["vis"][-1][1] = t1
                 sc["inside"].append({"id": i, "k": into, "inst": inst, "on": t1, "off": None, "x": to[0], "y": to[1], "s": s})
                 T += ACT["T"]["copy"] if keep else ACT["T"]["putIn"]
+            elif slot:   # FR138: it lies on the screen from now on
+                inside = [v["id"] for v in R["inside"].get(i, []) if v.get("off") is None]
+                w["sc"].append([t1, slot[2]])
+                w["vis"][-1][1] = t1
+                stored.append({"id": i, "at": into, "x": to[0], "y": to[1], "s": slot[2], "inside": inside, "on": t1, "off": None})
+                shown.append({"id": i, "at": into, "x": to[0], "y": to[1], "s": slot[2], "inside": inside})
+                T += ACT["T"]["copy"] if keep else ACT["T"]["putIn"]
             else:   # FR130: into a box — it goes in and is kept there
                 w["sc"].append([t1, 0.3])
                 w["vis"][-1][1] = t1
@@ -1413,6 +1440,21 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         elif sc and a.get("fire"):   # a fire starts in the bowl
             sc["fire"] += [[T, 0], [T + ACT["T"]["fire"], 1]]
             T += ACT["T"]["fire"]
+        elif a.get("take") is not None and a["take"] in ACT_ITEMS and R["spot"] and ACT_ITEMS.get(str(a.get("from") or ""), {}).get("vault"):   # FR138: out of the vault it holds (over the runner)
+            box = str(a["from"])
+            v = next((x for x in R["inside"].get(box, []) if x["id"] == a["take"] and x.get("off") is None), None)
+            if not v:
+                continue
+            h, inst = hand(R, box), new_inst(a["take"])
+            w, t1 = track(inst), T + ACT["T"]["take"]
+            v["off"], w["over"] = T, True
+            w_move(inst, T, T, [(h[0] + VAULT["IN"]["x"], h[1] + VAULT["IN"]["y"])])
+            w_move(inst, T, t1, [hand(R, a["take"])])
+            w["vis"].append([T, t1])
+            w["sc"] += [[T, VAULT["IN"]["s"]], [t1, 1]]
+            carry(R, a["take"], t1)
+            R["inst"][a["take"]] = inst
+            T = t1
         elif a.get("take") is not None and a["take"] in ACT_ITEMS and R["spot"]:   # out of a keyhole ("A.lock"), out of a safe or off a shelf board ("A", "S.top")
             i, frm = a["take"], str(a.get("from") or "")
             parts = frm.split(".")
@@ -1571,7 +1613,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         elif _num(a.get("wait")):
             T += max(0, a["wait"])
     all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
-    if not all_ and not sc:
+    if not all_ and not sc and not stored:   # (no runner, no scene and nothing stored on a screen)
         return None   # no runner and no scene in this step
     if _num(step.get("dur")):   # standing time
         T = max(T, step["dur"])
@@ -1586,7 +1628,8 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         T += ACT["FADE"]
         for R in all_:
             R["kf"].append([T, R["dist"]])
-    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "end": {"actors": {}, "scene": None, "texts": texts},
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored,
+           "end": {"actors": {}, "scene": None, "texts": texts, "stored": [{k: v[k] for k in ("id", "at", "x", "y", "s", "inside")} for v in stored if v["off"] is None]},
            "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
                        "items": R["items"], "doors": R["doors"], "inside": R["inside"], "face": R["face"], "op": R["op"]} for R in all_]}
     for R in all_:
@@ -1597,11 +1640,11 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
     return out
 
 
-def step_plans(steps_now, step, epoly, edges, box_at, entry_at=lambda i: ""):   # FR125 / FR129: the plans of steps 0…step, each starting where the one before ended — mirrors flow.js stepPlans
+def step_plans(steps_now, step, epoly, edges, box_at, entry_at=lambda i: "", screen_at=lambda i: None):   # FR125 / FR129: the plans of steps 0…step, each starting where the one before ended — mirrors flow.js stepPlans
     P = prev = None
     durs = []
     for k in range(step + 1):
-        P = actor_plan(steps_now[k], epoly, edges, prev, k == 0, k == len(steps_now) - 1, box_at, entry_at)
+        P = actor_plan(steps_now[k], epoly, edges, prev, k == 0, k == len(steps_now) - 1, box_at, entry_at, screen_at)
         prev = P["end"] if P else None
         durs.append(P["T"] if P else (steps_now[k]["dur"] if _num(steps_now[k].get("dur")) else ACT["STAND"]))
     return {"P": P, "durs": durs}
@@ -1662,7 +1705,7 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             o.append(f'<rect x="{_f4(-V["w"] / 2)}" y="{_f4(-V["h"] / 2)}" width="{V["w"]}" height="{V["h"]}" rx="3" fill="#2d333b" stroke="{it["color"]}" stroke-width="1.5"/>'
                      f'<rect x="{_f4(-iw / 2)}" y="{_f4(-ih / 2)}" width="{iw}" height="{ih}" fill="#0b0e14"/>')
             for v in (box or {}).get("inside") or []:
-                o.append(look(v["id"], V["IN"]["x"], V["IN"]["y"], V["IN"]["s"], True, ivs=[[v["on"], None]]))
+                o.append(look(v["id"], V["IN"]["x"], V["IN"]["y"], V["IN"]["s"], True, ivs=[[v["on"], v.get("off")]]))
             o.append(f'<g transform="translate({_f4(-iw / 2)} {_f4(-ih / 2)})"><g>'
                      f'<rect x="0" y="0" width="{iw}" height="{ih}" fill="#3d444d" stroke="#c9d1d9" stroke-width="1"/>')
             src = images.get(it["vault"])
@@ -1708,6 +1751,8 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
                 o.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" {box}><rect {box} fill="#fff"/><circle cx="{_f4(c[0])}" cy="{_f4(c[1])}" r="0" fill="#000">'
                          + anim(attributeName="r", values=";".join(_f4(v[1]) for v in rv), keyTimes=";".join(tk(v[0]) for v in rv)) + "</circle></mask>")
                 o.append(f'<rect {box} fill="{bg}" mask="url(#{mid})"/>')
+    for v in P.get("stored") or []:   # FR138: what lies on a screen
+        o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
     sc = P["scene"]
     if sc:   # FR128 / FR129: the ledge, the safes, the fire bowl and the shelf — they fade in when the scene starts and out when it ends
         g, s = sc["g"], SCENE["safe"]
@@ -2042,8 +2087,16 @@ def render(d):
             o[2] = f'<rect x="{int(round(x0))}" y="{int(round(y0))}" width="{w}" height="{h}" fill="{bg}"/>'
     nodes_at = len(o)   # FR121: the lights coming into a book go here — over the lines, UNDER the books
     nodes_by = {n["id"]: n for n in nodes}
+    def screen_at(nid):   # FR138: a box's screen (the laptop's) — mirrors flow.js screenAt
+        n, b = nodes_by.get(nid), box.get(nid)
+        q = n and ICON_SCREEN.get(n.get("icon"))
+        if not b or not q or not (n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state)):
+            return None
+        s_, ix, iy, _ = picto_geom(b, str(n.get("label", "")).split("\n"))
+        k = s_ / 24.0
+        return (ix + q[0] * k, iy + q[1] * k, q[2] * k, q[3] * k)
     SP = (step_plans(steps_now, step, epoly, edges, lambda nid: anc(nid) if nid in box else None,
-                     lambda nid: entry_of(nodes_by[nid], state) if nid in nodes_by else "")   # FR136: a runner may look a name up in a book
+                     lambda nid: entry_of(nodes_by[nid], state) if nid in nodes_by else "", screen_at)   # FR136: a runner may look a name up in a book
           if step is not None else None)   # FR129: before the books are drawn (a runner may write one)
 
     rank = lambda n: 2 if active_container(n, state) else (0 if is_container(n, vis, vis_ids, state) else 1)
