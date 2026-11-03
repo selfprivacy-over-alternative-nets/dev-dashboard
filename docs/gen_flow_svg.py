@@ -100,10 +100,20 @@ IP_RE = re.compile(r"\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}", 
 
 
 def entry_of(n, state):   # FR122: the entry text, per view (n.entryWhen = {toggle: {value: entry}}), else n.entry — mirrors flow.js entryOf
-    for t, by_v in (n.get("entryWhen") or {}).items():
-        if isinstance((by_v or {}).get(state.get(t)), str):
-            return by_v[state[t]]
-    return str(n.get("entry") or "")
+    def pick(w):   # FR141: a value may itself be {toggle: {value: entry}, "entry": fallback} — the entry by one more toggle (the scenario)
+        for t, by_v in w.items():
+            if t == "entry":
+                continue
+            v = by_v.get(state.get(t)) if isinstance(by_v, dict) else None
+            if isinstance(v, str):
+                return v
+            if isinstance(v, dict):
+                r = pick(v)
+                if r is not None:
+                    return r
+        return w.get("entry") if isinstance(w.get("entry"), str) else None
+    r = pick(n.get("entryWhen") or {})
+    return r if r is not None else str(n.get("entry") or "")
 
 
 def book_geom(n, b):   # FR119 / FR121: the CLOSED book, centred above its label (lines attach to it) — mirrors flow.js bookGeom
@@ -612,9 +622,10 @@ def flame_svg(x, y, s, begin):   # FR118: a small flickering flame on the bricks
             '</g></g>')
 
 
-def gatehouse_gates_svg(rid, lst, quiet=False, story=False):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
+def gatehouse_gates_svg(rid, lst, quiet=False, story=False, gp=None):   # FR118: the fire wall + port barrier over the pipes, and the moving lights — mirrors gatehouseGates
     # FR126: quiet = nobody comes in in this step: no lights, the wall and the barrier stay shut and still
     # FR134: story = a step of the view's story: the server's call out over a tunnel isn't shown again — only your friend comes in
+    # FR141: gp = the gates the story worked by hand, {"firewall": [[t, open 0…1], …], "T": the step's length}
     e, poly = lst[0]
     gh = GH[e["id"]]
     F, Pw, G = gate_wins(gh)
@@ -634,8 +645,19 @@ def gatehouse_gates_svg(rid, lst, quiet=False, story=False):   # FR118: the fire
     fsc = F["w"] / 36
     o += [flame_svg(F["x"] + F["w"] * 0.27, F["y"] + F["h"] * 0.25, fsc, 0), flame_svg(F["x"] + F["w"] * 0.73, F["y"] + F["h"] * 0.38, fsc, 0.3),
           flame_svg(F["x"] + F["w"] * 0.45, F["y"] + F["h"] * 0.9, fsc, 0.55)]
-    if row and not quiet:   # the fire wall slides down for your friend, then shuts again
+    if row and not quiet and not story:   # the fire wall slides down for your friend, then shuts again
         o.append(_smil("animateTransform", attributeName="transform", type="translate", values=f'0 0;0 0;0 {F["h"]:.1f};0 {F["h"]:.1f};0 0;0 0', keyTimes="0;0.1;0.15;0.33;0.38;1"))
+    if story and gp and gp.get("firewall"):   # FR141: the fire wall as the story left it or works it: slid down = open, and it stays so
+        kv0 = gp["firewall"]
+        kv = ([[0, kv0[0][1]]] + list(kv0)) if kv0[0][0] > 0 else list(kv0)
+        if kv[-1][0] < gp["T"]:
+            kv.append([gp["T"], kv[-1][1]])
+        tk = lambda t: _f4(max(0.0, min(1.0, t / gp["T"])))
+        if any(v[1] != kv[0][1] for v in kv):
+            vals, kts = ";".join("0 " + _f4(F["h"] * v[1]) for v in kv), ";".join(tk(v[0]) for v in kv)
+            o.append(f'<animateTransform attributeName="transform" type="translate" values="{vals}" keyTimes="{kts}" dur="{_f4(gp["T"])}s" repeatCount="1" fill="freeze"/>')
+        elif kv[0][1]:
+            o[wall_start] = f'<g clip-path="url(#ghc-{rid})"><g transform="translate(0 {_f4(F["h"] * kv[0][1])})">'
     o.append("</g></g>")
     hx, hy = Pw["x"] + Pw["w"] * 0.125, G["rowY"]
     opens_port = "port" in (e.get("open") or [])
@@ -646,7 +668,7 @@ def gatehouse_gates_svg(rid, lst, quiet=False, story=False):   # FR118: the fire
                  + (_smil("animateTransform", attributeName="transform", type="rotate", values=";".join(f"{v} {hx:.1f} {hy:.1f}" for v in (0, 0, -80, -80, 0, 0)), keyTimes="0;0.21;0.26;0.38;0.43;1") if row and opens_port and not quiet else "")
                  + "</g>")
         o.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="{Pw["w"] * 0.075:.1f}" fill="#0b0e14"/>')
-    if quiet:
+    if quiet or (story and row):   # FR141: on a direct route the story's visitors are runners and the wall is worked by hand — no lights
         o.append("</g>")
         return "".join(o)
     pw = e.get("pw") or 22
@@ -684,6 +706,21 @@ def gatehouse_gates_svg(rid, lst, quiet=False, story=False):   # FR118: the fire
         o.append(cross(_poly_at(fr, abs(gh["mq"] - F["cx"]) - gap), 0.79))
     o.append("</g>")
     return "".join(o)
+
+
+def blocked_svg(poly, pw):   # FR142: a pipe nobody gets through — a light comes in from its start, stops short of its end, turns red with a ✕ and backs off, every GH_T s — mirrors flow.js blockedLoop
+    L = _poly_len(poly) or 1
+    R1 = pw * 0.45
+    stop, back = max(0.0, 1 - (R1 + 2) / L), max(0.0, 1 - (R1 + 42) / L)
+    d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in poly)
+    red = _smil("animate", attributeName="fill", values="#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes="0;0.2;0.22;1")
+    q = _poly_at(poly, L * stop)
+    return ('<g class="blocked gh-anim" pointer-events="none" opacity="0">'
+            + _smil("animateMotion", path=d, keyPoints=f"0;0;{_f4(stop)};{_f4(back)};{_f4(back)}", keyTimes="0;0.05;0.2;0.24;1", calcMode="linear")
+            + _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes="0;0.04;0.06;0.44;0.5;1")
+            + f'<circle r="{_f4(R1)}" fill="#ffffff" opacity="0.3">{red}</circle><circle r="{_f4(pw * 0.22)}" fill="#ffffff" opacity="1">{red}</circle></g>'
+            + f'<text class="blocked" x="{_f4(q[0])}" y="{_f4(q[1] - R1 * 1.6)}" text-anchor="middle" font-size="{max(14, R1 * 2.2):.1f}" fill="#ff5c5c" opacity="0" pointer-events="none">✕'
+            + _smil("animate", attributeName="opacity", values="0;0;1;1;0;0", keyTimes="0;0.2;0.22;0.44;0.5;1") + "</text>")
 
 
 def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one lookup loop — mirrors flow.js drawPhonebook
@@ -1081,9 +1118,10 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 # ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
 ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26, "BLOW": 0.5,   # px/s · s — mirrors flow.js ACT
        "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "give": 0.7, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
-             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6, "burn": 3.2}}
+             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6, "burn": 3.2, "update": 7.6, "knock": 2.6, "gate": 0.8}}
 ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
     "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
+    "token":   {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "DuckDNS token"},   # FR141: a token that is not used up (DuckDNS)
     "idkey":   {"icon": "key", "color": "#3fb950", "dx": -14, "dy": -32, "tag": "own key"},
     "light":   {"light": True, "color": "#fff3a0", "dx": 20, "dy": -32},   # (FR140: right of the vault above its head)
     "vault":   {"vault": "keepass", "color": "#c9d1d9", "dx": 0, "dy": -40},   # FR130: a small safe locked with the KeePass logo, above its head
@@ -1154,7 +1192,11 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
     T = ACT["FADE"] if first or not st0.get("mario") else 0.0
     W, writes, ACTS, burns = {}, [], {}, []
     reads, shown, texts = [], [], dict((start or {}).get("texts") or {})   # FR136: books looked up, things shown on boxes, texts from books
+    texts.update(step.get("texts") or {})   # FR141: a step may set the texts of what is carried
     sc, n_inst = None, [0]
+    knocks, GT = [], {}   # FR142: knocks at blocked pipes; FR141: the gates worked by hand — as the step before left them, or as the story's first step says
+    for h, hg in ((start.get("gates") if start else step.get("gates")) or {}).items():
+        GT[h] = {gn: [[0, float(v)]] for gn, v in hg.items()}
 
     def carry(R, i, on):   # (already holding it: nothing changes)
         lst = R["items"].setdefault(i, [])
@@ -1255,6 +1297,15 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         iw, ih = item_size(i)
         return (r[0] + (w / 2 if slot == "left" else r[2] - w / 2 if slot == "right" else r[2] / 2), r[1] + r[3] / 2,
                 float(_f4(min(0.9 * w / iw, 0.85 * r[3] / ih))))
+    if not start:   # FR141: a story may start with things already on a screen
+        for v in step.get("stored") or []:
+            scr = screen_at(str(v["at"])) if v.get("id") in ACT_ITEMS else None
+            if not scr:
+                continue
+            slot = slot_on(scr, v.get("screen"), v["id"])
+            inside = list(v.get("inside") or [])
+            stored.append({"id": v["id"], "at": str(v["at"]), "x": slot[0], "y": slot[1], "s": slot[2], "inside": inside, "on": 0, "off": None})
+            shown.append({"id": v["id"], "at": str(v["at"]), "x": slot[0], "y": slot[1], "s": slot[2], "inside": inside})
     if start and start.get("scene"):   # FR129: the scene the step before left standing — as it was, the doors shut, the fire out
         sc = {"g": scene_geo(start["scene"]["O"]), "t0": 0, "fadeIn": False, "t1": None, "doors": {"A": [], "B": []}, "lock": {}, "fire": [], "pops": [],
               "inside": [{"id": v["id"], "k": v["k"], "inst": None, "on": 0, "off": None, "x": v["x"], "y": v["y"], "s": v["s"]} for v in start["scene"]["inside"]]}
@@ -1322,12 +1373,13 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                     carry(R, i, T)
             T += ACT["T"]["get"]
         elif a.get("pop") is not None:
+            pd = a["dur"] if _num(a.get("dur")) else ACT["T"]["pop"]   # FR141: dur = how long it shows; bad = a red sign
             if sc and a.get("at") in ("A", "B"):   # above a safe
                 q = sc["g"][a["at"]]
-                sc["pops"].append([str(a["pop"]), q["x"] + SCENE["safe"]["w"] / 2, q["y"] - 28, T, T + ACT["T"]["pop"]])
+                sc["pops"].append([str(a["pop"]), q["x"] + SCENE["safe"]["w"] / 2, q["y"] - 28, T, T + pd])
             else:
-                R["pops"].append([str(a["pop"]), T, T + ACT["T"]["pop"]])
-            T += ACT["T"]["pop"]
+                R["pops"].append([str(a["pop"]), T, T + pd, "#ff5c5c" if a.get("bad") else "#3fb950"])
+            T += pd
         elif a.get("hammer") is not None:
             dur = a["hammer"] if _num(a["hammer"]) and a["hammer"] > 0 else ACT["T"]["hammer"]
             if a.get("at") is not None and str(a["at"]) != R["at"]:   # FR131: it builds only the box it names, once it got there (wifi: no line there)
@@ -1367,7 +1419,8 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             b = box_at(str(a["appear"]))
             if not b or R["pts"]:
                 continue
-            R["spot"] = middle(b)
+            R["spot"] = (b[0] + b[2] / 2, b[1] + b[3]) if a.get("foot") else middle(b)   # FR141: foot = at the box's bottom edge (Mario in front of your computer)
+            R["at"] = str(a["appear"])
             R["pts"].append(R["spot"])
             R["kf"].append([0, 0])
             R["op"] += [[T, 0], [T + ACT["T"]["scene"], 1]]
@@ -1634,10 +1687,28 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                 continue
             burns.append({"at": str(a["burn"]), "t0": T, "t1": T + ACT["T"]["burn"]})
             T += ACT["T"]["burn"]
+        elif a.get("update") is not None:   # FR141: the box at the far end of the book's update line sends its address by itself: the light rides in and the entry is written (nobody carries it)
+            if not box_at(str(a["update"])):
+                continue
+            writes.append({"book": str(a["update"]), "t": T + 0.2, "light": True})
+            T += ACT["T"]["update"]
+        elif a.get("knock") is not None:   # FR142: a visitor knocks at a blocked pipe: a light rides it from its start and bounces off its end
+            e = by.get(str(a["knock"]))
+            p = epoly.get(e["id"]) if e else None
+            if not p or len(p) < 2:
+                continue
+            knocks.append({"poly": list(p), "pw": e.get("pw") or 22, "t0": T, "t1": T + ACT["T"]["knock"]})
+            T += ACT["T"]["knock"]
+        elif (a.get("open") in ("firewall", "port") or a.get("close") in ("firewall", "port")) and a.get("of") is not None:   # FR141: a gate of a gatehouse router worked by hand: it slides open (or shut) and stays so, into the next steps
+            house = str(a["of"])
+            gate = a["open"] if a.get("open") is not None else a["close"]
+            kv = GT.setdefault(house, {}).setdefault(gate, [])
+            kv += [[T, _kv_at(kv, T)], [T + ACT["T"]["gate"], 1 if a.get("open") is not None else 0]]
+            T += ACT["T"]["gate"]
         elif _num(a.get("wait")):
             T += max(0, a["wait"])
     all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
-    if not all_ and not sc and not stored and not burns:   # (no runner, no scene and nothing stored on a screen)
+    if not all_ and not sc and not stored and not burns and not knocks and not GT:   # (no runner, no scene, nothing stored on a screen, no knock and no gate)
         return None   # no runner and no scene in this step
     if _num(step.get("dur")):   # standing time
         T = max(T, step["dur"])
@@ -1652,8 +1723,9 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         T += ACT["FADE"]
         for R in all_:
             R["kf"].append([T, R["dist"]])
-    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored, "burns": burns,
-           "end": {"actors": {}, "scene": None, "texts": texts, "stored": [{k: v[k] for k in ("id", "at", "x", "y", "s", "inside")} for v in stored if v["off"] is None]},
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored, "burns": burns, "knocks": knocks, "gates": GT,
+           "end": {"actors": {}, "scene": None, "texts": texts, "stored": [{k: v[k] for k in ("id", "at", "x", "y", "s", "inside")} for v in stored if v["off"] is None],
+                   "gates": {h: {gn: _kv_at(kv, T) for gn, kv in hg.items()} for h, hg in GT.items()}},   # FR141: how the gates are left
            "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
                        "items": R["items"], "doors": R["doors"], "inside": R["inside"], "face": R["face"], "op": R["op"]} for R in all_]}
     for R in all_:
@@ -1744,7 +1816,7 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             src = images.get(it["img"])
             if src:
                 o.append(f'<image href="{html.escape(src, quote=True)}" x="-7" y="-7" width="14" height="14"/>')
-        label = it.get("text") or (it.get("book") and (P.get("texts") or {}).get(i)) or (None if plain else it.get("tag"))   # FR136: a book's address carries the text the book gave
+        label = (P.get("texts") or {}).get(i) or it.get("text") or (None if plain else it.get("tag"))   # FR136: a book's address carries the text the book gave; FR141: a step's own text for a thing
         if label:   # FR132: more lines stack upwards, the last one where a single line would be
             ls = label.split("\n")
             body = html.escape(label) if len(ls) == 1 else "".join(f'<tspan x="0" y="{_f4(3.5 - (len(ls) - 1 - j) * 11)}">{html.escape(l)}</tspan>' for j, l in enumerate(ls))
@@ -1787,6 +1859,17 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         o.append(f'<g transform="translate({_f4(b[0] + b[2] / 2)} {_f4(b[1] + b[3])})"><g transform="scale(0)">'
                  + anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in fk), keyTimes=";".join(tk(v[0]) for v in fk))
                  + "".join(flame_svg(dx * b[2], 0, fs * k_, ph) for dx, k_, ph in BURN_FLAMES) + "</g></g>")
+    for kn in P.get("knocks") or []:   # FR142: a knock at a blocked pipe — a light rides it from its start, stops short of its end, turns red with a ✕ and backs off
+        L = _poly_len(kn["poly"]) or 1
+        R1 = kn["pw"] * 0.45
+        stop, back = max(0.0, 1 - (R1 + 2) / L), max(0.0, 1 - (R1 + 42) / L)
+        tA, tB, tE = kn["t0"] + 1.2, kn["t0"] + 1.5, kn["t1"] - 0.3
+        o.append('<g opacity="0">' + anim(path="M " + " L ".join(f"{_f4(x)} {_f4(y)}" for x, y in kn["poly"]), keyPoints=";".join(_f4(v) for v in (0, 0, stop, back, back)),
+                                          keyTimes=";".join(tk(t) for t in (0, kn["t0"], tA, tB, T)), calcMode="linear") + fade_iv([[kn["t0"], tE]]))
+        for r, op in ((R1, 0.3), (kn["pw"] * 0.22, 1)):
+            o.append(f'<circle r="{_f4(r)}" fill="#ffffff" opacity="{op}">' + anim(attributeName="fill", values="#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes=";".join(tk(t) for t in (0, tA, tA + 0.02, T))) + "</circle>")
+        q = _poly_at(kn["poly"], L * stop)
+        o.append("</g>" + f'<text x="{_f4(q[0])}" y="{_f4(q[1] - R1 * 1.6)}" text-anchor="middle" fill="#ff5c5c" font-size="{_f4(max(14, R1 * 2.2))}" opacity="0">✕' + fade_iv([[tA, tE]]) + "</text>")
     for v in P.get("stored") or []:   # FR138: what lies on a screen
         o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
     sc = P["scene"]
@@ -1886,8 +1969,8 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         o.append("</g>")
         for i, ivs in A["items"].items():
             o.append(look(i, ACT_ITEMS[i]["dx"], ACT_ITEMS[i]["dy"], 1, False, ivs=ivs, box={"door": A.get("doors", {}).get(i), "inside": A.get("inside", {}).get(i)}))
-        for text, t0, t1 in A["pops"]:
-            o.append(f'<text x="0" y="-46" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
+        for text, t0, t1, col in A["pops"]:   # FR141: a sign may be red (bad)
+            o.append(f'<text x="0" y="-46" text-anchor="middle" fill="{col}" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(text)}' + fade_iv([[t0, t1]]) + "</text>")
         o.append("</g></g>")
     for w in P["W"].values():
         if w.get("over"):
@@ -2052,7 +2135,9 @@ def render(d):
             epoly[e["id"]] = poly   # FR122: a book's light can ride a tunnel too (your friend's pipe to the internet)
             col = e.get("color") or "#8b949e"
             o.append(mario_pipe_svg(poly, col, e.get("pw"), e.get("casing")))   # FR118: whole — its gates are drawn over it
-            mx, my, up = longest_mid(poly) if e.get("via") else (*poly[max(1, len(poly) // 2) - 1], False)
+            if e.get("blocked") and step is None:   # FR142: a blocked pipe — in the whole view a visitor knocks and bounces, round and round
+                o.append(blocked_svg(poly, e.get("pw") or 22))
+            mx, my, up = longest_mid(poly) if e.get("via") or e.get("labelMid") else (*poly[max(1, len(poly) // 2) - 1], False)   # FR142: labelMid = on the longest level stretch
             if up:
                 aside = (e.get("pw") or 22) / 2 + 6   # upright stretch: the label goes beside the pipe, not across it
         elif nh_poly:   # NT1–NT4: the link as a see-through sleeve around the tunnel it carries (mirrors flow.js)
@@ -2157,15 +2242,17 @@ def render(d):
             lt = book_lights(n, B, epoly, edges)
             lt["entry"] = entry_of(n, state)
             wr = next((w for w in SP["P"]["writes"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
-            if wr:   # FR129: a runner writes it in this step
-                lt["update"], lt["write"] = None, wr
+            if wr:   # FR129: a runner writes it in this step (FR141: or the server's own light brings the entry — the update light rides in first)
+                lt["write"] = wr
+                if not wr.get("light"):
+                    lt["update"] = None
             rd = next((w for w in SP["P"]["reads"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
             if rd:   # FR136: a runner looks it up in this step (it is the lights)
                 lt["ask"] = lt["answer"] = lt["update"] = None
                 lt["read"] = rd
-            if any(a.get("write") == n["id"] for st in steps_now for a in st.get("play") or []):   # FR133: it opens the way it was written
+            if any(a.get("write") == n["id"] or a.get("update") == n["id"] for st in steps_now for a in st.get("play") or []):   # FR133: it opens the way it was written (FR141: a book the server updates in the story counts too)
                 lt["dir"] = 1
-                if step is not None:   # FR134: in the story the runner brought the entry — no update light on any step
+                if step is not None and not (wr and wr.get("light")):   # FR134: in the story the runner brought the entry — no update light on any step (FR141: except when the server sends it)
                     lt["update"] = None
                 if step is not None and not wr and not rd:   # FR136: …and it only opens to be written or read
                     lt["ask"] = lt["answer"] = None
@@ -2215,7 +2302,8 @@ def render(d):
     for rid, lst in houses.items():   # FR118: the gates + moving lights, over the pipes (mirrors flow.js gatehouseGates)
         if rid in vis_ids:
             mark = len(o)
-            o.append(gatehouse_gates_svg(rid, lst, quiet=step is not None and not steps_now[step].get("visitors"), story=step is not None))   # FR126 / FR134
+            gp = (SP["P"].get("gates") or {}).get(rid) if SP and SP["P"] else None   # FR141: the gates the story worked by hand
+            o.append(gatehouse_gates_svg(rid, lst, quiet=step is not None and not steps_now[step].get("visitors"), story=step is not None, gp=dict(gp, T=SP["P"]["T"]) if gp else None))   # FR126 / FR134
             wrap_new(rid, mark)
     o.extend(front)   # FR102: "front" lines go above the gate badges too
     o[nodes_at:nodes_at] = pb_under   # FR121 (mirrors flow.js pbUnder / pbOver)

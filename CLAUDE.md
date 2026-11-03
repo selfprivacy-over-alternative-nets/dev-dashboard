@@ -9,12 +9,13 @@ Two things live here:
    `flow_requirements.md` (FR#, in the order they were asked; a later entry can change an earlier one — see their
    *Changed since* lines).
 
-## The story steps (setup-map, Tailscale)
+## The story steps (setup-map: Tailscale, and Direct IPv6 with DuckDNS or a bought domain)
 They are written by scripts, run from this folder in this order:
 
 ```
 python3 checks/fr124_steps_apply.py docs/diagrams/setup-map.json
 python3 checks/fr139_scenarios_apply.py docs/diagrams/setup-map.json
+python3 checks/fr141_ipv6_steps_apply.py docs/diagrams/setup-map.json
 ```
 
 ## Checks (`checks/`)

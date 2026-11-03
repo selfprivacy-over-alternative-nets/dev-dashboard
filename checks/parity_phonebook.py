@@ -12,7 +12,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"], **({"executable_path": c[0]} if c else {})); pg = b.new_page(viewport={"width": 1400, "height": 800}); errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
     for V in VIEWS:   # FR139: (method, net, reach, name[, scenario]) — a Tailscale view is in a scenario (first by default)
-        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r == "tailscale" else None)
+        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r in ("tailscale", "ipv6") else None)   # (FR143: an IPv6 view is in a scenario too)
         st = {"method": m, "net": n, "reach": r, "name": nm, **({"scenario": scn} if scn else {})}
         h = f"setup-map;method={m}" + (f";net={n}" if n else "") + f";reach={r}" + (f";name={nm}" if nm else "") + (f";scenario={scn}" if scn else "")
         pg.goto("about:blank"); pg.goto(f"http://localhost:8099/flow.html#{h}", wait_until="networkidle"); pg.wait_for_timeout(300)

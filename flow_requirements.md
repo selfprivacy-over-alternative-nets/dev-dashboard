@@ -1418,6 +1418,81 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `ui_scenarios.py` (the toggle only in Tailscale views, hash, each scenario's first caption, the backup device only when
   restoring, the hidden note hidden in all three), overlap scan, all views open; frames of the closet being cleaned out,
   the backup and vault reaching the backup laptop's screen, the server burning, and the restore looked at.
+- **FR141. The Direct IPv6 + DuckDNS route told in steps, like the Tailscale story.** (User: *give the Direct IPv6 + DuckDNS
+  route the same step-by-step story the Tailscale route has, reusing its engine and improvements, so the route's real
+  behaviour and its gaps become visible … take the Tailscale diagram as a starting point for the DuckDNS free option.*)
+  **The story** (`checks/fr141_ipv6_steps_apply.py`, run after the two Tailscale scripts; view
+  `setup-map;method=cable;net=0a;reach=ipv6;name=duckdns`, box / wifi / USB / VM views alike): **0 account** — you, the
+  DuckDNS book and your line to it (`e9`): Mario runs up to DuckDNS (*name claimed ✓*), gets the name, a KeePass vault
+  appears, a copy of the **token** comes out of the book into it (`token`: a new carried thing, an orange key *DuckDNS
+  token* — it is not used up, so it is kept), and home the vault goes onto your computer's screen. **1 install** — + the
+  server, the router, the cable: the token comes out of KeePass on the screen (`{"get": "token", "from": "you"}`), the light
+  and the name go down the cable, the laptop is hammered up, the name and the token go in and the server's **IPv6
+  address** comes out (*Your SelfPrivacy IPv6 address: 2001:db8::1* — the documentation prefix, never a real address),
+  *IPv6 found ✓*. **2 phonebook** — + `e_duck_srv`: **the server writes its own entry** — the new script action
+  `{"update": "duck"}` sends the address up the book's update line as FR121's light and the book plays once in write mode
+  (the pencil); nobody carries it, no helper at a company; *again every 5 minutes*. **3 fire wall** — + the internet, the blue
+  pipe, the red IPv6 note and its lines: Mario runs home, along the note's line to the router's fire wall and **opens it by
+  hand** (`{"open": "firewall", "of": "router"}`: the bricks slide down and stay down, into the next steps — `close` shuts it
+  again), the address goes into the router, *TCP 443 → 2001:db8::1 ✓*; on IPv6 there is no receptionist, nothing else opens.
+  **4 share** — the share line (`e_share` / `e_sharevm` are drawn in the IPv6 views too; `e9` now leaves your computer's top
+  20 px further right, clear of the share line's stub). **5 friend** — Jazz gets the name, looks it up in DuckDNS (the answer
+  is the server's own address) and goes **straight to the server** through the opening — no company in between — the call
+  shows up on both ends; then a knock on the IPv4 way (FR142). **6 gaps** — Jazz comes again and is refused at the server's
+  door (*✕ refused: the server listens on IPv4 only* — a red sign: `{"pop": …, "bad": true, "dur": s}`); the caption lists
+  the route's gaps today: the web server listens on IPv4 only, no automatic certificate, the updater may send a temporary
+  address, its service is lost on reboot (`docs/diagrams/network_explanations.md` § ipv6-duckdns). **Engine, both
+  renderers:** a step's own `texts` for the things carried (`"texts": {"ip": …, "domain": …}`, carried into the next
+  steps); `{"appear": box, "foot": true}` puts a runner at the box's bottom edge (Mario in front of your computer); in a
+  story step a direct (gate-row) route shows no gate lights — the visitors are runners and the wall is worked by hand —
+  and the wall's state is part of a step's end state (`end.gates`); a book the server updates is the story's book like one
+  a runner writes (FR133 / FR136: spine-left, still when nobody writes or reads it), only the update step keeps its light.
+  Facts: the box's updater sends only `ipv6=` (`tools/add-cloudflare.sh`), and per DuckDNS's spec an explicit `ipv6`
+  switches the auto-detected IPv4 off — so the A record is whatever the website filled in when you claimed the name, and
+  an IPv4 visitor can only end up at your router (FR142). Verified: `parity_steps.py` (every step of both IPv6 names in all
+  three scenarios, plus wifi / USB / VM steps — items, every runner, book and gate animation, caption and hash the same in
+  the editor and the SVG; the Tailscale views unchanged), `parity_lines.py`, `parity_phonebook.py`, `ui_scenarios.py`,
+  `ui_steps.py`, overlap scan, `./dash setups --check`, all views open; editor frames of every step looked at (the vault
+  filling, the token out of the screen, the hammering, the update light and the pencil, the wall sliding open, the hand-over,
+  the lookup, Jazz through the opening, the call, the knock, the refusal).
+- **FR142. The IPv4 way is drawn too, and it is blocked at the router.** (User: *with portforwarding, and show a separate
+  ipv4 tunnel and an ipv6 tunnel and show how the ipv4 is blocked.*) A yellow pipe **`e_v4`** *IPv4 · blocked: no
+  port-forward* comes out of the internet's bottom, right of the blue IPv6 pipe, runs below it and ends at the router's
+  wall under the IPv6 exit — nothing continues inside: on IPv4 the router has no port-forward (the IPv6 route needs none),
+  so no visitor gets in that way, and a friend on an IPv4-only network can't open the link at all. `blocked: true` on a
+  pipe: in the whole view a light comes in from its start every 8 s, stops short of its end, turns red with a ✕ and backs
+  off (`blockedLoop` / `blocked_svg`); in a story step the script says when — `{"knock": "e_v4"}` (2.6 s; the friend step,
+  after the call). `labelMid: true` puts a plain pipe's label on its longest level stretch. Box views only (the VM views
+  have no router). Verified: `parity_lines.py` compares the loop's five animations in both IPv6 names (and finds none
+  elsewhere); the knock is part of the step parity; frames of the whole view and of the knock looked at.
+- **FR143. The Scenario toggle in the IPv6 views: Reinstall and Restore a backup — a new address, the fire wall again.**
+  (User: *build it for First install, reinstall and restore a backup.*) The toggle is offered for `reach=ipv6` too (same
+  layout: an IPv6 view's key ends in `;scenario=first`; `hideIn` keys migrated — none existed). The book's entry follows the
+  scenario: an `entryWhen` value may nest one more toggle (`{"reach": {"ipv6": {"entry": "…::1", "scenario": {"reinstall":
+  "…::2", "restore": "…::2"}}}}`), so after a reinstall or a restore DuckDNS / the registrar holds the new address
+  *2001:db8::2*. A story may start with things in place: `step.stored` (the KeePass vault with the token on your computer's
+  screen) and `step.gates` (the fire wall open since the first install). **Reinstall** — 0 *token*: the name and the token
+  are still yours, the token comes out of KeePass (*same name, same token*); 1 *install again*: the same name and token,
+  but **a new IPv6 address** (it is made from a secret created during the install, so it probably changes); 2 *phonebook*:
+  the server overwrites the old entry within 5 minutes; 3 *fire wall*: the old opening named the old address, so the wall
+  shuts (`close`, *the old opening: the old address* in red) and Mario opens it again for the new one. **Restore** —
+  0 *backup*: a copy of the KeePass vault and the server's backup go out through the router (the fire wall only stops what
+  comes in) and straight over the internet to the backup device **`backupdev6`**, a green laptop right of the DuckDNS note
+  and left of the lookup line, whose pipe `e_backup6` drops from its right-hand edge into the internet's top; 1 *fire*;
+  2 *restore*: the light, the backup and the token come back the same way, the server is built up, gets its data and the
+  token — and a new address; 3 *phonebook*; 4 *fire wall again*. Verified as FR141 (`ui_scenarios.py` now also switches the
+  IPv6 views through the three scenarios and checks the backup device and the IPv4 pipe); frames of the token out of KeePass,
+  the wall shutting and opening again, the backup and the vault on the backup device, the restore looked at.
+- **FR144. The same story for Direct IPv6 with a bought domain.** (User: *and then for
+  `setup-map;method=cable;net=0a;reach=ipv6;name=buy`.*) 0 *domain* — Mario runs the *you edit this by hand* line to the
+  registrar's book (*bought ✓ (€/yr)*) and gets the domain; 1 *install* — the domain baked in, the address printed: nothing on
+  the server updates the phonebook on this route; 2 *phonebook* — Mario carries the address up to the registrar's book and
+  **writes it by hand** (the runner's write, FR129; *×5: api · cloud · git · matrix · meet* — gap: the installer prints only
+  the bare domain's record); 3 *fire wall*, 4 *share*, 5 *friend* (Jazz reads the registrar's book over `e_pb_friend`) and
+  6 *gaps* as in FR141 (a certificate would come from DNS-01 through the registrar's API or HTTP-01 over port 80).
+  Reinstall: the domain stays yours, a new address, the five records edited by hand again, the fire wall again. Restore:
+  the backup only (no token), then the records by hand and the fire wall again. Verified as FR141 (both names in every
+  check); frames of the purchase, the writing by hand, Jazz at the registrar's book looked at.
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

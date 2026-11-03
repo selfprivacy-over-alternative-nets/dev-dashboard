@@ -5,13 +5,14 @@ c = sorted(glob.glob("/nix/store/*playwright-chromium/chrome-linux64/chrome"))
 d = json.load(open("docs/diagrams/setup-map.json"))
 VIEWS = [("cable", "0a", "tailscale", None, "restore"), ("vm", None, "tailscale", None, "restore"), ("cable", "0a", "portfwd", "buy"), ("cable", "0a", "ipv6", "buy"), ("cable", "0a", "ipv6", "duckdns"), ("cable", "0a", "tailscale", None),
          ("cable", "0a", "cloudflare", "buy"), ("cable", "0a", "onion", None), ("wifi", "0d", "portfwd", "duckdns"), ("usb", "0c", "cloudflare", "trycf"),
-         ("vm", None, "tailscale", None), ("vm", None, "cloudflare", "buy"), ("vm", None, "ipv6", "duckdns")]   # FR122: + the VM views
+         ("vm", None, "tailscale", None), ("vm", None, "cloudflare", "buy"), ("vm", None, "ipv6", "duckdns"),
+         ("cable", "0a", "ipv6", "duckdns", "restore"), ("wifi", "0d", "ipv6", "buy", "restore")]   # FR122: + the VM views; FR143: the IPv6 restore views
 P = lambda s: [(float(a), float(b)) for a, b in re.findall(r"(-?[\d.]+)[ ,](-?[\d.]+)", s.replace("M", " ").replace("L", " "))]
 bad = 0
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"], **({"executable_path": c[0]} if c else {})); pg = b.new_page(viewport={"width": 1400, "height": 800}); errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     for V in VIEWS:   # FR139: (method, net, reach, name[, scenario]) — a Tailscale view is in a scenario (first by default)
-        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r == "tailscale" else None)
+        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r in ("tailscale", "ipv6") else None)   # (FR143: an IPv6 view is in a scenario too)
         st = {"method": m, "net": n, "reach": r, "name": nm, **({"scenario": scn} if scn else {})}
         pg.goto("about:blank"); pg.goto(f"http://localhost:8099/flow.html#setup-map;method={m}" + (f";net={n}" if n else "") + f";reach={r}" + (f";name={nm}" if nm else "") + (f";scenario={scn}" if scn else ""), wait_until="networkidle"); pg.wait_for_timeout(300)
         js = pg.evaluate("() => Object.fromEntries([...document.querySelectorAll('#edges > .edge, .front-edges > .edge')].map(g => [g.getAttribute('data-edge'), g.querySelector('.hit') && g.querySelector('.hit').getAttribute('d')]).filter(x => x[1]))")
@@ -32,6 +33,14 @@ with sync_playwright() as p:
         img_ok = len(ji) == len(pi) and all(a[0] == b[0] and all(abs(u - v) <= 0.11 for u, v in zip(a[1:], b[1:])) for a, b in zip(ji, pi))
         bad += not img_ok
         print("   screen pictures:", len(ji), "match" if img_ok else f"MISMATCH js={ji} py={pi}")
+        # FR142: a blocked pipe's knock-and-bounce loop (its light's motion and ✕) the same in both
+        jb = pg.evaluate("() => [...document.querySelectorAll('.blocked animateMotion, .blocked animate')].map(a => [a.tagName, ...['attributeName','path','keyPoints','keyTimes','values','dur'].map(k => a.getAttribute(k) || '')])")
+        pb_ = [[t.group(1)] + [dict(re.findall(r'(\w+)="([^"]*)"', t.group(2))).get(k, "") for k in ("attributeName", "path", "keyPoints", "keyTimes", "values", "dur")]
+               for blk in re.findall(r'<g class="blocked gh-anim".*?</g>|<text class="blocked".*?</text>', svg, re.S) for t in re.finditer(r"<(animateMotion|animate)\b([^>]*)/>", blk)]
+        nums_ = lambda q: [float(v) for v in re.findall(r"-?\d+(?:\.\d+)?", q or "")]
+        blk_ok = len(jb) == len(pb_) and all(a[0] == b_[0] and a[1] == b_[1] and all(len(nums_(x)) == len(nums_(y)) and all(abs(u - v) <= 0.06 for u, v in zip(nums_(x), nums_(y))) for x, y in zip(a[2:], b_[2:])) for a, b_ in zip(jb, pb_))
+        bad += not blk_ok
+        print("   blocked-pipe loop:", len(jb), "match" if blk_ok else f"MISMATCH js={jb} py={pb_}")
         mism = []
         for eid, dd in js.items():
             a_, b2 = G._dedupe(P(dd)), got.get(eid)

@@ -11,7 +11,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"], **({"executable_path": c[0]} if c else {})); pg = b.new_page(viewport={"width": 1500, "height": 900}); errs = []
     pg.on("pageerror", lambda e: errs.append(str(e))); pg.route("**/save**", lambda r: (errs.append("SAVE " + r.request.url), r.abort()))
     go = lambda h: (pg.goto("about:blank"), pg.goto("http://localhost:8099/flow.html#" + h, wait_until="networkidle"), pg.wait_for_timeout(400))
-    has = lambda nid: pg.locator(f'#nodes > .node[data-id="{nid}"]').count() > 0
+    has = lambda nid: pg.locator(f'#nodes > .node[data-id="{nid}"]').count() > 0 or pg.locator(f'.edge[data-edge="{nid}"]').count() > 0
     go("setup-map;method=cable;net=0a;reach=tailscale")
     grp = pg.locator("#togglebar .tg", has_text="Scenario")
     check(grp.count() == 1, "a Scenario group in a Tailscale view")
@@ -27,6 +27,21 @@ with sync_playwright() as p:
         t = pg.locator("#stepcap b").first.text_content() if pg.locator("#stepcap b").count() else None
         check(t == cap and ";step=0" in pg.evaluate("location.hash"), f"{label}: step by step starts with '{t}'")
         pg.locator("#stepcap button", has_text="✕").click(); pg.wait_for_timeout(200)
+    # FR143: the IPv6 views (both names) have the three scenarios too; each one's story starts with its own step 0
+    for nm, caps in (("duckdns", ("Claim a DuckDNS name, keep the token", "The name and the token are still yours", "Back up to your backup device")),
+                     ("buy", ("Buy a domain", "The domain is still yours", "Back up to your backup device"))):
+        go(f"setup-map;method=cable;net=0a;reach=ipv6;name={nm}")
+        g6 = pg.locator("#togglebar .tg", has_text="Scenario")
+        check(g6.count() == 1 and g6.locator("button").all_text_contents() == ["First install", "Reinstall", "Restore a backup"] and pg.evaluate("location.hash").endswith(";scenario=first"),
+              f"ipv6/{nm}: a Scenario group with the three choices, hash {pg.evaluate('location.hash')}")
+        for label, scn, cap in zip(("First install", "Reinstall", "Restore a backup"), ("first", "reinstall", "restore"), caps):
+            g6.locator("button", has_text=label).click(); pg.wait_for_timeout(300)
+            h = pg.evaluate("location.hash")
+            check(f";scenario={scn}" in h and has("backupdev6") == (scn == "restore") and has("e_v4"), f"ipv6/{nm} {label}: hash {h}, backup device {'shown' if has('backupdev6') else 'not shown'}, the IPv4 pipe drawn")
+            pg.locator("#stepenter").click(); pg.wait_for_timeout(300)
+            t = pg.locator("#stepcap b").first.text_content() if pg.locator("#stepcap b").count() else None
+            check(t == cap and ";step=0" in pg.evaluate("location.hash"), f"ipv6/{nm} {label}: step by step starts with '{t}'")
+            pg.locator("#stepcap button", has_text="✕").click(); pg.wait_for_timeout(200)
     go("setup-map;method=cable;net=0a;reach=cloudflare;name=buy")
     g2 = pg.locator("#togglebar .tg", has_text="Scenario")   # (like Name in a Tailscale view: the group says "— n/a")
     check(g2.count() == 1 and g2.locator("button").count() == 0 and "n/a" in g2.text_content() and "scenario=" not in pg.evaluate("location.hash"),
