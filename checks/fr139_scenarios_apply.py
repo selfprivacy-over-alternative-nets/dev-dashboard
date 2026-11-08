@@ -2,7 +2,8 @@
 from a backup. Run from dev-dashboard AFTER fr124_steps_apply.py (which writes the first-install steps):
     python3 checks/fr139_scenarios_apply.py docs/diagrams/setup-map.json
 Re-runnable: it replaces what it wrote before."""
-import copy, json, sys
+import copy, json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from keep_layout import put   # an editor change to an item survives a re-run
 
 p = sys.argv[1]
 d = json.load(open(p))
@@ -18,12 +19,10 @@ for o in d["nodes"] + d["edges"]:
         o["hideIn"] = [k + ";scenario=first" if "reach=tailscale" in k and "scenario=" not in k else k for k in o["hideIn"]]
 when = lambda s: {"reach": ["tailscale"], "scenario": [s]}
 # FR140: your SelfPrivacy backup device — a laptop above the internet (left of your friend's lookup line), on its own pipe
-d["nodes"] = [n for n in d["nodes"] if n["id"] != "backupdev"] + [
-    {"id": "backupdev", "label": "SelfPrivacy\nbackup device", "nodeType": "device", "icon": "laptop", "color": "green",
-     "x": 1000, "y": -10, "w": 137, "h": 167, "showWhen": when("restore")}]
-d["edges"] = [e for e in d["edges"] if e["id"] != "e_backup"] + [
-    {"id": "e_backup", "from": "backupdev", "to": "inet", "kind": "pipe", "role": "tunnel", "color": "#8b949e", "label": "", "_H": True,   # out of its right side, into
-     "showWhen": when("restore")}]   # the internet's left (clear of the label and of your friend's lookup line, which comes down into its top)
+put(d["nodes"], {"id": "backupdev", "label": "SelfPrivacy\nbackup device", "nodeType": "device", "icon": "laptop", "color": "green",
+                 "x": 1000, "y": -10, "w": 137, "h": 167, "showWhen": when("restore")})
+put(d["edges"], {"id": "e_backup", "from": "backupdev", "to": "inet", "kind": "pipe", "role": "tunnel", "color": "#8b949e", "label": "", "_H": True,   # out of its right side, into
+                 "showWhen": when("restore")})   # the internet's left (clear of the label and of your friend's lookup line, which comes down into its top)
 # the first install is one scenario of three
 FIRST = ["ts0", "ts1", "ts2", "tskeep", "tsshare", "ts3"]
 S = {s["id"]: s for s in d["steps"]}

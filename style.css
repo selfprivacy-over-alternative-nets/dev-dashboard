@@ -43,6 +43,9 @@ select, .btn {
 .nettab.fut { font-style: italic; }
 /* greyed-out rows: kept for reference, can't run (no diagram view, no test) */
 .nettab.greyed { opacity: .5; text-decoration: line-through; }
+/* a Reach option the diagram doesn't have (local https): greyed, but selectable and its tests run */
+.nettab.offdiag { opacity: .5; }
+.nettab.offdiag.on { opacity: .7; }
 tr.greyed { opacity: .45; }
 tr.group.reachgrp.greyed td { opacity: .7; }   /* header stays readable: it carries the reason */
 #legend .greyed { opacity: .55; text-decoration: line-through; }
@@ -151,3 +154,13 @@ tr.details > td { background: #0c1119; border-top: none; }
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-x: auto; user-select: all;
 }
+
+/* the selection chips (req 185): one Reach × Name × Scenario view at a time; "— n/a" where the diagram offers no Name /
+   Scenario for that reach */
+.togglebar .na { color: var(--dim2); font-style: italic; padding: 2px 4px; }
+/* the column of the diagram view you came from (req 186): ◧ in its header, a faint tint down the column */
+th.net.pick { cursor: pointer; }
+th.net.hl { outline: 1px solid var(--blue); outline-offset: -1px; color: var(--fg); background: #13233a; }
+th.net .hlmark { color: var(--blue); }
+td.hlc { background: #0d1522; }
+td.cell.np.hlc { background: #101a2a; }

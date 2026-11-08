@@ -97,27 +97,35 @@ def gate_wins(gh):   # FR118: the fire wall on the exit (internet) side, the por
 
 PB = {"W": 110, "H": 78, "T": 9, "U": 1.6}   # FR121: page size (book units) · one lookup (s) · the server's update before it (s)
 IP_RE = re.compile(r"\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}", re.I)   # FR122: an IPv4 or an IPv6 address
+ip_tag = lambda ip: ("ipV6 " if ":" in ip else "ip ") + ip   # FR147: an address as the book shows it — mirrors flow.js ipTag
+
+
+def _pick_when(w, fb, state):   # {toggle: {value: text}}; FR141: a value may itself be {toggle: {value: text}, fb: fallback} — mirrors flow.js pickWhen
+    for t, by_v in w.items():
+        if t == fb:
+            continue
+        v = by_v.get(state.get(t)) if isinstance(by_v, dict) else None
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict):
+            r = _pick_when(v, fb, state)
+            if r is not None:
+                return r
+    return w.get(fb) if isinstance(w.get(fb), str) else None
 
 
 def entry_of(n, state):   # FR122: the entry text, per view (n.entryWhen = {toggle: {value: entry}}), else n.entry — mirrors flow.js entryOf
-    def pick(w):   # FR141: a value may itself be {toggle: {value: entry}, "entry": fallback} — the entry by one more toggle (the scenario)
-        for t, by_v in w.items():
-            if t == "entry":
-                continue
-            v = by_v.get(state.get(t)) if isinstance(by_v, dict) else None
-            if isinstance(v, str):
-                return v
-            if isinstance(v, dict):
-                r = pick(v)
-                if r is not None:
-                    return r
-        return w.get("entry") if isinstance(w.get("entry"), str) else None
-    r = pick(n.get("entryWhen") or {})
+    r = _pick_when(n.get("entryWhen") or {}, "entry", state)
     return r if r is not None else str(n.get("entry") or "")
 
 
-def book_geom(n, b):   # FR119 / FR121: the CLOSED book, centred above its label (lines attach to it) — mirrors flow.js bookGeom
-    lh = len([l for l in str(n.get("label", "")).split("\n") if l]) * 15
+def label_of(n, state):   # FR149: a box's label per view (n.labelWhen, like entryWhen), else n.label — mirrors flow.js labelOf
+    r = _pick_when(n.get("labelWhen") or {}, "label", state)
+    return r if r is not None else str(n.get("label", ""))
+
+
+def book_geom(n, b, state=None):   # FR119 / FR121: the CLOSED book, centred above its label (lines attach to it) — mirrors flow.js bookGeom
+    lh = len([l for l in label_of(n, state or {}).split("\n") if l]) * 15
     h = max(30, b[3] - lh - (6 if lh else 0))
     s = min(h / (PB["H"] + 7), b[2] / (2 * (PB["W"] + 5)))
     w, bh = (PB["W"] + 5) * s, (PB["H"] + 7) * s
@@ -299,11 +307,11 @@ ICON_SCREEN = icon_screens()
 
 def anchor_box(n, b, vis, vis_ids, state):   # FR92: lines attach to a pictogram's DRAWN icon (mirrors flow.js anchorBox)
     if n and b and n.get("nodeType") == "phonebook":   # FR119: the book
-        B = book_geom(n, b)
+        B = book_geom(n, b, state)
         return (B["x"], B["y"], B["w"], B["h"])
     if not n or not b or not (n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state)):
         return b
-    s_, ix, iy, _ = picto_geom(b, str(n.get("label", "")).split("\n"))
+    s_, ix, iy, _ = picto_geom(b, label_of(n, state).split("\n"))
     bb = ICON_BOX.get(n["icon"], (0, 0, 24, 24))
     k = s_ / 24.0
     return (ix + bb[0] * k, iy + bb[1] * k, bb[2] * k, bb[3] * k)
@@ -569,6 +577,23 @@ def _poly_len(poly):
     return sum(((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5 for i in range(1, len(poly)))
 
 
+def _poly_upto(poly, dist):   # FR147: the polyline from its start up to a distance along it — mirrors flow.js polyUpTo
+    out, left = [poly[0]], dist
+    for a, b in zip(poly, poly[1:]):
+        L = _dist(a, b)
+        if L >= left:
+            t = left / L if L else 0
+            out.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+            return out
+        out.append(b)
+        left -= L
+    return out
+
+
+def _poly_from(poly, dist):   # FR149: the polyline from a distance along it to its end — mirrors flow.js polyFrom
+    return list(reversed(_poly_upto(list(reversed(poly)), max(0, _poly_len(poly) - dist))))
+
+
 def _poly_at(poly, dist):   # the point at a distance along a polyline — mirrors flow.js polyAt
     for i in range(1, len(poly)):
         L = ((poly[i][0] - poly[i - 1][0]) ** 2 + (poly[i][1] - poly[i - 1][1]) ** 2) ** 0.5
@@ -733,6 +758,7 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
     host = re.sub(r"/$", "", re.sub(r"^https?://", "", url))
     m = IP_RE.search(" ".join(lines[1:]))
     ip = m.group(0) if m else "?"
+    ipt = ip_tag(ip)   # FR147
     off = PB["U"] if lt["update"] else 0
     T = PB["T"] + off
     k = lambda d: round((off + d * PB["T"]) / T, 4)   # demo fraction → this loop
@@ -800,15 +826,15 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
          page(pl0, "Y"), rows(pl0, [55, 62, 69])]   # the last page: your entry
     o.append(f'<rect x="{F(pl0 + 5)}" y="17" width="{W - 10}" height="31" rx="3" fill="#fde68a" opacity="0" class="pb-anim">'
              + fade([(0, 0), (0.40, 0), (0.42, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + "</rect>")
-    fs = min(9, (W - 24) / (max(len(host), len(ip) + 3, 1) * 0.6))
+    fs = min(9, (W - 24) / (max(len(host), len(ipt), 1) * 0.6))
     o.append(txt(pl0 + 19, 30, host, font_size=F(fs), fill=INK, font_family=MONO))
-    o.append(txt(pl0 + 19, 42, "ip " + ip, font_size=F(fs), fill=INK, font_family=MONO, font_weight=700))
+    o.append(txt(pl0 + 19, 42, ipt, font_size=F(fs), fill=INK, font_family=MONO, font_weight=700))
     kt, vs = keys([(0, 9), (0.39, 9), (0.42, 3.4), (1, 3.4)])
     o.append(f'<circle cx="{F(pl0 + 12)}" cy="27" r="9" fill="#ffffff" stroke="{INK}" stroke-width="1" opacity="0" class="pb-anim">'   # the white light, landed
              + ((fade([(0, 0), (0.39, 0), (0.40, 1), (C2, 1), (C2 + 0.01, 0), (1, 0)]) + anim(attributeName="r", keyTimes=kt, values=vs)) if lt["ask"] else "")   # FR124: only when someone looks the name up
              + "</circle>")
     if wr:   # FR129: the entry is written while the book is open — a pencil goes along each line, a page-coloured cover slides off behind it — mirrors flow.js
-        x0, w1, w2 = pl0 + 19, min(W - 24, len(host) * 0.6 * fs), min(W - 24, (len(ip) + 3) * 0.6 * fs)
+        x0, w1, w2 = pl0 + 19, min(W - 24, len(host) * 0.6 * fs), min(W - 24, len(ipt) * 0.6 * fs)
         for y0, d0, d1 in ((19, 0.42, 0.48), (31, 0.48, 0.54)):
             kx, vx = keys([(0, _f3(pl0 + 15)), (d0, _f3(pl0 + 15)), (d1, _f3(pl0 + W - 5)), (1, _f3(pl0 + W - 5))])
             kw, vw = keys([(0, W - 20), (d0, W - 20), (d1, 0), (1, 0)])
@@ -838,8 +864,8 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         pts = " ".join(f"{F(bx0 + a)},{c - 19}" for a, c in ((9, 0), (0, 15), (7, 15), (3, 28), (16, 10), (9, 10), (13, 0)))
         o.append(f'<polygon points="{pts}" fill="#fde047" stroke="{DARK}" stroke-width="1.2"/>')
     # found: the white light's address matches an ip — or, with no lookup (FR124), the entry was written
-    cap_t = ((("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), ("ip " + ip, GRAY)) if lt["ask"] or lt.get("read")
-             else (("✎ ", "#f97316"), (url, "#ffffff"), (" → ", "#8b949e"), ("ip " + ip, GRAY), (" written", "#8b949e")))
+    cap_t = ((("✓ ", "#3fb950"), (url, "#ffffff"), (" matches ", "#8b949e"), (ipt, GRAY)) if lt["ask"] or lt.get("read")
+             else (("✎ ", "#f97316"), (url, "#ffffff"), (" → ", "#8b949e"), (ipt, GRAY), (" written", "#8b949e")))
     spans = "".join(f'<tspan fill="{c}">{html.escape(t)}</tspan>' for t, c in cap_t)
     o.append(txt(0, -24, "", spans + fade([(0, 0), (0.41, 0), (0.43, 1), (0.62, 1), (0.65, 0), (1, 0)]), text_anchor="middle", font_size=12, opacity=0, **{"class": "pb-anim"}))
     o.append("</g></g>")
@@ -858,7 +884,7 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         return list(pts) + [(q[0] + (c[0] - q[0]) * t, q[1] + (c[1] - q[1]) * t)]
     if lt["update"]:   # your server updates its own entry: its ip comes in first
         f = lambda t: F(round(t / T, 4))
-        under.append(light(GRAY, "ip " + ip, anim(path=path_of(inside(lt["update"]["poly"])), keyPoints="0;0;1;1", keyTimes=f"0;{f(0.1)};{f(PB['U'] - 0.3)};1", calcMode="linear")
+        under.append(light(GRAY, ipt, anim(path=path_of(inside(lt["update"]["poly"])), keyPoints="0;0;1;1", keyTimes=f"0;{f(0.1)};{f(PB['U'] - 0.3)};1", calcMode="linear")
                            + anim(attributeName="opacity", values="0;1;1;0;0", keyTimes=f"0;{f(0.15)};{f(PB['U'] - 0.35)};{f(PB['U'] - 0.15)};1")))
     if lt["ask"]:
         under.append(light("#ffffff", url, motion(inside(lt["ask"]["poly"]), [(0, 0), (0.15, 1), (1, 1)]) + fade([(0, 0), (0.02, 1), (0.15, 1), (0.17, 0), (1, 0)])))
@@ -866,7 +892,7 @@ def phonebook_svg(n, B, col, lt, under, over):   # FR121: the DNS book + one loo
         st = (hx + (pl0 + 60) * s, py + 39 * s)
         hk, hv = keys([(0, 26 * s), (0.48, 26 * s), (0.53, 9 * s), (1, 9 * s)])
         ck, cv = keys([(0, 0), (0.49, 0), (0.53, 4.5 * s), (1, 4.5 * s)])
-        over.append(light(GRAY, "ip " + ip, motion([st] + list(lt["answer"]["poly"]), [(0, 0), (C0, 0), (0.78, 1), (1, 1)]) + fade([(0, 0), (0.47, 0), (0.48, 1), (0.78, 1), (0.80, 0), (1, 0)]),
+        over.append(light(GRAY, ipt, motion([st] + list(lt["answer"]["poly"]), [(0, 0), (C0, 0), (0.78, 1), (1, 1)]) + fade([(0, 0), (0.47, 0), (0.48, 1), (0.78, 1), (0.80, 0), (1, 0)]),
                           halo_r=26 * s, halo_a=anim(attributeName="r", keyTimes=hk, values=hv), core_a=anim(attributeName="r", keyTimes=ck, values=cv),
                           tag_a=fade([(0, 0), (0.635, 0), (0.655, 1), (1, 1)])))   # the tag shows once it is clear of the book
         if lt.get("glow"):
@@ -1118,7 +1144,7 @@ def auto_see_through(n, nodes, edges, vis_ids, state):
 # ---- FR124: step mode — a runner acts out a step (mirrors flow.js ACT / ACT_ITEMS / VAULT / actorPlan / drawActor) ----
 ACT = {"V": 240, "FADE": 0.4, "HOP": 0.32, "MIN": 1.2, "MAX": 5, "STAND": 8, "WALK": 0.6, "SIZE": 26, "BLOW": 0.5,   # px/s · s — mirrors flow.js ACT
        "T": {"get": 0.9, "pop": 0.9, "hammer": 3, "give": 0.7, "scene": 0.4, "unscene": 0.3, "put": 0.8, "putIn": 0.7, "open": 0.6, "close": 0.5, "fire": 0.8, "take": 0.6, "unlock": 0.5,
-             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6, "burn": 3.2, "update": 7.6, "knock": 2.6, "gate": 0.8}}
+             "throw": 1.0, "copy": 1.2, "write": 6.0, "hand": 0.8, "show": 0.6, "burn": 3.2, "update": 7.6, "bounce": 2.4, "gate": 0.8}}
 ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above its feet (keys left, the light right, texts on top) — mirrors flow.js
     "key":     {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "auth key"},
     "token":   {"icon": "key", "color": "#f97316", "dx": -14, "dy": -32, "tag": "DuckDNS token"},   # FR141: a token that is not used up (DuckDNS)
@@ -1128,6 +1154,7 @@ ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above 
     "ip":      {"text": "Your SelfPrivacy IP address:\n192.42.69.314", "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR132: two lines, the last one at dy
     "domain":  {"text": "selfprivacy.tail1234.ts.net", "color": "#f97316", "dx": 0, "dy": -60},
     "answer":  {"book": True, "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR136: the address a book gives for a name — its text comes from the book's entry
+    "answer4": {"book": True, "color": "#9aa3ad", "dx": 0, "dy": -74},   # FR149: the IPv4 address a book gives an IPv4-only phone (`lookup` … `as`) — its text from the step's texts
     "jitsi":   {"img": "jitsi", "color": "#4aa3ff", "dx": 0, "dy": -40, "tag": "Jitsi call"},   # FR136: the call — the Jitsi Meet logo on a blue badge
     "backup":  {"icon": "backup", "color": "#58a6ff", "dx": -24, "dy": -18},   # FR140: your server's SelfPrivacy backup (low on its left, clear of the vault)
     "olddomain": {"text": "old: selfprivacy.tail1234.ts.net", "color": "#8b949e", "dx": 0, "dy": -60},   # FR139: the old machine's name, still at Tailscale
@@ -1135,7 +1162,8 @@ ACT_ITEMS = {   # what a runner can carry: how it looks and where it sits above 
 }
 VAULT = {"w": 34, "h": 28, "inset": 3, "lock": 14, "IN": {"x": -2, "y": 0, "s": 0.7}}   # FR135: the KeePass vault — mirrors flow.js VAULT
 BURN_FLAMES = [(-0.34, 0.65, 0), (-0.17, 0.85, 0.3), (0, 1, 0.55), (0.17, 0.85, 0.15), (0.34, 0.65, 0.45)]   # FR140 — mirrors flow.js BURN_FLAMES
-ACTORS = ["mario", "yoshi", "jazz"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who>
+ACTORS = ["mario", "yoshi", "jazz", "cousin"]   # FR129: who acts — "who" in a step's script (mario when left out); sprite #ic-<who> (FR149: the cousin, on an IPv4-only phone)
+WALKERS = ["mario", "jazz", "cousin"]   # FR151: Tux, Big Buck Bunny, Ferris — their legs step between #ic-<who>-w1 / -w2 while they move (Yoshi only hops) — mirrors flow.js WALKERS
 # FR128 / FR129: the scene the runners work in (a brick ledge, the fire bowl, two safes side by side, a shelf with two boards) — mirrors flow.js SCENE
 # FR132: the safes a safe's width further right, the shelf big enough to read (it ends left of the pipe from the internet, at x ≈ 304)
 SCENE = {"x0": -84, "x1": 284, "top": -72, "h": 12, "OPEN": -0.35, "safe": {"w": 44, "h": 52, "inset": 5, "lock": 17},
@@ -1194,7 +1222,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
     reads, shown, texts = [], [], dict((start or {}).get("texts") or {})   # FR136: books looked up, things shown on boxes, texts from books
     texts.update(step.get("texts") or {})   # FR141: a step may set the texts of what is carried
     sc, n_inst = None, [0]
-    knocks, GT = [], {}   # FR142: knocks at blocked pipes; FR141: the gates worked by hand — as the step before left them, or as the story's first step says
+    bounces, GT = [], {}   # FR147: where a runner was bounced off a line; FR141: the gates worked by hand — as the step before left them, or as the story's first step says
     for h, hg in ((start.get("gates") if start else step.get("gates")) or {}).items():
         GT[h] = {gn: [[0, float(v)]] for gn, v in hg.items()}
 
@@ -1311,7 +1339,35 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
               "inside": [{"id": v["id"], "k": v["k"], "inst": None, "on": 0, "off": None, "x": v["x"], "y": v["y"], "s": v["s"]} for v in start["scene"]["inside"]]}
     for who in st0:   # the runners the step before left standing
         actor(who)
-    for a in step.get("play") or []:
+    def flat(lst):   # FR149: {"together": [branch, …]} — each branch (one action or a list) starts at the same moment; the script goes on when the last is done — mirrors flow.js
+        out = []
+        for a in lst:
+            if a and isinstance(a.get("together"), list):
+                out.append({"_tg": "start"})
+                for k, b in enumerate(a["together"]):
+                    if k:
+                        out.append({"_tg": "next"})
+                    out += flat(b if isinstance(b, list) else [b])
+                out.append({"_tg": "end"})
+            else:
+                out.append(a)
+        return out
+    TG = []
+    for a in flat(step.get("play") or []):
+        if a.get("_tg"):
+            if a["_tg"] == "start":
+                TG.append({"t0": T, "t1": T})
+            else:
+                g = TG[-1]
+                g["t1"] = max(g["t1"], T)
+                if a["_tg"] == "next":
+                    T = g["t0"]
+                else:
+                    T = g["t1"]
+                    TG.pop()
+            continue
+        if a.get("when") is not None and not box_at(str(a["when"])) and len(epoly.get(str(a["when"])) or []) < 2:   # FR149: {"when": id} — only where that box or line is drawn
+            continue
         R = actor(a["who"] if a.get("who") in ACTORS else "mario")
         if a.get("run") is not None:   # one line id, or alternatives (the first one drawn in this view wins: e_cable / e_usb)
             ids = a["run"] if isinstance(a["run"], list) else [a["run"]]
@@ -1320,6 +1376,10 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             if not p:
                 continue
             p = list(reversed(p)) if a.get("back") else list(p)
+            if a.get("from") == "here" and R["spot"]:   # FR149: it goes on from where it stands on the line (not from the line's start)
+                p = _poly_from(p, _dist_to(p, R["spot"]))
+            if _num(a.get("near")) and a["near"] > 0:   # FR149: it stops `near` px before the line's end (in a queue)
+                p = _poly_upto(p, max(0, _poly_len(p) - a["near"]))
             L, seq = _poly_len(p), p
             if not R["pts"]:   # it fades in where it starts
                 R["pts"].extend(p)
@@ -1620,9 +1680,11 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
             if not b:
                 continue
             m = IP_RE.search(" ".join(entry_at(str(a["lookup"])).split("\n")[1:]))
+            aid = str(a["as"]) if a.get("as") is not None and ACT_ITEMS.get(str(a["as"]), {}).get("book") else "answer"   # FR149: `as` = another card (answer4: the IPv4 address, its text from the step's texts)
             t0, c = T + 0.2, middle(b)
             reads.append({"book": str(a["lookup"]), "t": t0})
-            texts["answer"] = "ip " + (m.group(0) if m else "?")
+            if aid == "answer":
+                texts["answer"] = ip_tag(m.group(0) if m else "?")
             turn(R, T, c[0] - R["spot"][0])
             for i in list(R["items"].keys()):   # (once the book is open at the entry)
                 if ACT_ITEMS[i].get("text") and any(v[1] is None for v in R["items"][i]):
@@ -1634,26 +1696,28 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                     w_move(inst, t0 + 3.0, t0 + 3.5, [c])
                     w["vis"].append([t0 + 3.0, t0 + 3.5])
                     w["sc"] += [[t0 + 3.0, 1], [t0 + 3.5, 0.3]]
-            inst = new_inst("answer")   # (when the book lets the address go, FR121)
+            inst = new_inst(aid)   # (when the book lets the address go, FR121)
             w, u0 = track(inst), t0 + 0.48 * PB["T"]
             u1 = u0 + 0.5
             w_move(inst, u0, u0, [c])
-            w_move(inst, u0, u1, [hand(R, "answer")])
+            w_move(inst, u0, u1, [hand(R, aid)])
             w["vis"].append([u0, u1])
             w["sc"] += [[u0, 0.3], [u1, 1]]
-            carry(R, "answer", u1)
-            R["inst"]["answer"] = inst
+            carry(R, aid, u1)
+            R["inst"][aid] = inst
             T = u1 + 0.1
         elif a.get("give") is not None and a["give"] in ACT_ITEMS and R["spot"]:   # FR136: hand to hand, to another runner
             O, i = ACTS.get(a.get("to")), a["give"]
             if not O or not O["spot"] or O is R or not any(v[1] is None for v in R["items"].get(i, [])):
                 continue
-            inst = inst_of(R, i)
+            keep = a.get("copy") is True   # FR149: {"copy": true} — a copy goes over, the runner keeps its own
+            inst = new_inst(i) if keep else inst_of(R, i)
             w, t1 = track(inst), T + ACT["T"]["hand"]
-            R["inst"].pop(i, None)
+            if not keep:
+                R["inst"].pop(i, None)
+                drop(R, i, T)
             turn(R, T, O["spot"][0] - R["spot"][0])
             turn(O, T, R["spot"][0] - O["spot"][0])
-            drop(R, i, T)
             w_move(inst, T, T, [hand(R, i)])
             w_move(inst, T, t1, [hand(O, i)])
             w["vis"].append([T, t1])
@@ -1692,13 +1756,37 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
                 continue
             writes.append({"book": str(a["update"]), "t": T + 0.2, "light": True})
             T += ACT["T"]["update"]
-        elif a.get("knock") is not None:   # FR142: a visitor knocks at a blocked pipe: a light rides it from its start and bounces off its end
-            e = by.get(str(a["knock"]))
-            p = epoly.get(e["id"]) if e else None
-            if not p or len(p) < 2:
+        elif a.get("bounce") is not None and R["pts"]:   # FR147: it tries a line and is bounced back near its start (see flow.js) — mirrors flow.js
+            e = by.get(str(a["bounce"]))
+            p0 = epoly.get(e["id"]) if e else None
+            if not p0 or len(p0) < 2:
                 continue
-            knocks.append({"poly": list(p), "pw": e.get("pw") or 22, "t0": T, "t1": T + ACT["T"]["knock"]})
-            T += ACT["T"]["knock"]
+            p = list(reversed(p0)) if a.get("back") else list(p0)
+            pre = _poly_upto(p, min(_poly_len(p), a["at"] if _num(a.get("at")) else 40))
+            hit, q = pre[-1], R["pts"][-1]
+            seq = [q] + pre if _dist(q, p[0]) > 0.5 else pre
+
+            def go(path, dur, face):
+                nonlocal T
+                L = _poly_len(path)
+                R["kf"].append([T, R["dist"]])
+                R["pts"].extend(path[1:])
+                if face:
+                    c = 0
+                    for j in range(1, len(path)):
+                        turn(R, T + (c / L if L else 0) * dur, path[j][0] - path[j - 1][0])
+                        c += _dist(path[j - 1], path[j])
+                R["runs"].append([T, T + dur])
+                T += dur
+                R["dist"] += L
+                R["kf"].append([T, R["dist"]])
+                R["spot"] = path[-1]
+            go(seq, max(ACT["WALK"], _r1(_poly_len(seq) / ACT["V"])), True)
+            th, d = T, (a["dur"] if _num(a.get("dur")) else ACT["T"]["bounce"])
+            bounces.append({"edge": e["id"], "x": hit[0], "y": hit[1], "r": (e.get("pw") or 22) * 0.8, "say": str(a.get("say") or ""), "t0": th, "t1": th + d})
+            go(list(reversed(pre)), 0.5, False)
+            R["at"] = e["to"] if a.get("back") else e["from"]
+            T = max(T, th + d)
         elif (a.get("open") in ("firewall", "port") or a.get("close") in ("firewall", "port")) and a.get("of") is not None:   # FR141: a gate of a gatehouse router worked by hand: it slides open (or shut) and stays so, into the next steps
             house = str(a["of"])
             gate = a["open"] if a.get("open") is not None else a["close"]
@@ -1708,7 +1796,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         elif _num(a.get("wait")):
             T += max(0, a["wait"])
     all_ = [ACTS[who] for who in ACTORS if who in ACTS and ACTS[who]["pts"]]
-    if not all_ and not sc and not stored and not burns and not knocks and not GT:   # (no runner, no scene, nothing stored on a screen, no knock and no gate)
+    if not all_ and not sc and not stored and not burns and not GT and not texts:   # (no runner, no scene, nothing stored on a screen, no gate and no texts — FR145: texts are handed on even where no runner moves)
         return None   # no runner and no scene in this step
     if _num(step.get("dur")):   # standing time
         T = max(T, step["dur"])
@@ -1723,7 +1811,7 @@ def actor_plan(step, epoly, edges, start=None, first=True, last=True, box_at=lam
         T += ACT["FADE"]
         for R in all_:
             R["kf"].append([T, R["dist"]])
-    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored, "burns": burns, "knocks": knocks, "gates": GT,
+    out = {"T": T, "W": W, "scene": sc, "writes": writes, "reads": reads, "texts": texts, "last": last, "stored": stored, "burns": burns, "bounces": bounces, "gates": GT,
            "end": {"actors": {}, "scene": None, "texts": texts, "stored": [{k: v[k] for k in ("id", "at", "x", "y", "s", "inside")} for v in stored if v["off"] is None],
                    "gates": {h: {gn: _kv_at(kv, T) for gn, kv in hg.items()} for h, hg in GT.items()}},   # FR141: how the gates are left
            "actors": [{"who": R["who"], "pts": R["pts"], "L": _poly_len(R["pts"]), "kf": R["kf"], "runs": R["runs"], "acts": R["acts"], "pops": R["pops"],
@@ -1746,7 +1834,7 @@ def step_plans(steps_now, step, epoly, edges, box_at, entry_at=lambda i: "", scr
     return {"P": P, "durs": durs}
 
 
-def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animation runs once and freezes at its end — mirrors flow.js drawActor
+def actor_svg(P, anchor_of, bg, images=None, labels=None):   # the plan, drawn: every animation runs once and freezes at its end — mirrors flow.js drawActor
     T = P["T"]
     images = images or {}
     tk = lambda t: _f4(max(0.0, min(1.0, t / T)))
@@ -1786,6 +1874,10 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         return [v for i, v in enumerate(kv) if not i or v[0] >= kv[i - 1][0]]
     varies = lambda kv: any(v[1] != kv[0][1] for v in kv)
 
+    def flips(kv0):   # FR151: on / off key frames — the last of a moment's, each change once — mirrors flow.js flips
+        kv = [v for i, v in enumerate(kv0) if not (i + 1 < len(kv0) and kv0[i + 1][0] == v[0])]
+        return [v for i, v in enumerate(kv) if not i or v[1] != kv[i - 1][1]]
+
     def look(i, x, y, s, plain, ivs=None, opacity=None, box=None):   # a thing's look at (x, y), scaled: its icon (+ tag, unless plain), the vault (box: its door + inside), or its text
         it = ACT_ITEMS[i]
         c, a = fade_kv(ivs) if ivs is not None else (opacity, "")
@@ -1816,7 +1908,8 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             src = images.get(it["img"])
             if src:
                 o.append(f'<image href="{html.escape(src, quote=True)}" x="-7" y="-7" width="14" height="14"/>')
-        label = (P.get("texts") or {}).get(i) or it.get("text") or (None if plain else it.get("tag"))   # FR136: a book's address carries the text the book gave; FR141: a step's own text for a thing
+        ov = (P.get("texts") or {}).get(i)   # FR141: a step's own text for a thing (FR145: a tag, like a text, only where the tag would show)
+        label = (ov if ov is not None else it.get("text")) if it.get("text") or it.get("book") else (None if plain else (ov if ov is not None else it.get("tag")))   # FR136: a book's address carries the text the book gave
         if label:   # FR132: more lines stack upwards, the last one where a single line would be
             ls = label.split("\n")
             body = html.escape(label) if len(ls) == 1 else "".join(f'<tspan x="0" y="{_f4(3.5 - (len(ls) - 1 - j) * 11)}">{html.escape(l)}</tspan>' for j, l in enumerate(ls))
@@ -1859,17 +1952,23 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
         o.append(f'<g transform="translate({_f4(b[0] + b[2] / 2)} {_f4(b[1] + b[3])})"><g transform="scale(0)">'
                  + anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in fk), keyTimes=";".join(tk(v[0]) for v in fk))
                  + "".join(flame_svg(dx * b[2], 0, fs * k_, ph) for dx, k_, ph in BURN_FLAMES) + "</g></g>")
-    for kn in P.get("knocks") or []:   # FR142: a knock at a blocked pipe — a light rides it from its start, stops short of its end, turns red with a ✕ and backs off
-        L = _poly_len(kn["poly"]) or 1
-        R1 = kn["pw"] * 0.45
-        stop, back = max(0.0, 1 - (R1 + 2) / L), max(0.0, 1 - (R1 + 42) / L)
-        tA, tB, tE = kn["t0"] + 1.2, kn["t0"] + 1.5, kn["t1"] - 0.3
-        o.append('<g opacity="0">' + anim(path="M " + " L ".join(f"{_f4(x)} {_f4(y)}" for x, y in kn["poly"]), keyPoints=";".join(_f4(v) for v in (0, 0, stop, back, back)),
-                                          keyTimes=";".join(tk(t) for t in (0, kn["t0"], tA, tB, T)), calcMode="linear") + fade_iv([[kn["t0"], tE]]))
-        for r, op in ((R1, 0.3), (kn["pw"] * 0.22, 1)):
-            o.append(f'<circle r="{_f4(r)}" fill="#ffffff" opacity="{op}">' + anim(attributeName="fill", values="#ffffff;#ffffff;#ff5c5c;#ff5c5c", keyTimes=";".join(tk(t) for t in (0, tA, tA + 0.02, T))) + "</circle>")
-        q = _poly_at(kn["poly"], L * stop)
-        o.append("</g>" + f'<text x="{_f4(q[0])}" y="{_f4(q[1] - R1 * 1.6)}" text-anchor="middle" fill="#ff5c5c" font-size="{_f4(max(14, R1 * 2.2))}" opacity="0">✕' + fade_iv([[tA, tE]]) + "</text>")
+    for bn in P.get("bounces") or []:   # FR147: a runner bounced off a line — the forbidden sign, the line's label lit up, the reason — mirrors flow.js
+        sk = keyed([[0, 0], [bn["t0"], 0], [bn["t0"] + 0.15, 1.25], [bn["t0"] + 0.3, 1]])
+        r = bn["r"]
+        o.append(f'<g transform="translate({_f4(bn["x"])} {_f4(bn["y"])})"><g transform="scale(0)">'
+                 + anim(attributeName="transform", type="scale", values=";".join(f"{_f4(v[1])} {_f4(v[1])}" for v in sk), keyTimes=";".join(tk(v[0]) for v in sk))
+                 + f'<circle r="{_f4(r * 0.8)}" fill="#0b0e14"/><use href="#ic-block" x="{_f4(-r)}" y="{_f4(-r)}" width="{_f4(2 * r)}" height="{_f4(2 * r)}"/></g></g>')
+        lb = (labels or {}).get(bn["edge"])
+        if lb:
+            lx, ly, anchor, text = lb
+            w = len(text) * 6.6 + 12
+            x0 = lx - w / 2 if anchor == "middle" else lx - w + 6 if anchor == "end" else lx - 6
+            o.append('<g opacity="0">' + fade_iv([[bn["t0"], bn["t1"]]])
+                     + f'<rect x="{_f4(x0)}" y="{_f4(ly - 13)}" width="{_f4(w)}" height="18" rx="4" fill="#2a0f12" stroke="#ff5c5c" stroke-width="1.5"/>'
+                     + f'<text x="{_f4(lx)}" y="{_f4(ly)}" text-anchor="{anchor}" fill="#ffb3b3" font-size="12" font-weight="700">{html.escape(text)}</text></g>')
+        if bn["say"]:
+            o.append(f'<text x="{_f4(bn["x"] + r)}" y="{_f4(bn["y"] + r + 14)}" text-anchor="end" fill="#ff5c5c" font-size="12" font-weight="700" opacity="0"{HALO}>{html.escape(bn["say"])}'
+                     + fade_iv([[bn["t0"], bn["t1"]]]) + "</text>")
     for v in P.get("stored") or []:   # FR138: what lies on a screen
         o.append(look(v["id"], v["x"], v["y"], v["s"], True, ivs=[[v["on"], v["off"]]]))
     sc = P["scene"]
@@ -1959,7 +2058,24 @@ def actor_svg(P, anchor_of, bg, images=None):   # the plan, drawn: every animati
             o.append("<g>" + anim(attributeName="transform", type="scale", values=";".join(f"{v[1]} 1" for v in fv), keyTimes=";".join(tk(v[0]) for v in fv), calcMode="discrete"))
         else:
             o.append('<g transform="scale(-1 1)">' if fv and fv[0][1] == -1 else "<g>")
-        o.append(f'<use href="#ic-{A["who"]}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}"/>')
+        if A["who"] not in WALKERS or not A["runs"]:
+            o.append(f'<use href="#ic-{A["who"]}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}"/>')
+        else:   # FR151: it walks — a step at every low of its hop (frame 1, then frame 2), upright in between (frame 0, standing)
+            wk = [[0, 0]]
+            for t0, t1 in A["runs"]:
+                wk.append([t0, 1])
+                k, t = 0, t0 + ACT["HOP"] / 4
+                while t < t1 - 0.05:
+                    wk.append([t, (0, 2, 0, 1)[k % 4]])
+                    k += 1
+                    t = t0 + ACT["HOP"] / 4 + k * ACT["HOP"] / 2
+                wk.append([t1, 0])
+            kv = keyed(wk)
+            for i, sfx in enumerate(("", "-w1", "-w2")):
+                ks = flips([[t, 1 if v == i else 0] for t, v in kv])
+                o.append(f'<use href="#ic-{A["who"]}{sfx}" x="{-sz / 2:g}" y="{-sz}" width="{sz}" height="{sz}" opacity="{0 if i else 1}">'
+                         + (anim(attributeName="opacity", values=";".join(str(v[1]) for v in ks), keyTimes=";".join(tk(v[0]) for v in ks), calcMode="discrete") if varies(ks) else "")
+                         + "</use>")
         for a in A["acts"]:
             if a["kind"] == "hammer":   # FR131: a real hammer in its right hand (it turns with the sprite): down fast, up slowly, a blow every BLOW s
                 o.append('<g transform="translate(9 -16)" opacity="0">' + fade_iv([[a["t0"], a["t1"]]])
@@ -2026,8 +2142,8 @@ def render(d):
     step = state.pop("step", None)
     steps_now = [s for s in d.get("steps") or [] if when_ok(s.get("showWhen"), state)]
     STEP_SET = None
-    if step is not None and steps_now:
-        step = min(max(0, int(step)), len(steps_now) - 1)
+    if step != "all" and steps_now:   # FR148: no step = the story's last step (its whole picture); "all" = the whole view — mirrors flow.js lastByDefault
+        step = len(steps_now) - 1 if step is None else min(max(0, int(step)), len(steps_now) - 1)
         STEP_SET = {i for s in steps_now[:step + 1] for i in (s.get("show") or [])}
     else:
         step = None
@@ -2105,13 +2221,14 @@ def render(d):
     for rid, lst in houses.items():
         n = by_id.get(rid)
         if n and rid in box and n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state):
-            s_, ix, iy, _ = picto_geom(box[rid], str(n.get("label", "")).split("\n"))
+            s_, ix, iy, _ = picto_geom(box[rid], label_of(n, state).split("\n"))
             mark = len(o)
             o.append(icon_svg(n["icon"], ix, iy, s_, PALETTE.get(n.get("color"), PALETTE["note"])[1], images))
             o.append(gatehouse_under_svg(lst, box[rid][2]))
             wrap_new(rid, mark)
 
     sleeves = []   # NT3: drawn after every tunnel, still under the boxes
+    labels = {}   # FR147: edge id → (x, y, anchor, text) of its label — mirrors flow.js LABELS
     for e in edges:
         if not shown(e, state):
             continue
@@ -2189,6 +2306,7 @@ def render(d):
             dy = 18 if tube else (EBADGE / 2 + 12 if badge else 4)
             halo = HALO if badge else ""
             xy = f'x="{mx + aside:.1f}" y="{my + 4:.1f}" text-anchor="start"' if aside else f'x="{mx:.1f}" y="{my - dy:.1f}" text-anchor="middle"'
+            labels[e["id"]] = (mx + aside, my + 4, "start", e["label"]) if aside else (mx, my - dy, "middle", e["label"])   # FR147: where it is, for a step to light it up
             o.append(f'<text {xy} font-size="11"{halo} fill="{FG if tube else DIM}">{html.escape(e["label"])}</text>')
         wrap_new(e["id"], mark)   # FR125
         if e.get("z") == "front":
@@ -2213,7 +2331,7 @@ def render(d):
         q = n and ICON_SCREEN.get(n.get("icon"))
         if not b or not q or not (n.get("nodeType") == "device" and n.get("icon") and not is_container(n, vis, vis_ids, state)):
             return None
-        s_, ix, iy, _ = picto_geom(b, str(n.get("label", "")).split("\n"))
+        s_, ix, iy, _ = picto_geom(b, label_of(n, state).split("\n"))
         k = s_ / 24.0
         return (ix + q[0] * k, iy + q[1] * k, q[2] * k, q[3] * k)
     SP = (step_plans(steps_now, step, epoly, edges, lambda nid: anc(nid) if nid in box else None,
@@ -2236,9 +2354,9 @@ def render(d):
         T = NODE_TYPES.get(n.get("nodeType"))   # FR82: block shape = what the box IS
         r = T["rx"](bx) if T else 8
         cx = bx[0] + bx[2] / 2.0
-        lines = str(n.get("label", "")).split("\n")
+        lines = label_of(n, state).split("\n")
         if n.get("nodeType") == "phonebook":   # FR119 / FR121: drawn as the DNS book (⊕ open on its cover), its label below
-            B = book_geom(n, bx)
+            B = book_geom(n, bx, state)
             lt = book_lights(n, B, epoly, edges)
             lt["entry"] = entry_of(n, state)
             wr = next((w for w in SP["P"]["writes"] if w["book"] == n["id"]), None) if SP and SP["P"] else None
@@ -2311,7 +2429,7 @@ def render(d):
     if step is not None:   # FR124: the active step's runner (over everything) and its caption, bottom-right
         s = steps_now[step]   # FR125: this step's runners follow on from the previous steps' (the end of one is the start of the next)
         if SP and SP["P"]:
-            o.append(actor_svg(SP["P"], lambda nid: anc(nid) if nid in box else None, bg, images))
+            o.append(actor_svg(SP["P"], lambda nid: anc(nid) if nid in box else None, bg, images, labels))
         o.append(caption_svg(s, step, x1, y1))
     if used_types or used_roles or used_costs:
         o.append(legend_svg(x1 - LEGEND_W - 8, y0 + 8, used_types, used_roles, used_costs))

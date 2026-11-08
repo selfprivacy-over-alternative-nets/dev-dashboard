@@ -9,14 +9,17 @@ Two things live here:
    `flow_requirements.md` (FR#, in the order they were asked; a later entry can change an earlier one — see their
    *Changed since* lines).
 
-## The story steps (setup-map: Tailscale, and Direct IPv6 with DuckDNS or a bought domain)
+## The story steps (setup-map: Tailscale, Direct IPv6 with DuckDNS or a bought domain, Cloudflare with a bought domain or the quick tunnel)
 They are written by scripts, run from this folder in this order:
 
 ```
 python3 checks/fr124_steps_apply.py docs/diagrams/setup-map.json
 python3 checks/fr139_scenarios_apply.py docs/diagrams/setup-map.json
 python3 checks/fr141_ipv6_steps_apply.py docs/diagrams/setup-map.json
+python3 checks/fr145_cloudflare_steps_apply.py docs/diagrams/setup-map.json
 ```
+They keep the layout of items that already exist (`checks/keep_layout.py`), so a re-run never undoes an editor change.
+A link without `;step=` opens a story at its last step; `;step=all` is the whole view (FR148).
 
 ## Checks (`checks/`)
 Run from this folder with `./dash serve 8099` running; they never press Save.

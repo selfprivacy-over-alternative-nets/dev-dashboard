@@ -10,9 +10,14 @@ VIEWS = [("cable", "0a", "tailscale", None, i) for i in range(6)] + [("cable", "
         + [("vm", None, "tailscale", None, i, "restore") for i in range(3)] + [("usb", "0c", "tailscale", None, 0, "restore"), ("wifi", "0d", "tailscale", None, 1, "reinstall")] + [("wifi", "0d", "tailscale", None, 0), ("wifi", "0d", "tailscale", None, 1), ("usb", "0c", "tailscale", None, 1),
          ("vm", None, "tailscale", None, 1), ("vm", None, "tailscale", None, 2), ("vm", None, "tailscale", None, 3),
          ("vm", None, "tailscale", None, 4), ("vm", None, "tailscale", None, 5), ("wifi", "0d", "tailscale", None, 5), ("usb", "0c", "tailscale", None, 5)]   # FR136: Jazz in every kind of view
-VIEWS += [("cable", "0a", "ipv6", nm, i) for nm in ("duckdns", "buy") for i in range(7)] \
+VIEWS += [("cable", "0a", "ipv6", nm, i) for nm in ("duckdns", "buy") for i in range(6)] \
        + [("cable", "0a", "ipv6", nm, i, sc) for nm in ("duckdns", "buy") for sc, n in (("reinstall", 4), ("restore", 5)) for i in range(n)] \
        + [("wifi", "0d", "ipv6", "duckdns", 3), ("usb", "0c", "ipv6", "buy", 5), ("vm", None, "ipv6", "duckdns", 3), ("vm", None, "ipv6", "duckdns", 0, "restore")]   # FR141–FR144: the IPv6 stories
+VIEWS += [("wifi", "0d", "ipv6", "duckdns", 4), ("wifi", "0d", "ipv6", "duckdns", 5), ("vm", None, "ipv6", "duckdns", 4), ("vm", None, "ipv6", "duckdns", 5)]   # FR149: the two friends (wifi) and the VM views' one friend
+VIEWS += [("wifi", "0d", "ipv6", "buy", 4), ("vm", None, "ipv6", "buy", 4), ("vm", None, "ipv6", "buy", 5)]   # FR150: the two friends with a bought domain (cable: above, usb: FR144's line) and the VM views' one friend
+VIEWS += [("cable", "0a", "cloudflare", "buy", i) for i in range(6)] + [("cable", "0a", "cloudflare", "buy", i, sc) for sc, n in (("reinstall", 2), ("restore", 3)) for i in range(n)] \
+       + [("cable", "0a", "cloudflare", "trycf", i) for i in range(5)] + [("cable", "0a", "cloudflare", "trycf", i, sc) for sc, n in (("reinstall", 3), ("restore", 4)) for i in range(n)] \
+       + [("vm", None, "cloudflare", "buy", 5), ("wifi", "0d", "cloudflare", "trycf", 1), ("usb", "0c", "cloudflare", "buy", 2), ("vm", None, "cloudflare", "trycf", 0, "restore")]   # FR145–FR146: the Cloudflare stories
 nums = lambda s: [float(v) for v in re.findall(r"-?\d+(?:\.\d+)?(?:e-?\d+)?", s or "")]
 def close(a, b, tol): return len(a) == len(b) and all(abs(x - y) <= tol for x, y in zip(a, b))
 ATTRS = ("attributeName", "path", "keyPoints", "keyTimes", "values", "dur", "type", "repeatCount", "fill", "begin")   # FR131: begin compared from the step's start
@@ -40,7 +45,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"], **({"executable_path": c[0]} if c else {})); pg = b.new_page(viewport={"width": 1400, "height": 800}); errs = []
     pg.on("pageerror", lambda e: errs.append(str(e))); pg.route("**/save**", lambda r: (errs.append("SAVE " + r.request.url), r.abort()))
     for V in VIEWS:   # FR139: (method, net, reach, name, step[, scenario]) — a Tailscale view is in a scenario (first by default)
-        m_, n, r, nm, step = V[:5]; scn = V[5] if len(V) > 5 else ("first" if r in ("tailscale", "ipv6") else None)   # (FR143: an IPv6 view is in a scenario too)
+        m_, n, r, nm, step = V[:5]; scn = V[5] if len(V) > 5 else ("first" if r in ("tailscale", "ipv6", "cloudflare") else None)   # (FR143 / FR145: an IPv6 or Cloudflare view is in a scenario too)
         st = {"method": m_, "net": n, "reach": r, "name": nm, **({"scenario": scn} if scn else {}), "step": step}
         h = f"setup-map;method={m_}" + (f";net={n}" if n else "") + f";reach={r}" + (f";name={nm}" if nm else "") + (f";scenario={scn}" if scn else "") + f";step={step}"
         pg.goto("about:blank"); pg.goto(f"http://localhost:8099/flow.html#{h}", wait_until="networkidle"); pg.wait_for_timeout(300)

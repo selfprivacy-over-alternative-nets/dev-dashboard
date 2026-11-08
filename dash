@@ -272,9 +272,10 @@ def setup_preflight(method):
 
 def diagram_alignment(cat=None):
     """Compare the catalog's matrix axes with the setup diagram's toggles (docs/diagrams/setup-map.json):
-    Install/Network/Reach/Name option values + labels, which networks each install method offers, which
-    names each reach offers, and that every diagram (method, net) / (reach, name) view is a matrix
-    setup / reach row. Returns a list of mismatches ([] = aligned)."""
+    Install/Network/Reach/Name/Scenario option values + labels, every toggle's default (= the catalog's first entry,
+    the matrix's default selection), which networks each install method offers, which names and which scenarios each
+    reach offers, and that every diagram (method, net) / (reach, name) view is a matrix setup / reach row. Returns a
+    list of mismatches ([] = aligned). The dashboard (app.js alignment) runs the same checks for its banner."""
     cat = cat or load_catalog()
     try:
         tg = {t["id"]: t for t in json.load(open(DIAGRAM_JSON))["meta"]["toggles"]}
@@ -286,10 +287,14 @@ def diagram_alignment(cat=None):
     def opts(tid):
         return [(o["value"], o.get("label", "")) for o in (tg.get(tid) or {}).get("options", [])]
 
-    for tid, key in (("method", "methods"), ("net", "nets"), ("reach", "reaches"), ("name", "names")):
+    for tid, key in (("method", "methods"), ("net", "nets"), ("reach", "reaches"), ("name", "names"), ("scenario", "scenarios")):
         want, have = opts(tid), [(x["id"], x.get("label", "")) for x in sm.get(key, [])]
         if want != have:
             out.append(f"toggle '{tid}': diagram {want} ≠ catalog setup_map.{key} {have}")
+        # the matrix's default selection is the catalog's first entry — it must be the diagram's default (req 187)
+        dflt, first = (tg.get(tid) or {}).get("default"), (sm.get(key) or [{}])[0].get("id")
+        if tid in tg and dflt != first:
+            out.append(f"toggle '{tid}': diagram default {dflt!r} ≠ the catalog's first entry {first!r}")
     diag_methods = {v for v, _ in opts("method")}
     for s in cat.get("setups", []):
         if s.get("method") not in diag_methods:
@@ -319,6 +324,12 @@ def diagram_alignment(cat=None):
     for rr in rows:
         if rr not in known:
             out.append(f"matrix reach row {rr} is not a diagram view")
+    # Scenario (req 187): a reach the toggle's optionsWhen doesn't list offers none (the diagram reads "— n/a"), as flow.js does
+    sw = ((tg.get("scenario") or {}).get("optionsWhen") or {}).get("reach") or {}
+    for r in sm.get("reaches", []):
+        want = [v for v, _ in opts("scenario") if v in (sw.get(r["id"]) or [])]
+        if (r.get("scenarios") or []) != want:
+            out.append(f"Reach={r['id']}: diagram scenarios {want} ≠ catalog scenarios {r.get('scenarios') or []}")
     return out
 
 
@@ -356,6 +367,12 @@ def cmd_setups(args):
         flags = (f"--reach {r['reach']}" + (f" --name {r['name']}" if r.get("name") else "") + f" --net {r['net']}"
                  if not r.get("future") and not r.get("greyed") else "—")
         print(f"  {BOLD}{r['id']:<19}{OFF} {flags:<44} {GREY}{r.get('label', '')}{tag}{OFF}")
+    scn = [x["id"] for x in sm.get("scenarios", [])]
+    if scn:   # req 187: the matrix shows one Reach × Name × Scenario view at a time; a run records no scenario yet
+        told = ", ".join(r["id"] for r in sm.get("reaches", []) if r.get("scenarios"))
+        print(f"\n{BOLD}Scenarios{OFF} = the diagram's Scenario toggle: {' · '.join(scn)} — told for {told}  "
+              f"{GREY}(every recorded run is a first install; the others are not recordable until dash takes "
+              f"{sm.get('scenario_arg') or '--scenario'}){OFF}")
     for k, v in (cat.get("removed_setups") or {}).items():
         print(f"\n{GREY}removed: {k} — {v}{OFF}", end="")
     mism = diagram_alignment(cat)
@@ -2287,25 +2304,53 @@ def _power_off_hard():
     time.sleep(2)
 
 
-def _ensure_tor():
-    """Make sure SOCKS 9050 is up. Starts a USER-level tor (no sudo) if needed — a user tor binds
-    9050 fine, avoiding the flaky `sudo systemctl start tor` path."""
-    if _port_open("127.0.0.1", 9050):
-        return True
-    if not shutil.which("tor"):
-        return False
-    datadir = os.path.expanduser("~/.cache/dash-tor")
-    os.makedirs(datadir, exist_ok=True)
-    subprocess.Popen(
-        ["tor", "--SocksPort", "9050", "--DataDirectory", datadir,
-         "--Log", "notice file " + os.path.join(datadir, "tor.log")],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-        start_new_session=True)                    # detached: survives this dash run for the app to use
-    for _ in range(10):
-        time.sleep(2)
-        if _port_open("127.0.0.1", 9050):
+def _tor_socks_works(socks_port=9050, timeout=20):
+    """True if Tor on this SOCKS port can actually CARRY traffic (a circuit is built) — not merely that
+    the port is listening. SOCKS-open alone is not enough: on a network that blocks Tor the listener
+    opens immediately yet Tor stays stuck at bootstrap ~5% with no circuits, so every .onion is
+    unreachable. A fetch through the proxy is the ground truth; two independent high-availability
+    targets so a single site being down doesn't misreport Tor as broken. (This is exactly the
+    2026-11-04 failure: 9050 was open, Tor never bootstrapped, and the onion L3 flows recorded a
+    misleading 'app could not connect'.) Not for chutney's private SOCKS — it has no clearnet exit."""
+    for url in ("https://check.torproject.org/", "https://www.wikipedia.org/"):
+        code = (_sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time {timeout} "
+                    f"--socks5-hostname 127.0.0.1:{socks_port} {url}", timeout=timeout + 5).stdout or "").strip()
+        if code in ("200", "301", "302"):
             return True
     return False
+
+
+def _ensure_tor(bootstrap_timeout=150):
+    """Make sure host Tor SOCKS 9050 is up AND actually bootstrapped (a usable circuit exists) — not
+    merely that the port is listening. Starts a USER-level tor (no sudo) if needed — a user tor binds
+    9050 fine, avoiding the flaky `sudo systemctl start tor` path. Returns True only once Tor can carry
+    traffic; on a network that blocks Tor it returns False after bootstrap_timeout instead of falsely
+    reporting 'up' (a bound-but-not-bootstrapped SOCKS reaches no .onion — the 2026-11-04 false reds)."""
+    datadir = os.path.expanduser("~/.cache/dash-tor")
+    if not _port_open("127.0.0.1", 9050):
+        if not shutil.which("tor"):
+            return False
+        os.makedirs(datadir, exist_ok=True)
+        subprocess.Popen(
+            ["tor", "--SocksPort", "9050", "--DataDirectory", datadir,
+             "--Log", "notice file " + os.path.join(datadir, "tor.log")],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+            start_new_session=True)                # detached: survives this dash run for the app to use
+        for _ in range(10):
+            time.sleep(2)
+            if _port_open("127.0.0.1", 9050):
+                break
+        else:
+            return False
+    # The listener is up; now wait for Tor to actually reach the network (a built circuit) — a bound
+    # SOCKS port with no circuits looks 'up' but reaches no .onion.
+    deadline = time.time() + bootstrap_timeout
+    while True:
+        if _tor_socks_works(9050):
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(5)
 
 
 def _onion_reachable(onion, tries=45, socks_port=9050):
@@ -2976,19 +3021,40 @@ def run_l3_flutter(address, token, pf, net="tor", socks_port=9050, flow="provide
     else:
         # onion transports: tor (real Tor, SOCKS 9050) or chutney (private net, its client SOCKS).
         have_socks = True if net == "chutney" else pf.get("tor")
-        if not have_socks:
-            print(f"{AMBER}note{OFF}: host Tor (127.0.0.1:9050) is down — the app may not reach the "
-                  f".onion; the run is still recorded. {CYAN}sudo systemctl start tor{OFF}")
         # Gate on the onion answering over SOCKS RIGHT BEFORE launch (cold circuits throw
         # hostUnreachable, which integration_test treats as a fatal uncaught error).
+        reachable = False
         if have_socks:
-            if not _onion_reachable(address, tries=6, socks_port=socks_port):
+            reachable = _onion_reachable(address, tries=6, socks_port=socks_port)
+            if not reachable:
                 if net == "tor" and not is_box:
                     print(f"{GREY}onion not answering yet — restarting the VM's tor to force a descriptor upload…{OFF}")
                     _kick_vm_tor()
                 elif net == "tor" and is_box:
                     print(f"{GREY}box onion not answering yet — waiting for a fresh descriptor (not kicking the box's tor)…{OFF}")
-                _onion_reachable(address, tries=30, socks_port=socks_port)
+                reachable = _onion_reachable(address, tries=30, socks_port=socks_port)
+        if not reachable:
+            # The transport itself is down. Launching the app now would record a misleading
+            # "app could not connect" L3 FAILURE for what is really an environment/transport outage
+            # (exactly the 2026-11-04 run: host Tor stuck at bootstrap 5%, so every flow a false red).
+            # Refuse instead — like the mkcert-CA and pub-get refusals above — so nothing false is
+            # recorded; the app genuinely cannot connect, so there is no honest pass/fail to be had.
+            # Classify the cause for the operator (host Tor down / blocked vs the backend's HS).
+            if net == "chutney":
+                why = "the chutney backend .onion never became reachable (see /tmp/chutney_up.log)"
+            elif not have_socks:
+                why = ("host Tor SOCKS 127.0.0.1:9050 is not running — the harness starts it in ./dash vm-up; "
+                       "start Tor and re-run")
+            elif not _tor_socks_works(socks_port):
+                why = ("host Tor is listening on 9050 but cannot reach the Tor network — it never bootstrapped "
+                       "a circuit (the network is blocking Tor). Not an app failure")
+            else:
+                why = ("the backend's .onion never became reachable over working Tor — its hidden-service "
+                       "descriptor was not published (a backend/Tor problem, not an app failure)")
+            print(f"{RED}transport down{OFF}  L3.{flow}.desktop over {net} — {why}.")
+            print(f"  Refusing to run so no false app failure is recorded (the app could not possibly connect "
+                  f"over {net}). Fix the transport and re-run.")
+            return None
         dart_defines = (f"--dart-define=ONION_DOMAIN={address} --dart-define=API_TOKEN={token} "
                         f"--dart-define=SOCKS_PORT={socks_port}")
     itdir = os.path.join(app, "integration_test")

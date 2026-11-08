@@ -13,7 +13,7 @@
   for an L3 flow, and `--ip --key` for a box so its deployed build is recorded:
   `./dash report L3.<flow>.desktop --status pass|fail --duration <sec> --on <SETUP> --reach <REACH> [--name <NAME>] --net <NET> --ip <BOX_LAN_IP> --key <SSH_KEY> [--error "…"]`
   `./dash report install.<SETUP> --status pass|fail --duration <sec> --on <SETUP> --ip <BOX_LAN_IP> --key <SSH_KEY> [--error "…"]`
-- See what ran + output **per commit**: `./dash serve 8099` → http://localhost:8099/index.html (setups × reach)
+- See what ran + output **per commit**: `./dash serve 8099` → http://localhost:8099/index.html (every setup × the tests of one Reach × Name × Scenario view, picked in its toolbar)
   and http://localhost:8099/matrix.html (per code state); or `grep <id> testresults/results.jsonl`. Each record
   carries `commit`,`dirty`,`diff_hash`,`status`,`duration_s`,`error`,`method` (setup),`reach`,`reach_name`,
   `transport`,`diagram_view`,`log_path` (full output in `testresults/logs/<run_id>.log`).
@@ -34,6 +34,7 @@ until `./dash setups --check` says `aligned`. Full tables + diagram links: [`net
 | setup = Install × Network | `--on` | `cable-0a` `cable-0b` `cable-0d` `cable-0c` · `wifi-0a` `wifi-0d` · `usb-0a` `usb-0d` `usb-0c` · `vm` |
 | reach = Reach (× Name) | `--reach` [`--name`] | `onion` · `tailscale` · `cloudflare --name buy\|trycf` · `ipv6 --name buy\|duckdns` · `portfwd --name buy\|duckdns` · harness: `local` |
 | transport the app speaks | `--net` | `tor` (onion) · `chutney` (onion on a private test Tor, vm only) · `https` (every other reach) |
+| scenario = Scenario | — (not recordable yet: `dash` takes no `--scenario`, req 187) | `first` (every run so far — a valid run is always from scratch) · `reinstall` · `restore`, told for `tailscale` / `cloudflare` / `ipv6`; the matrix shows one Reach × Name × Scenario view at a time, picked in its toolbar |
 
 `--reach` is required for every L3 run. Valid L3 combinations today:
 
@@ -44,7 +45,7 @@ until `./dash setups --check` says `aligned`. Full tables + diagram links: [`net
 | a box (`cable-*`, `wifi-*`, `usb-*`) | `onion --net tor` · `cloudflare --name buy --net https` · `ipv6 --name buy\|duckdns --net https` · `portfwd --name buy\|duckdns --net https` | needs `--ip --key --token` |
 | a box | `tailscale` · `cloudflare --name trycf` | ○ one-hostname tunnels: no automated L3 yet — `./dash app --domain <HOST> --token <API_TOKEN> --apex`, then `./dash report … --reach tailscale --net https --ip <BOX_LAN_IP> --key <SSH_KEY>` |
 | a box | `onion --net chutney` · `local --net https` | N/A (harness-only rows) |
-| any | greyed out: `onion --net tor+https` · `onion --net chutney+https` · `ngrok` · `pinggy` · `localtunnel` | can't run — kept in the matrix for reference; no diagram view, no test (`dash` refuses them) |
+| any | greyed out: `onion --net tor+https` · `onion --net chutney+https` | can't run — kept in the matrix for reference; no diagram view, no test (`dash` refuses them) |
 
 ## Your deployment values (fill these for YOUR rig; shown with the current pcname box)
 ```

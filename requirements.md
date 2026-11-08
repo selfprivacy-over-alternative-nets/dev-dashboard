@@ -740,7 +740,49 @@
    lands in a matrix cell that no longer means what it says.
 184. **Rows without a diagram view or a test stay in the matrix, greyed out**, instead of being dropped: Tor + https
    (`onion-https`, `--net tor+https`) and Chutney + https (`onion-chutney-https`, VM only) — the old matrix's
-   placeholders — and the ngrok / Pinggy / LocalTunnel relays (`add-cloudflare.sh --method …` sets them up, but
-   the setup diagram has no option for them). Each carries its reason (catalog `reach_rows[].greyed`), shown on
+   placeholders. *(Changed by req 188: the ngrok / Pinggy / LocalTunnel rows were removed again.)* Each carries its reason (catalog `reach_rows[].greyed`), shown on
    hover; `dash` refuses to run or report them, they get no diagram link, and the alignment check (req 183)
    ignores them. Giving one a diagram option and a test turns it into a normal row.
+
+## Test matrix layout — one view at a time, like the diagram (2026-11-04)
+185. **The matrix shows ONE Reach × Name × Scenario view at a time, chosen with the diagram's own toggles.** The toolbar's
+   Reach · Name · Scenario are single-select, in the diagram's order and with its labels (Name / Scenario read *— n/a* where
+   the diagram offers none for that Reach); the row group below is that view's tests — install (per setup), make reachable,
+   the L3 flows (desktop / android) — the tests stay in the rows. For `.onion` the view's rows are the diagram's row plus the
+   harness chutney row and the greyed-out Tor + https placeholders. The matrix-only reaches (harness `local`, the greyed-out
+   relays, the future transports) are offered after the diagram's five, styled as before. The URL is the diagram's:
+   `index.html#method=…;net=…;reach=…;name=…;scenario=…` (its keys, its order) — the ◧ link of a diagram view lands on that
+   view and the matrix's ▦ link goes back to it. L1 / L2 keep their own tables (the harness test-vm's own rows), untouched by
+   the selection; the client chips (desktop / android) stay a show/hide filter of the harness.
+186. **Every Install × Network view is a column, always:** Install → its Network variants → local | CI (the VM's single
+   column), in the diagram's order. `method` / `net` in the URL never hide columns: they mark the column of the diagram view
+   you came from (◧ in its header, the column tinted; click another column header to move the mark, the same one to clear
+   it). The Install / Network show-hide chips are gone.
+187. **Scenario is a matrix axis, aligned like the others.** Catalog `setup_map.scenarios` mirrors the diagram's Scenario
+   toggle and `reaches[].scenarios` says which scenarios each Reach offers (Tailscale, Cloudflare, Direct IPv6: *First
+   install · Reinstall · Restore a backup*; a Reach the toggle's `optionsWhen` doesn't list offers none, as `flow.js` reads
+   it). The alignment check (`./dash setups --check`, the gate of every run, the page banner) compares them, and every
+   toggle's `default` with the catalog's first entry (the matrix's default selection). A run that recorded no `scenario` is a
+   *First install* — every valid run is from scratch (req 159) — so today's runs land under `first`. The other scenarios are
+   NOT recordable yet: `dash` takes no `--scenario`, so those cells read ○ *not wired* with that reason, never a command that
+   would file a reinstall under *first*. Wiring it = `--scenario` on `run` / `wrap` / `report`, required exactly when the
+   diagram offers scenarios for that Reach (the `--name` rule, req 171), recorded on the run and in `diagram_view`, and
+   `setup_map.scenario_arg = "--scenario"` so the matrix prints it in every cell command; it changes every documented L3 /
+   reach command of the Tailscale, Cloudflare and Direct IPv6 rows (test_matrix.md, networks.md, README, the installer's
+   NEXT STEPS block and add-cloudflare.sh's printed lines).
+188. **The matrix's Reach toggle offers what the diagram offers, plus local https, greyed.** The ngrok / Pinggy /
+   LocalTunnel rows (greyed, req 184) and the Yggdrasil / Hyphanet roadmap rows are removed from the matrix, so their
+   options are gone from the toolbar; a route gets a row once the diagram has an option for it. `local https` stays —
+   it is the only https test that needs no box (VM L3, L2 `--net https`, the self-hosted `l3-https` CI job) — but its
+   chip is greyed, because the diagram has no such option; it stays selectable and its tests run (unlike a greyed-out
+   row, which `dash` refuses). The Tor + https / Chutney + https placeholders stay as greyed-out rows under .onion.
+189. **An onion L3 flow runs only when its transport is really up; a transport outage is refused, not recorded as an
+   app failure.** Host Tor counts as up only when it CARRIES traffic through SOCKS 9050 (`_tor_socks_works`: a fetch through
+   the proxy, two independent targets), not when the port merely listens. On 2026-11-04 the network blocked Tor: the
+   dash-started tor sat at bootstrap 5% for 12 h with 9050 open, the app's `main()` blocked in
+   `ApiConnectionRepository.init()` before `runApp` (the recording shows only "Test starting…"), and all 7 Tor flows were
+   recorded as false "could not connect" fails. Now `_ensure_tor` waits for traffic (≤150 s) and, before an onion flow,
+   `run_l3_flutter` requires the backend's .onion to answer over SOCKS; otherwise it refuses with the cause — host Tor not
+   running / listening but not bootstrapped (the network blocks Tor) / hidden-service descriptor not published / the
+   chutney backend not up — and, like the mkcert-CA and pub-get refusals, injects and records nothing. The test
+   assertions are unchanged. Test without a VM: `python3 tools/test_l3_transport_gate.py ./dash`.

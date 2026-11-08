@@ -1,6 +1,7 @@
 """FR124 — the Tailscale view told in steps (docs/diagrams/network_explanations.md "Steps and components").
 Writes d["steps"] into the diagram. Run from dev-dashboard: python3 checks/fr124_steps_apply.py docs/diagrams/setup-map.json"""
-import json, sys
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from keep_layout import put   # an editor change to an item survives a re-run
 
 p = sys.argv[1]
 d = json.load(open(p))
@@ -14,16 +15,13 @@ SHARE = {"kind": "plain", "role": "info", "dir": "to", "cost": "free", "label": 
          "_H": True, "eo": -510.5, "es": 100, "ef": 0}
 for eid, extra in (("e_share", {"so": -275, "ss": -41, "showWhen": {"method": ["cable", "wifi", "usb"], "reach": ["tailscale"]}}),
                    ("e_sharevm", {"so": -322.5, "ss": -60, "showWhen": {"method": ["vm"], "reach": ["tailscale"]}})):
-    if eid in E:
-        E[eid].clear()
-    else:
-        E[eid] = {}
-        d["edges"].append(E[eid])
-    E[eid].update(id=eid, **SHARE, **extra)
-if "e4" in E:
+    put(d["edges"], {"id": eid, **SHARE, **extra})
+if "e4" in E and E["e4"].get("so") != 648 and "bp" in E["e4"]:   # (the one-time re-route of FR124; a later editor change to e4 is kept)
     for k in ("bp", "ss", "es", "sf", "ef", "ah", "path"):
         E["e4"].pop(k, None)
-    E["e4"].update(so=648, mo=382, eo=21, showWhen={"method": ["cable", "wifi", "usb"], "reach": ["tailscale"]})   # every box view (in the VM view it would cut through the tslife note)
+    E["e4"].update(so=648, mo=382, eo=21)
+if "e4" in E:
+    E["e4"]["showWhen"] = {"method": ["cable", "wifi", "usb"], "reach": ["tailscale"]}   # every box view (in the VM view it would cut through the tslife note)
 d["steps"] = [
     {"id": "ts0", "showWhen": TS, "label": "account", "title": "Make a Tailscale account",
      "show": ["you", "inet", "relayTS", "e_ts_run", "e4"],
@@ -66,18 +64,18 @@ d["steps"] = [
     {"id": "tsshare", "showWhen": TS, "label": "share", "title": "Send your friend the link",
      "show": ["friend", "e_share", "e_sharevm"],
      "caption": "You send your Tailscale address to a friend, for example in a chat message.",
-     # FR130: the line from your computer to the friend's phone; Mario carries the address over (FR136: and hands it to Jazz in step 5)
-     "play": [{"run": ["e_share", "e_sharevm"]}, {"wait": 0.6}]},
+     # FR130: the line from your computer to the friend's phone; Mario carries the address over, Jazz (your friend) comes out of the
+     # phone and takes it, and Mario goes home (FR148: all in this step, so the friend's step starts with your friend on the way)
+     "play": [{"run": ["e_share", "e_sharevm"]}, {"who": "jazz", "appear": "friend"}, {"give": "domain", "to": "jazz"}, {"run": ["e_share", "e_sharevm"], "back": True}, {"wait": 0.4}]},
     {"id": "ts3", "showWhen": TS, "label": "friend", "title": "A friend opens the link",
      "show": ["friend", "e_friend", "e_ts_friend"], "visitors": True,   # FR126: someone comes in at the router's gates
      "caption": "Your friend opens the Tailscale address to call you on Jitsi Meet. The phone looks the name up in the DNS "
                 "phonebook and gets the address it points to, then goes through the internet, Tailscale's relay and the tunnel "
                 "to your SelfPrivacy server, and the call comes back the same way.",
-     # FR136: Jazz comes out of the phone and gets the address from Mario; over the internet to the book, which opens: the name
+     # FR136: Jazz (who got the address from Mario in the share step, FR148) goes over the internet to the book, which opens: the name
      # goes in, the ip on Yoshi's line comes out; back over the internet, via Tailscale down the tunnel to your server, where the
      # call (Jitsi Meet) shows up; Jazz takes a copy back through the tunnels to the phone, where it shows up too
-     "play": [{"who": "jazz", "appear": "friend"}, {"give": "domain", "to": "jazz"}, {"run": ["e_share", "e_sharevm"], "back": True},   # FR138: Mario goes home after the hand-over
-              {"who": "jazz", "run": "e_friend"}, {"who": "jazz", "run": "e_ts_friend", "back": True}, {"who": "jazz", "lookup": "tsbook"},
+     "play": [{"who": "jazz", "run": "e_friend"}, {"who": "jazz", "run": "e_ts_friend", "back": True}, {"who": "jazz", "lookup": "tsbook"},
               {"who": "jazz", "run": "e_ts_friend"}, {"who": "jazz", "run": "e_ts_run", "back": True}, {"who": "jazz", "run": "e_ts_up", "back": True},
               {"who": "jazz", "put": "answer", "in": "server"}, {"who": "jazz", "show": "jitsi", "at": "server"},
               {"who": "jazz", "get": "jitsi", "from": "server"},

@@ -6,15 +6,16 @@ d = json.load(open("docs/diagrams/setup-map.json"))
 VIEWS = [("cable", "0a", "tailscale", None, "restore"), ("vm", None, "tailscale", None, "restore"), ("cable", "0a", "portfwd", "buy"), ("cable", "0a", "ipv6", "buy"), ("cable", "0a", "ipv6", "duckdns"), ("cable", "0a", "tailscale", None),
          ("cable", "0a", "cloudflare", "buy"), ("cable", "0a", "onion", None), ("wifi", "0d", "portfwd", "duckdns"), ("usb", "0c", "cloudflare", "trycf"),
          ("vm", None, "tailscale", None), ("vm", None, "cloudflare", "buy"), ("vm", None, "ipv6", "duckdns"),
-         ("cable", "0a", "ipv6", "duckdns", "restore"), ("wifi", "0d", "ipv6", "buy", "restore")]   # FR122: + the VM views; FR143: the IPv6 restore views
+         ("cable", "0a", "ipv6", "duckdns", "restore"), ("wifi", "0d", "ipv6", "buy", "restore"),
+         ("cable", "0a", "cloudflare", "trycf"), ("cable", "0a", "cloudflare", "buy", "restore"), ("vm", None, "cloudflare", "trycf", "restore")]   # FR122: + the VM views; FR143 / FR145: the IPv6 + Cloudflare restore views
 P = lambda s: [(float(a), float(b)) for a, b in re.findall(r"(-?[\d.]+)[ ,](-?[\d.]+)", s.replace("M", " ").replace("L", " "))]
 bad = 0
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-sandbox"], **({"executable_path": c[0]} if c else {})); pg = b.new_page(viewport={"width": 1400, "height": 800}); errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     for V in VIEWS:   # FR139: (method, net, reach, name[, scenario]) — a Tailscale view is in a scenario (first by default)
-        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r in ("tailscale", "ipv6") else None)   # (FR143: an IPv6 view is in a scenario too)
-        st = {"method": m, "net": n, "reach": r, "name": nm, **({"scenario": scn} if scn else {})}
-        pg.goto("about:blank"); pg.goto(f"http://localhost:8099/flow.html#setup-map;method={m}" + (f";net={n}" if n else "") + f";reach={r}" + (f";name={nm}" if nm else "") + (f";scenario={scn}" if scn else ""), wait_until="networkidle"); pg.wait_for_timeout(300)
+        m, n, r, nm = V[:4]; scn = V[4] if len(V) > 4 else ("first" if r in ("tailscale", "ipv6", "cloudflare") else None)   # (FR143 / FR145: an IPv6 or Cloudflare view is in a scenario too)
+        st = {"method": m, "net": n, "reach": r, "name": nm, **({"scenario": scn} if scn else {}), "step": "all"}   # FR148: the whole view
+        pg.goto("about:blank"); pg.goto(f"http://localhost:8099/flow.html#setup-map;method={m}" + (f";net={n}" if n else "") + f";reach={r}" + (f";name={nm}" if nm else "") + (f";scenario={scn}" if scn else "") + ";step=all", wait_until="networkidle"); pg.wait_for_timeout(300)
         js = pg.evaluate("() => Object.fromEntries([...document.querySelectorAll('#edges > .edge, .front-edges > .edge')].map(g => [g.getAttribute('data-edge'), g.querySelector('.hit') && g.querySelector('.hit').getAttribute('d')]).filter(x => x[1]))")
         jw = pg.evaluate("() => [...document.querySelectorAll('#under rect')].map(r => ['x','y','width','height'].map(k => +(+r.getAttribute(k)).toFixed(1)))")
         got = {}; op = G.pipe_poly

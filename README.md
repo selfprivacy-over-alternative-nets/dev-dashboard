@@ -80,7 +80,7 @@ Record a manual/USB/click-through result instead — the same `--on` (and, for a
 `--net`) as a run, plus `--ip --key` for a box so its deployed build is recorded:
 `./dash report L3.connect.desktop --status pass --duration <s> --on <SETUP> --reach <REACH> [--name <NAME>] --net <NET> --ip <BOX_LAN_IP> --key <SSH_KEY>`
 or, for an install, `./dash report install.usb-0a --status pass --duration <s> --on usb-0a --ip <BOX_LAN_IP> --key <SSH_KEY>`.
-`--on` = a setup = the setup diagram's Install × Network view; `--reach` [`--name`] = its Reach × Name view
+`--on` = a setup = the setup diagram's Install × Network view; `--reach` [`--name`] = its Reach × Name view (the matrix page shows one Reach × Name × Scenario view at a time, picked with the diagram's toggles; reqs 185–187)
 (`./dash setups` lists both; full commands per setup family: `test_matrix.md`; the exact command of any matrix
 cell: click it in the dashboard).
 
@@ -216,6 +216,8 @@ tools/
   ci_l3_https.py         self-hosted-runner CI entry for the L3-over-https flow
   test_reach_route.py    tests the box https route check without a box (live DNS/TLS + every decision):
                          python3 tools/test_reach_route.py ./dash
+  test_l3_transport_gate.py  tests the L3 transport gate (req 189) without VM/box/Tor:
+                         python3 tools/test_l3_transport_gate.py ./dash
   gen_catalog.py · gen_demo.py                          (re)generate catalog.json / demo data
 testresults/             SEPARATE repo (git-ignored here): results.jsonl + logs/ + media/ + the spec
 state/                   per-deploy local state (keepass DBs, L3 golden baselines) — git-ignored

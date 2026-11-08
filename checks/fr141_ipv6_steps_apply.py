@@ -1,8 +1,10 @@
 """FR141–FR144 — the Direct IPv6 stories: DuckDNS (FR141) and a bought domain (FR144), each told in the three scenarios (FR143),
 with the IPv4 way blocked at the router (FR142). Run from dev-dashboard AFTER fr124_steps_apply.py and fr139_scenarios_apply.py:
     python3 checks/fr141_ipv6_steps_apply.py docs/diagrams/setup-map.json
-Re-runnable: it replaces what it wrote before (the steps whose id starts with "v6", the IPv4 pipe e_v4, the IPv6 views' backup device)."""
-import json, sys
+Re-runnable: it replaces what it wrote before (the steps whose id starts with "v6", the IPv4 pipe e_v4, the IPv6 views' backup device,
+FR149 / FR150's second phone friend4 with its lines e_friend4 and e_share2)."""
+import json, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from keep_layout import put   # an editor change to an item survives a re-run
 
 p = sys.argv[1]
 d = json.load(open(p))
@@ -17,18 +19,29 @@ E = {e["id"]: e for e in d["edges"]}
 N = {n["id"]: n for n in d["nodes"]}
 for eid in ("e_share", "e_sharevm"):   # the line your friend gets the link over is drawn in the IPv6 views too
     E[eid]["showWhen"]["reach"] = ["tailscale", "ipv6"]
-E["e9"]["ss"] = -10   # your line to DuckDNS leaves your computer's top 20 px further right, clear of the share line's stub
-d["edges"] = [e for e in d["edges"] if e["id"] not in ("e_v4", "e_backup6")]
-d["nodes"] = [n for n in d["nodes"] if n["id"] != "backupdev6"]
+if E["e9"].get("ss") == -30:
+    E["e9"]["ss"] = -10   # (once) your line to DuckDNS leaves your computer's top 20 px further right, clear of the share line's stub
 # FR142: the IPv4 way — a yellow pipe out of the internet's bottom (right of the blue IPv6 one) that ends at the router's wall below the
 # IPv6 exit: nobody gets through (no port-forward); its label on its long level stretch
-d["edges"].append({"id": "e_v4", "from": "inet", "to": "router", "kind": "pipe", "role": "tunnel", "color": "#eab308", "label": "IPv4 · blocked: no port-forward",
+put(d["edges"], {"id": "e_v4", "from": "inet", "to": "router", "kind": "pipe", "role": "tunnel", "color": "#eab308", "label": "IPv4 · blocked: no port-forward",
                    "_H": True, "so": 265, "ss": 50, "eo": 100, "blocked": True, "labelMid": True, "showWhen": {"method": ["cable", "wifi", "usb"], "reach": ["ipv6"]}})
 # FR143: the IPv6 views' backup device — right of the DuckDNS note, left of your friend's lookup line; its pipe drops into the internet's top
-d["nodes"].append({"id": "backupdev6", "label": "SelfPrivacy\nbackup device", "nodeType": "device", "icon": "laptop", "color": "green",
+put(d["nodes"], {"id": "backupdev6", "label": "SelfPrivacy\nbackup device", "nodeType": "device", "icon": "laptop", "color": "green",
                    "x": 1045, "y": -20, "w": 137, "h": 167, "showWhen": {"reach": ["ipv6"], "scenario": ["restore"]}})
-d["edges"].append({"id": "e_backup6", "from": "backupdev6", "to": "inet", "kind": "pipe", "role": "tunnel", "color": "#8b949e", "label": "",
+put(d["edges"], {"id": "e_backup6", "from": "backupdev6", "to": "inet", "kind": "pipe", "role": "tunnel", "color": "#8b949e", "label": "",
                    "so": 47.0, "eo": -26.9, "showWhen": {"reach": ["ipv6"], "scenario": ["restore"]}})   # (straight down from the laptop's right-hand edge, clear of its label)
+# FR149: DuckDNS — two friends: the phone you had (on IPv6) and a phone on an IPv4-only network, under the internet (clear of the step's caption
+# panel), with a short pipe straight up into the internet; Mario's line from under the first phone on to the second (the box views: the IPv4 way
+# is drawn there only). FR150: the same two phones for a bought domain.
+BOXV = ["cable", "wifi", "usb"]
+TWO = {"method": BOXV, "reach": ["ipv6"], "name": ["duckdns", "buy"]}
+N["friend"]["labelWhen"] = {"reach": {"ipv6": {"name": {"duckdns": "A friend's phone · IPv6", "buy": "A friend's phone · IPv6"}}}}
+put(d["nodes"], {"id": "friend4", "label": "A friend's phone · IPv4 only", "nodeType": "device", "icon": "phone", "color": "input",
+                 "x": 1159, "y": 400, "w": 160, "h": 100, "showWhen": TWO})
+put(d["edges"], {"id": "e_friend4", "from": "friend4", "to": "inet", "kind": "pipe", "role": "tunnel", "color": "#6e7681", "label": "",
+                 "_H": False, "eo": 50, "showWhen": TWO})
+put(d["edges"], {"id": "e_share2", "from": "friend", "to": "friend4", "kind": "plain", "role": "info", "dir": "to", "cost": "free", "label": "",
+                 "_H": False, "so": 60, "eo": 50, "showWhen": TWO})
 HOST = {"duckdns": "yourname.duckdns.org", "buy": "yourdomain.org"}
 BOOK = {"duckdns": "duck", "buy": "pbook"}
 LOOKUP = {"duckdns": "e_duck", "buy": "e_pb_friend"}
@@ -51,29 +64,55 @@ FW_AGAIN = HOME + [{"get": "ip"}, {"run": ["e_v6you", "e_v6youVM"]}, {"run": "e_
 INSTALL_PLAY = lambda get, token, pop: [{"get": "light"}] + get + [{"run": ["e_cable", "e_usb"]}, {"hammer": 3, "at": "server"}, {"put": "domain", "in": "server"}] + \
     ([{"put": "token", "in": "server"}] if token else []) + [{"get": "ip", "from": "server"}, {"pop": pop}, {"wait": 0.6}]
 TOKEN = [{"get": "token", "from": "you"}]   # the token comes out of KeePass on your computer's screen
-def friend(nm):   # FR136 / FR142: Jazz gets the address from Mario, looks it up, goes straight to the server through the open fire wall and back with the call; then a knock on the IPv4 way
+def friend(nm):   # FR136 / FR147 / FR148: Jazz (who got the address from Mario in the share step) looks it up; at the internet he first tries the yellow IPv4 way and is bounced at its
+    # entry (a forbidden sign on the pipe, its label lit up, "refused"), then goes straight to the server over IPv6 through the open fire wall and back with the call
     bk, lk = BOOK[nm], LOOKUP[nm]
-    return [{"who": "jazz", "appear": "friend"}, {"give": "domain", "to": "jazz"}, {"run": ["e_share", "e_sharevm"], "back": True},
-            {"who": "jazz", "run": "e_friend"}, {"who": "jazz", "run": lk, "back": True}, {"who": "jazz", "lookup": bk},
-            {"who": "jazz", "run": lk}, {"who": "jazz", "run": "e_v6", "back": True},
+    return [{"who": "jazz", "run": "e_friend"}, {"who": "jazz", "run": lk, "back": True}, {"who": "jazz", "lookup": bk},
+            {"who": "jazz", "run": lk}, {"who": "jazz", "bounce": "e_v4", "at": 40, "say": "✕ refused over IPv4"}, {"who": "jazz", "run": "e_v6", "back": True},
             {"who": "jazz", "put": "answer", "in": "server"}, {"who": "jazz", "show": "jitsi", "at": "server"}, {"who": "jazz", "get": "jitsi", "from": "server"},
-            {"who": "jazz", "run": "e_v6"}, {"who": "jazz", "run": "e_friend", "back": True}, {"who": "jazz", "show": "jitsi", "at": "friend"},
-            {"wait": 0.4}, {"knock": "e_v4"}, {"wait": 0.6}]
-GAPS = [{"who": "jazz", "run": "e_friend"}, {"who": "jazz", "run": "e_v6", "back": True},
-        {"who": "jazz", "pop": "✕ refused: the server listens on IPv4 only", "bad": True, "dur": 2.4},
-        {"who": "jazz", "run": "e_v6"}, {"who": "jazz", "run": "e_friend", "back": True}, {"wait": 0.8}]
-FRIEND_CAP = {"duckdns": "Your friend opens the link to call you on Jitsi Meet. The phone asks DuckDNS, gets your server's IPv6 address and goes straight "
-                         "to your server: across the internet and through the opening in your fire wall. No company in between. Over IPv4 nobody gets "
-                         "in: the router has no port-forward, and a friend on an IPv4-only network can't open the link at all.",
-              "buy": "Your friend opens the link to call you on Jitsi Meet. The phone asks the registrar's phonebook, gets your server's IPv6 address "
-                     "and goes straight to your server through the opening in your fire wall. No company in between. Over IPv4 nobody gets in: the "
-                     "router has no port-forward, and a friend on an IPv4-only network can't open the link at all."}
-GAPS_CAP = {"duckdns": "Today the call would not get through: the server's web server listens on IPv4 only, so an IPv6 visitor is refused at the door "
-                       "(fix: listen on [::]:443 too). Also: no automatic certificate, so browsers warn; the updater may send a temporary address that "
-                       "changes daily; and its service is lost on reboot, so the entry goes stale after a restart.",
-            "buy": "Today the call would not get through: the server's web server listens on IPv4 only, so an IPv6 visitor is refused at the door "
-                   "(fix: listen on [::]:443 too). Also: no automatic certificate, so browsers warn (DNS-01 through the registrar's API, or HTTP-01 "
-                   "over port 80, would fix it); and the installer prints only the bare domain's record, not the five you need."}
+            {"who": "jazz", "run": "e_v6"}, {"who": "jazz", "run": "e_friend", "back": True}, {"who": "jazz", "show": "jitsi", "at": "friend"}, {"wait": 1}]
+# FR149: DuckDNS — Jazz (the IPv6 phone) and his cousin (the IPv4-only phone) set off together; up the lookup line the cousin follows a little
+# behind and waits its turn in the queue; it gets the IPv4 card. Going down it leads: at the internet it tries the yellow IPv4 pipe and is bounced
+# (it can use no other way) and goes home without a call (the address goes into its phone), while Jazz goes on over IPv6 to your server and back with the call.
+# FR150: the same for a bought domain — but the registrar's phonebook holds only the IPv6 records you wrote, so the cousin's card says so
+C4 = lambda **k: {"who": "cousin", "when": "friend4", **k}   # (only in the views that draw the second phone)
+ANSWER4 = {"duckdns": "ip 203.0.113.7", "buy": "no IPv4 address"}   # what the IPv4-only phone gets: at most your router's address / nothing
+SAY4 = {"duckdns": "✕ refused over IPv4", "buy": "✕ no IPv4 address"}
+def friends2(nm):
+    bk, lk = BOOK[nm], LOOKUP[nm]
+    return [{"together": [{"who": "jazz", "run": "e_friend"}, C4(run="e_friend4")]},
+            {"together": [[{"who": "jazz", "run": lk, "back": True}, {"who": "jazz", "lookup": bk}],
+                          [C4(wait=0.6), C4(run=lk, back=True, near=140), C4(lookup=bk, **{"as": "answer4"})]]},
+            {"together": [[C4(run=lk, **{"from": "here"}), C4(bounce="e_v4", at=40, say=SAY4[nm]), C4(run="e_friend4", back=True),
+                           C4(put="answer4", **{"in": "friend4"}), C4(pop="✕ no call", bad=True, dur=2)],
+                          [{"who": "jazz", "wait": 0.5}, {"who": "jazz", "run": lk}, {"who": "jazz", "run": "e_v6", "back": True},
+                           {"who": "jazz", "put": "answer", "in": "server"}, {"who": "jazz", "show": "jitsi", "at": "server"}, {"who": "jazz", "get": "jitsi", "from": "server"},
+                           {"who": "jazz", "run": "e_v6"}, {"who": "jazz", "run": "e_friend", "back": True}, {"who": "jazz", "show": "jitsi", "at": "friend"}]]},
+            {"wait": 1}]
+# FR149: Mario takes the link to both phones in one trip: to the first (a copy for Jazz), on to the second (the cousin), and back home
+SHARE2 = [{"get": "domain"}, {"run": ["e_share", "e_sharevm"]}, {"who": "jazz", "appear": "friend"}, {"give": "domain", "to": "jazz", "copy": True},
+          {"run": "e_share2"}, {"who": "cousin", "appear": "friend4"}, {"give": "domain", "to": "cousin"},
+          {"run": "e_share2", "back": True}, {"run": ["e_share", "e_sharevm"], "back": True}, {"wait": 0.4}]
+FRIEND_CAP1 = {   # the VM views: one friend
+    "duckdns": "Your friend opens the link to call you on Jitsi Meet. The phone gets your server's IPv6 address from DuckDNS. Over IPv4 it is "
+               "refused: the router has no port-forward, so an IPv4-only friend can't open the link. Over IPv6 it goes straight to your server "
+               "through the opening in your fire wall: no company in between. Gaps today: the web server listens on IPv4 only, so this call is "
+               "still refused; no automatic certificate; the updater may send a temporary address and is lost on reboot.",
+    "buy": "Your friend opens the link to call you on Jitsi Meet. The phone gets your server's IPv6 address from the registrar's phonebook. Over "
+           "IPv4 it is refused: the router has no port-forward, so an IPv4-only friend can't open the link. Over IPv6 it goes straight to your "
+           "server through the opening in your fire wall: no company in between. Gaps today: the web server listens on IPv4 only, so this call "
+           "is still refused; no automatic certificate; the installer prints only the bare domain's record."}
+FRIEND_CAP = {   # FR148: the friend's call is the story's last step; the route's gaps today close its caption (FR149 / FR150: the two friends)
+    "duckdns": "Your two friends open the link at the same time, to call you on Jitsi Meet; both phones ask DuckDNS. The phone on IPv6 gets your "
+               "server's IPv6 address and goes straight to your server, through the opening in your fire wall: no company in between. The other "
+               "phone has IPv4 only. Over IPv4 DuckDNS has at most your router's address (the server sends only its IPv6 one), and the router "
+               "refuses: no port-forward, so that friend can't open the link. Gaps today: the web server listens on IPv4 only, so even the IPv6 "
+               "call is still refused; no automatic certificate; the updater may send a temporary address and is lost on reboot.",
+    "buy": "Your two friends open the link at the same time, to call you on Jitsi Meet; both phones ask the registrar's phonebook. The phone on "
+           "IPv6 gets your server's IPv6 address and goes straight to your server, through the opening in your fire wall: no company in between. "
+           "The other phone has IPv4 only, and the phonebook holds only the IPv6 records you wrote: no IPv4 address (one for your router "
+           "wouldn't help: no port-forward), so that friend can't open the link. Gaps today: the web server listens on IPv4 only, so even the "
+           "IPv6 call is still refused; no automatic certificate; the installer prints only the bare domain's record."}
 steps = []
 W = lambda nm, s: {"reach": ["ipv6"], "name": [nm], "scenario": [s]}
 S = lambda nm, s, i, **k: steps.append({"id": f"v6{'d' if nm == 'duckdns' else 'b'}{s}{i}", "showWhen": W(nm, {"": "first", "r": "reinstall", "s": "restore"}[s]), **k})
@@ -111,10 +150,21 @@ for nm in ("duckdns", "buy"):
       caption="On IPv6 the router has no receptionist (no port-forward), only a fire wall, and most home routers let no visitor in until you open "
               "it. You do that once, by hand, in the router's settings: allow TCP 443 to the server's IPv6 address, which the installer printed.",
       play=OPENFW)
-    S(nm, "", 4, label="share", title="Send your friend the link", show=["friend", "e_share", "e_sharevm"],
-      caption="You send your friend the link, for example in a chat message.", play=[{"get": "domain"}, {"run": ["e_share", "e_sharevm"]}, {"wait": 0.6}])
-    S(nm, "", 5, label="friend", title="A friend opens the link", show=["e_friend", lk, "e_v4"], caption=FRIEND_CAP[nm], play=friend(nm))
-    S(nm, "", 6, label="gaps", title="Gaps in this project today", show=[], caption=GAPS_CAP[nm], play=GAPS)
+    ONE4 = dict(label="share", title="Send your friend the link", show=["friend", "e_share", "e_sharevm"],
+                caption="You send your friend the link, for example in a chat message.",
+                play=[{"get": "domain"}, {"run": ["e_share", "e_sharevm"]}, {"who": "jazz", "appear": "friend"}, {"give": "domain", "to": "jazz"}, {"run": ["e_share", "e_sharevm"], "back": True}, {"wait": 0.4}])   # FR148: the hand-over and the way home
+    ONE5 = dict(label="friend", title="A friend opens the link", show=["e_friend", lk, "e_v4"], caption=FRIEND_CAP1[nm], play=friend(nm))
+    # FR149 / FR150: two friends, one on IPv6 and one on IPv4 only — in the box views, where the IPv4 way is drawn; the VM views keep the one friend
+    v = "d" if duck else "b"
+    S(nm, "", 4, label="share", title="Send two friends the link", show=["friend", "friend4", "e_share", "e_sharevm", "e_share2"],
+      caption="You send the link to two friends, for example in a chat message. One friend's network has IPv6, the other's has IPv4 only.",
+      play=SHARE2)
+    steps[-1]["showWhen"]["method"] = BOXV
+    steps.append({"id": f"v6{v}4vm", "showWhen": {**W(nm, "first"), "method": ["vm"]}, **ONE4})
+    S(nm, "", 5, label="friends", title="Two friends open the link", show=["e_friend", "e_friend4", lk, "e_v4"], texts={"answer4": ANSWER4[nm]},
+      caption=FRIEND_CAP[nm], play=friends2(nm))
+    steps[-1]["showWhen"]["method"] = BOXV
+    steps.append({"id": f"v6{v}5vm", "showWhen": {**W(nm, "first"), "method": ["vm"]}, **ONE5})
     # ---- reinstall (FR143): the name stays, the server gets a new address — the phonebook and the fire wall again ----
     T2 = {"domain": host, "ip": IP2}
     if duck:

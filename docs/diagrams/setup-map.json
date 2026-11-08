@@ -65,12 +65,12 @@
     },
     {
       "dir": "both",
-      "eo": -160,
+      "eo": -20,
       "from": "server",
       "id": "e_scable",
       "kind": "cable",
       "label": "",
-      "mo": 250,
+      "mo": 15,
       "nestB": 0,
       "nestOp": 0.85,
       "role": "link",
@@ -81,7 +81,7 @@
           "0c"
         ]
       },
-      "so": -145,
+      "so": -7,
       "ss": 17,
       "to": "router"
     },
@@ -141,12 +141,14 @@
       "to": "inet"
     },
     {
-      "color": "#6e7681",
+      "color": "#3584e4",
+      "eo": -17,
       "from": "friend",
       "id": "e_friend",
       "kind": "pipe",
       "label": "opens the link",
       "role": "tunnel",
+      "so": -17,
       "to": "inet"
     },
     {
@@ -220,13 +222,25 @@
       "to": "inet"
     },
     {
+      "bp": {
+        "dx": 487,
+        "dy": -100
+      },
       "color": "#3b82f6",
-      "eo": 162,
+      "ef": -17,
+      "eo": 231,
+      "es": -361,
       "from": "server",
       "gate": "router",
       "id": "e_v6",
       "kind": "pipe",
       "label": "Direct · IPv6 only",
+      "legs": {
+        "router>inet": {
+          "mo": -162,
+          "so": 31
+        }
+      },
       "mo": -521,
       "open": [
         "firewall"
@@ -250,7 +264,7 @@
         "dy": -487
       },
       "color": "#eab308",
-      "eo": 129,
+      "eo": 231,
       "from": "server",
       "gate": "router",
       "id": "e_pf_b",
@@ -395,13 +409,13 @@
     {
       "cost": "central",
       "dir": "to",
-      "eo": 58,
+      "eo": 22,
       "from": "relayCF",
       "id": "e1",
       "kind": "plain",
       "label": "Cloudflare writes your name",
       "role": "info",
-      "so": 40.3,
+      "so": 4.299999999999997,
       "to": "cfbook"
     },
     {
@@ -429,16 +443,21 @@
       "to": "tsbook"
     },
     {
+      "bp": {
+        "dx": 1216,
+        "dy": -45
+      },
       "cost": "free",
       "dir": "to",
+      "eo": -128,
       "from": "you",
       "id": "e5",
       "kind": "plain",
       "label": "",
       "lw": 5,
       "role": "action",
-      "so": 121,
-      "ss": 36,
+      "so": -8,
+      "ss": 444,
       "to": "pfwarn"
     },
     {
@@ -511,7 +530,7 @@
           "portfwd"
         ]
       },
-      "so": -94,
+      "so": -115,
       "to": "duck"
     },
     {
@@ -521,14 +540,14 @@
       },
       "cost": "central",
       "dir": "to",
-      "eo": -93,
+      "eo": -105,
       "from": "you",
       "id": "e9",
       "kind": "plain",
       "label": "",
       "lw": 5,
       "role": "action",
-      "so": -204,
+      "so": -238,
       "ss": -10,
       "to": "duck"
     },
@@ -610,7 +629,7 @@
       "dir": "to",
       "from": "routerY",
       "hideIn": [
-        "method=cable;net=0c;reach=cloudflare;name=buy"
+        "method=cable;net=0c;reach=cloudflare;name=buy;scenario=first"
       ],
       "id": "e12",
       "kind": "pipe",
@@ -620,20 +639,18 @@
     },
     {
       "bp": {
-        "dx": 1048,
-        "dy": 462
+        "dx": 1001,
+        "dy": 220
       },
       "cost": "paid",
       "dir": "to",
-      "eo": 29,
-      "es": 19,
       "from": "you",
       "id": "e_pb_you",
       "kind": "plain",
       "label": "you edit this by hand",
       "mo": 12,
       "role": "action",
-      "so": -130,
+      "so": -140,
       "ss": 21,
       "to": "pbook"
     },
@@ -657,28 +674,29 @@
       },
       "cost": "paid",
       "dir": "to",
-      "eo": -189,
+      "eo": -89,
       "from": "pbook",
       "id": "e_pb_srv",
       "kind": "plain",
       "label": "",
       "lw": 5,
       "role": "info",
-      "so": -23,
+      "so": 34,
       "to": "server"
     },
     {
-      "ah": 34,
+      "ah": 13,
       "cost": "free",
       "dir": "to",
-      "eo": -54,
+      "eo": 67,
       "from": "v6warn",
       "id": "e_v6open",
       "kind": "plain",
       "label": "",
-      "lw": 13,
+      "lw": 3,
+      "mo": 3,
       "role": "action",
-      "so": -63,
+      "so": 60,
       "to": "inet",
       "toOn": "e_v6:firewall",
       "z": "front"
@@ -686,6 +704,7 @@
     {
       "cost": "free",
       "dir": "to",
+      "eo": -83,
       "from": "you",
       "id": "e_v6you",
       "kind": "plain",
@@ -804,7 +823,7 @@
       "dir": "to",
       "ef": 0,
       "eo": -510.5,
-      "es": 100,
+      "es": 78,
       "from": "you",
       "id": "e_share",
       "kind": "plain",
@@ -860,7 +879,8 @@
       "role": "tunnel",
       "showWhen": {
         "reach": [
-          "tailscale"
+          "tailscale",
+          "cloudflare"
         ],
         "scenario": [
           "restore"
@@ -872,7 +892,7 @@
       "_H": true,
       "blocked": true,
       "color": "#eab308",
-      "eo": 100,
+      "eo": 75,
       "from": "inet",
       "id": "e_v4",
       "kind": "pipe",
@@ -889,7 +909,7 @@
           "ipv6"
         ]
       },
-      "so": 265,
+      "so": 29,
       "ss": 50,
       "to": "router"
     },
@@ -909,8 +929,110 @@
           "restore"
         ]
       },
-      "so": 47.0,
+      "so": 47,
       "to": "inet"
+    },
+    {
+      "_H": true,
+      "cost": "free",
+      "dir": "to",
+      "ef": 0,
+      "eo": -640.5,
+      "es": 100,
+      "from": "you",
+      "id": "e_sharecf",
+      "kind": "plain",
+      "label": "you send your friend the link",
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "so": -405,
+      "ss": -10,
+      "to": "friend"
+    },
+    {
+      "_H": true,
+      "cost": "free",
+      "dir": "to",
+      "ef": 0,
+      "eo": -640.5,
+      "es": 100,
+      "from": "you",
+      "id": "e_sharevmcf",
+      "kind": "plain",
+      "label": "you send your friend the link",
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "reach": [
+          "cloudflare"
+        ]
+      },
+      "so": -452.5,
+      "ss": -60,
+      "to": "friend"
+    },
+    {
+      "_H": false,
+      "color": "#f5c211",
+      "eo": 26,
+      "from": "friend4",
+      "id": "e_friend4",
+      "kind": "pipe",
+      "label": "",
+      "mo": 96,
+      "role": "tunnel",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "duckdns",
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "to": "inet"
+    },
+    {
+      "_H": false,
+      "cost": "free",
+      "dir": "to",
+      "from": "friend",
+      "id": "e_share2",
+      "kind": "plain",
+      "label": "",
+      "mo": -8,
+      "role": "info",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "duckdns",
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "to": "friend4"
     }
   ],
   "meta": {
@@ -1086,6 +1208,11 @@
         ],
         "optionsWhen": {
           "reach": {
+            "cloudflare": [
+              "first",
+              "reinstall",
+              "restore"
+            ],
             "ipv6": [
               "first",
               "reinstall",
@@ -1108,9 +1235,9 @@
       }
     ],
     "view": {
-      "cx": 946.5,
-      "cy": 246.6,
-      "k": 0.759
+      "cx": 863.6,
+      "cy": 188.8,
+      "k": 1.791
     }
   },
   "nodes": [
@@ -1160,8 +1287,8 @@
         ]
       },
       "w": 343,
-      "x": 346,
-      "y": 254
+      "x": 347,
+      "y": 255
     },
     {
       "color": "note",
@@ -1197,6 +1324,16 @@
       "icon": "phone",
       "id": "friend",
       "label": "A friend's phone",
+      "labelWhen": {
+        "reach": {
+          "ipv6": {
+            "name": {
+              "buy": "A friend's phone · IPv6",
+              "duckdns": "A friend's phone · IPv6"
+            }
+          }
+        }
+      },
       "nodeType": "device",
       "w": 160,
       "x": 1448,
@@ -1992,6 +2129,12 @@
       "badge": "bolt",
       "color": "orange",
       "entry": "https://pink-owl-sky.trycloudflare.com\n→ Cloudflare's relay, like: 98.76.54.32",
+      "entryWhen": {
+        "scenario": {
+          "reinstall": "https://quiet-river-fog.trycloudflare.com\n→ Cloudflare's relay, like: 98.76.54.32",
+          "restore": "https://quiet-river-fog.trycloudflare.com\n→ Cloudflare's relay, like: 98.76.54.32"
+        }
+      },
       "h": 140,
       "id": "trybook",
       "label": "Cloudflare (free)",
@@ -2047,7 +2190,8 @@
       "nodeType": "device",
       "showWhen": {
         "reach": [
-          "tailscale"
+          "tailscale",
+          "cloudflare"
         ],
         "scenario": [
           "restore"
@@ -2075,6 +2219,31 @@
       "w": 137,
       "x": 1045,
       "y": -20
+    },
+    {
+      "color": "input",
+      "h": 100,
+      "icon": "phone",
+      "id": "friend4",
+      "label": "A friend's phone · IPv4 only",
+      "nodeType": "device",
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "duckdns",
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ]
+      },
+      "w": 160,
+      "x": 1448,
+      "y": 393
     }
   ],
   "steps": [
@@ -2382,7 +2551,22 @@
           ]
         },
         {
-          "wait": 0.6
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.4
         }
       ],
       "show": [
@@ -2405,21 +2589,6 @@
       "id": "ts3",
       "label": "friend",
       "play": [
-        {
-          "appear": "friend",
-          "who": "jazz"
-        },
-        {
-          "give": "domain",
-          "to": "jazz"
-        },
-        {
-          "back": true,
-          "run": [
-            "e_share",
-            "e_sharevm"
-          ]
-        },
         {
           "run": "e_friend",
           "who": "jazz"
@@ -3164,7 +3333,7 @@
       "title": "Open the router's fire wall by hand"
     },
     {
-      "caption": "You send your friend the link, for example in a chat message.",
+      "caption": "You send the link to two friends, for example in a chat message. One friend's network has IPv6, the other's has IPv4 only.",
       "id": "v6d4",
       "label": "share",
       "play": [
@@ -3178,15 +3347,53 @@
           ]
         },
         {
-          "wait": 0.6
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "copy": true,
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "run": "e_share2"
+        },
+        {
+          "appear": "friend4",
+          "who": "cousin"
+        },
+        {
+          "give": "domain",
+          "to": "cousin"
+        },
+        {
+          "back": true,
+          "run": "e_share2"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.4
         }
       ],
       "show": [
         "friend",
+        "friend4",
         "e_share",
-        "e_sharevm"
+        "e_sharevm",
+        "e_share2"
       ],
       "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
         "name": [
           "duckdns"
         ],
@@ -3197,13 +3404,22 @@
           "first"
         ]
       },
-      "title": "Send your friend the link"
+      "title": "Send two friends the link"
     },
     {
-      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone asks DuckDNS, gets your server's IPv6 address and goes straight to your server: across the internet and through the opening in your fire wall. No company in between. Over IPv4 nobody gets in: the router has no port-forward, and a friend on an IPv4-only network can't open the link at all.",
-      "id": "v6d5",
-      "label": "friend",
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "v6d4vm",
+      "label": "share",
       "play": [
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
         {
           "appear": "friend",
           "who": "jazz"
@@ -3220,6 +3436,202 @@
           ]
         },
         {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_share",
+        "e_sharevm"
+      ],
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "ipv6"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your two friends open the link at the same time, to call you on Jitsi Meet; both phones ask DuckDNS. The phone on IPv6 gets your server's IPv6 address and goes straight to your server, through the opening in your fire wall: no company in between. The other phone has IPv4 only. Over IPv4 DuckDNS has at most your router's address (the server sends only its IPv6 one), and the router refuses: no port-forward, so that friend can't open the link. Gaps today: the web server listens on IPv4 only, so even the IPv6 call is still refused; no automatic certificate; the updater may send a temporary address and is lost on reboot.",
+      "id": "v6d5",
+      "label": "friends",
+      "play": [
+        {
+          "together": [
+            {
+              "run": "e_friend",
+              "who": "jazz"
+            },
+            {
+              "run": "e_friend4",
+              "when": "friend4",
+              "who": "cousin"
+            }
+          ]
+        },
+        {
+          "together": [
+            [
+              {
+                "back": true,
+                "run": "e_duck",
+                "who": "jazz"
+              },
+              {
+                "lookup": "duck",
+                "who": "jazz"
+              }
+            ],
+            [
+              {
+                "wait": 0.6,
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "back": true,
+                "near": 140,
+                "run": "e_duck",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "as": "answer4",
+                "lookup": "duck",
+                "when": "friend4",
+                "who": "cousin"
+              }
+            ]
+          ]
+        },
+        {
+          "together": [
+            [
+              {
+                "from": "here",
+                "run": "e_duck",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "at": 40,
+                "bounce": "e_v4",
+                "say": "✕ refused over IPv4",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "back": true,
+                "run": "e_friend4",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "in": "friend4",
+                "put": "answer4",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "bad": true,
+                "dur": 2,
+                "pop": "✕ no call",
+                "when": "friend4",
+                "who": "cousin"
+              }
+            ],
+            [
+              {
+                "wait": 0.5,
+                "who": "jazz"
+              },
+              {
+                "run": "e_duck",
+                "who": "jazz"
+              },
+              {
+                "back": true,
+                "run": "e_v6",
+                "who": "jazz"
+              },
+              {
+                "in": "server",
+                "put": "answer",
+                "who": "jazz"
+              },
+              {
+                "at": "server",
+                "show": "jitsi",
+                "who": "jazz"
+              },
+              {
+                "from": "server",
+                "get": "jitsi",
+                "who": "jazz"
+              },
+              {
+                "run": "e_v6",
+                "who": "jazz"
+              },
+              {
+                "back": true,
+                "run": "e_friend",
+                "who": "jazz"
+              },
+              {
+                "at": "friend",
+                "show": "jitsi",
+                "who": "jazz"
+              }
+            ]
+          ]
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_friend4",
+        "e_duck",
+        "e_v4"
+      ],
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "ipv6"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "texts": {
+        "answer4": "ip 203.0.113.7"
+      },
+      "title": "Two friends open the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone gets your server's IPv6 address from DuckDNS. Over IPv4 it is refused: the router has no port-forward, so an IPv4-only friend can't open the link. Over IPv6 it goes straight to your server through the opening in your fire wall: no company in between. Gaps today: the web server listens on IPv4 only, so this call is still refused; no automatic certificate; the updater may send a temporary address and is lost on reboot.",
+      "id": "v6d5vm",
+      "label": "friend",
+      "play": [
+        {
           "run": "e_friend",
           "who": "jazz"
         },
@@ -3234,6 +3646,12 @@
         },
         {
           "run": "e_duck",
+          "who": "jazz"
+        },
+        {
+          "at": 40,
+          "bounce": "e_v4",
+          "say": "✕ refused over IPv4",
           "who": "jazz"
         },
         {
@@ -3271,13 +3689,7 @@
           "who": "jazz"
         },
         {
-          "wait": 0.4
-        },
-        {
-          "knock": "e_v4"
-        },
-        {
-          "wait": 0.6
+          "wait": 1
         }
       ],
       "show": [
@@ -3286,6 +3698,9 @@
         "e_v4"
       ],
       "showWhen": {
+        "method": [
+          "vm"
+        ],
         "name": [
           "duckdns"
         ],
@@ -3297,53 +3712,6 @@
         ]
       },
       "title": "A friend opens the link"
-    },
-    {
-      "caption": "Today the call would not get through: the server's web server listens on IPv4 only, so an IPv6 visitor is refused at the door (fix: listen on [::]:443 too). Also: no automatic certificate, so browsers warn; the updater may send a temporary address that changes daily; and its service is lost on reboot, so the entry goes stale after a restart.",
-      "id": "v6d6",
-      "label": "gaps",
-      "play": [
-        {
-          "run": "e_friend",
-          "who": "jazz"
-        },
-        {
-          "back": true,
-          "run": "e_v6",
-          "who": "jazz"
-        },
-        {
-          "bad": true,
-          "dur": 2.4,
-          "pop": "✕ refused: the server listens on IPv4 only",
-          "who": "jazz"
-        },
-        {
-          "run": "e_v6",
-          "who": "jazz"
-        },
-        {
-          "back": true,
-          "run": "e_friend",
-          "who": "jazz"
-        },
-        {
-          "wait": 0.8
-        }
-      ],
-      "show": [],
-      "showWhen": {
-        "name": [
-          "duckdns"
-        ],
-        "reach": [
-          "ipv6"
-        ],
-        "scenario": [
-          "first"
-        ]
-      },
-      "title": "Gaps in this project today"
     },
     {
       "caption": "You install again. Your DuckDNS name stays in your account and the token is still valid: you take it out of KeePass on your computer. (The fire wall is still open, for the old address.)",
@@ -4075,7 +4443,7 @@
       "title": "Open the router's fire wall by hand"
     },
     {
-      "caption": "You send your friend the link, for example in a chat message.",
+      "caption": "You send the link to two friends, for example in a chat message. One friend's network has IPv6, the other's has IPv4 only.",
       "id": "v6b4",
       "label": "share",
       "play": [
@@ -4089,15 +4457,53 @@
           ]
         },
         {
-          "wait": 0.6
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "copy": true,
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "run": "e_share2"
+        },
+        {
+          "appear": "friend4",
+          "who": "cousin"
+        },
+        {
+          "give": "domain",
+          "to": "cousin"
+        },
+        {
+          "back": true,
+          "run": "e_share2"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.4
         }
       ],
       "show": [
         "friend",
+        "friend4",
         "e_share",
-        "e_sharevm"
+        "e_sharevm",
+        "e_share2"
       ],
       "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
         "name": [
           "buy"
         ],
@@ -4108,13 +4514,22 @@
           "first"
         ]
       },
-      "title": "Send your friend the link"
+      "title": "Send two friends the link"
     },
     {
-      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone asks the registrar's phonebook, gets your server's IPv6 address and goes straight to your server through the opening in your fire wall. No company in between. Over IPv4 nobody gets in: the router has no port-forward, and a friend on an IPv4-only network can't open the link at all.",
-      "id": "v6b5",
-      "label": "friend",
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "v6b4vm",
+      "label": "share",
       "play": [
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
         {
           "appear": "friend",
           "who": "jazz"
@@ -4131,6 +4546,202 @@
           ]
         },
         {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_share",
+        "e_sharevm"
+      ],
+      "showWhen": {
+        "method": [
+          "vm"
+        ],
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your two friends open the link at the same time, to call you on Jitsi Meet; both phones ask the registrar's phonebook. The phone on IPv6 gets your server's IPv6 address and goes straight to your server, through the opening in your fire wall: no company in between. The other phone has IPv4 only, and the phonebook holds only the IPv6 records you wrote: no IPv4 address (one for your router wouldn't help: no port-forward), so that friend can't open the link. Gaps today: the web server listens on IPv4 only, so even the IPv6 call is still refused; no automatic certificate; the installer prints only the bare domain's record.",
+      "id": "v6b5",
+      "label": "friends",
+      "play": [
+        {
+          "together": [
+            {
+              "run": "e_friend",
+              "who": "jazz"
+            },
+            {
+              "run": "e_friend4",
+              "when": "friend4",
+              "who": "cousin"
+            }
+          ]
+        },
+        {
+          "together": [
+            [
+              {
+                "back": true,
+                "run": "e_pb_friend",
+                "who": "jazz"
+              },
+              {
+                "lookup": "pbook",
+                "who": "jazz"
+              }
+            ],
+            [
+              {
+                "wait": 0.6,
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "back": true,
+                "near": 140,
+                "run": "e_pb_friend",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "as": "answer4",
+                "lookup": "pbook",
+                "when": "friend4",
+                "who": "cousin"
+              }
+            ]
+          ]
+        },
+        {
+          "together": [
+            [
+              {
+                "from": "here",
+                "run": "e_pb_friend",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "at": 40,
+                "bounce": "e_v4",
+                "say": "✕ no IPv4 address",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "back": true,
+                "run": "e_friend4",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "in": "friend4",
+                "put": "answer4",
+                "when": "friend4",
+                "who": "cousin"
+              },
+              {
+                "bad": true,
+                "dur": 2,
+                "pop": "✕ no call",
+                "when": "friend4",
+                "who": "cousin"
+              }
+            ],
+            [
+              {
+                "wait": 0.5,
+                "who": "jazz"
+              },
+              {
+                "run": "e_pb_friend",
+                "who": "jazz"
+              },
+              {
+                "back": true,
+                "run": "e_v6",
+                "who": "jazz"
+              },
+              {
+                "in": "server",
+                "put": "answer",
+                "who": "jazz"
+              },
+              {
+                "at": "server",
+                "show": "jitsi",
+                "who": "jazz"
+              },
+              {
+                "from": "server",
+                "get": "jitsi",
+                "who": "jazz"
+              },
+              {
+                "run": "e_v6",
+                "who": "jazz"
+              },
+              {
+                "back": true,
+                "run": "e_friend",
+                "who": "jazz"
+              },
+              {
+                "at": "friend",
+                "show": "jitsi",
+                "who": "jazz"
+              }
+            ]
+          ]
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_friend4",
+        "e_pb_friend",
+        "e_v4"
+      ],
+      "showWhen": {
+        "method": [
+          "cable",
+          "wifi",
+          "usb"
+        ],
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "ipv6"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "texts": {
+        "answer4": "no IPv4 address"
+      },
+      "title": "Two friends open the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone gets your server's IPv6 address from the registrar's phonebook. Over IPv4 it is refused: the router has no port-forward, so an IPv4-only friend can't open the link. Over IPv6 it goes straight to your server through the opening in your fire wall: no company in between. Gaps today: the web server listens on IPv4 only, so this call is still refused; no automatic certificate; the installer prints only the bare domain's record.",
+      "id": "v6b5vm",
+      "label": "friend",
+      "play": [
+        {
           "run": "e_friend",
           "who": "jazz"
         },
@@ -4145,6 +4756,12 @@
         },
         {
           "run": "e_pb_friend",
+          "who": "jazz"
+        },
+        {
+          "at": 40,
+          "bounce": "e_v4",
+          "say": "✕ refused over IPv4",
           "who": "jazz"
         },
         {
@@ -4182,13 +4799,7 @@
           "who": "jazz"
         },
         {
-          "wait": 0.4
-        },
-        {
-          "knock": "e_v4"
-        },
-        {
-          "wait": 0.6
+          "wait": 1
         }
       ],
       "show": [
@@ -4197,6 +4808,9 @@
         "e_v4"
       ],
       "showWhen": {
+        "method": [
+          "vm"
+        ],
         "name": [
           "buy"
         ],
@@ -4208,53 +4822,6 @@
         ]
       },
       "title": "A friend opens the link"
-    },
-    {
-      "caption": "Today the call would not get through: the server's web server listens on IPv4 only, so an IPv6 visitor is refused at the door (fix: listen on [::]:443 too). Also: no automatic certificate, so browsers warn (DNS-01 through the registrar's API, or HTTP-01 over port 80, would fix it); and the installer prints only the bare domain's record, not the five you need.",
-      "id": "v6b6",
-      "label": "gaps",
-      "play": [
-        {
-          "run": "e_friend",
-          "who": "jazz"
-        },
-        {
-          "back": true,
-          "run": "e_v6",
-          "who": "jazz"
-        },
-        {
-          "bad": true,
-          "dur": 2.4,
-          "pop": "✕ refused: the server listens on IPv4 only",
-          "who": "jazz"
-        },
-        {
-          "run": "e_v6",
-          "who": "jazz"
-        },
-        {
-          "back": true,
-          "run": "e_friend",
-          "who": "jazz"
-        },
-        {
-          "wait": 0.8
-        }
-      ],
-      "show": [],
-      "showWhen": {
-        "name": [
-          "buy"
-        ],
-        "reach": [
-          "ipv6"
-        ],
-        "scenario": [
-          "first"
-        ]
-      },
-      "title": "Gaps in this project today"
     },
     {
       "caption": "You install again. The domain stays yours at the registrar, and its phonebook still holds the old address. (The fire wall is still open, for the old address.)",
@@ -4756,6 +5323,1378 @@
         ]
       },
       "title": "Open the fire wall again"
+    },
+    {
+      "caption": "First you buy a domain at a registrar (€/yr). Then, once by hand, you point it to Cloudflare's phonebook: make a free Cloudflare account, add the domain, and at the registrar replace its nameservers with Cloudflare's two. From then on Cloudflare's phonebook answers for your domain (the switch can take up to a day).",
+      "id": "cf0",
+      "label": "domain",
+      "play": [
+        {
+          "run": "e8"
+        },
+        {
+          "pop": "bought ✓ (€/yr)"
+        },
+        {
+          "run": "e_cf_move"
+        },
+        {
+          "pop": "nameservers → Cloudflare ✓"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "copy": true,
+          "in": "cfbook",
+          "put": "domain"
+        },
+        {
+          "back": true,
+          "run": "e_cf_move"
+        },
+        {
+          "back": true,
+          "run": "e8"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "you",
+        "buy",
+        "e8",
+        "cfbook",
+        "e_cf_move"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "texts": {
+        "domain": "yourdomain.org",
+        "token": "tunnel token"
+      },
+      "title": "Buy a domain, point it to Cloudflare"
+    },
+    {
+      "caption": "On Cloudflare's Tunnels page you make a tunnel and copy its token (eyJ…). Unlike a Tailscale key it is not used up, so you keep it in KeePass on your computer.",
+      "id": "cf1",
+      "label": "token",
+      "play": [
+        {
+          "run": "e_cf_you"
+        },
+        {
+          "pop": "tunnel made ✓"
+        },
+        {
+          "get": "vault"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "copy": "token",
+          "from": "cftoken",
+          "in": "vault"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "back": true,
+          "run": "e_cf_you"
+        },
+        {
+          "in": "you",
+          "put": "vault",
+          "screen": true
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "cftoken",
+        "e_cf_you"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Make a tunnel, keep its token"
+    },
+    {
+      "caption": "The installer bakes the domain into the install (the web server is built for api., cloud., … of exactly that name) and builds SelfPrivacy. At the end you paste the token: it goes to the server, which installs cloudflared and dials out to Cloudflare, four connections it keeps open. Nothing on your router opens.",
+      "id": "cf2",
+      "label": "install",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "from": "you",
+          "get": "token"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "token"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "in": "relayCF",
+          "put": "token"
+        },
+        {
+          "pop": "tunnel connected ✓ (4 connections out)"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Install, then the tunnel dials out"
+    },
+    {
+      "caption": "In the tunnel's settings you add the five names by hand (api, cloud, git, matrix and meet, each pointing to the server, with No TLS Verify). Cloudflare's helper then writes them in its phonebook by itself. The entries point to Cloudflare's relay, not to your server, so your home IP address never appears in public DNS.",
+      "id": "cf3",
+      "label": "names",
+      "play": [
+        {
+          "dur": 1.6,
+          "pop": "×5 names, by hand: api · cloud · git · matrix · meet"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "appear": "relayCF",
+          "who": "yoshi"
+        },
+        {
+          "give": "domain",
+          "to": "yoshi"
+        },
+        {
+          "run": "e1",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "cfbook"
+        },
+        {
+          "back": true,
+          "run": "e1",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "e1"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Add the five names; Cloudflare writes them"
+    },
+    {
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "cf4",
+      "label": "share",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_sharecf",
+            "e_sharevmcf"
+          ]
+        },
+        {
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_sharecf",
+            "e_sharevmcf"
+          ]
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_sharecf",
+        "e_sharevmcf"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone gets a Cloudflare address from Cloudflare's phonebook and connects to the nearest Cloudflare data center, which ends the encryption with Cloudflare's own certificate, so Cloudflare can read everything that passes. It sends the request through a connection your server keeps open; nothing on your router opens. Gaps today: after a reboot the tunnel is gone until you run the finish step again; requests over 100 MB are refused.",
+      "id": "cf5",
+      "label": "friend",
+      "play": [
+        {
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_cf_net",
+          "who": "jazz"
+        },
+        {
+          "lookup": "cfbook",
+          "who": "jazz"
+        },
+        {
+          "run": "e_cf_net",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_cf_run",
+          "who": "jazz"
+        },
+        {
+          "bad": true,
+          "dur": 2,
+          "pop": "Cloudflare ends the encryption here: it can read everything",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up",
+          "who": "jazz"
+        },
+        {
+          "in": "server",
+          "put": "answer",
+          "who": "jazz"
+        },
+        {
+          "at": "server",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "from": "server",
+          "get": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "run": "e_cf_up",
+          "who": "jazz"
+        },
+        {
+          "run": "e_cf_run",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "at": "friend",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_cf_net"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "A friend opens the link",
+      "visitors": true
+    },
+    {
+      "caption": "You install again. The token is still valid, and the tunnel, its five names and the phonebook records all stay in your Cloudflare account: the token comes out of KeePass on your computer.",
+      "id": "cfr0",
+      "label": "token",
+      "play": [
+        {
+          "appear": "you",
+          "foot": true
+        },
+        {
+          "pop": "same token, same tunnel, same names"
+        },
+        {
+          "from": "you",
+          "get": "token"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "you"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "stored": [
+        {
+          "at": "you",
+          "id": "vault",
+          "inside": [
+            "token"
+          ]
+        }
+      ],
+      "texts": {
+        "domain": "yourdomain.org",
+        "token": "tunnel token"
+      },
+      "title": "The token, the tunnel and the names are still yours"
+    },
+    {
+      "caption": "Paste the same token at the end: the server joins the same tunnel, the addresses stay the same and old links keep working. (A leaked token lets someone else run your tunnel: refresh it on the tunnel's page and run the finish step with the new one.)",
+      "id": "cfr1",
+      "label": "install again",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "token"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "in": "relayCF",
+          "put": "token"
+        },
+        {
+          "pop": "same tunnel ✓ — the same addresses"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Install again, the same addresses"
+    },
+    {
+      "caption": "Your server makes a backup. It goes through the tunnel and Cloudflare over the internet to your SelfPrivacy backup device, together with the KeePass vault that holds your tunnel token.",
+      "id": "cfs0",
+      "label": "backup",
+      "play": [
+        {
+          "appear": "you",
+          "foot": true
+        },
+        {
+          "from": "you",
+          "get": "vault"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "from": "server",
+          "get": "backup"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "run": "e_cf_run"
+        },
+        {
+          "back": true,
+          "run": "e_backup"
+        },
+        {
+          "in": "backupdev",
+          "put": "backup",
+          "screen": "left"
+        },
+        {
+          "in": "backupdev",
+          "put": "vault",
+          "screen": "right"
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run",
+        "backupdev",
+        "e_backup"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "stored": [
+        {
+          "at": "you",
+          "id": "vault",
+          "inside": [
+            "token"
+          ]
+        }
+      ],
+      "texts": {
+        "domain": "yourdomain.org",
+        "token": "tunnel token"
+      },
+      "title": "Back up to your backup device"
+    },
+    {
+      "caption": "Then disaster: your server burns down (or it is stolen, or it breaks). What it held is now only on your backup device.",
+      "id": "cfs1",
+      "label": "fire",
+      "play": [
+        {
+          "burn": "server"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Your server is lost"
+    },
+    {
+      "caption": "You install again from the backup device: the install light, the backup and the token come back the same way. The server is built up again, gets its data back and joins the same tunnel with the same token: the same addresses, nothing to change.",
+      "id": "cfs2",
+      "label": "restore",
+      "play": [
+        {
+          "from": "backupdev",
+          "get": "light"
+        },
+        {
+          "from": "backupdev",
+          "get": "backup"
+        },
+        {
+          "from": "backupdev",
+          "get": "token"
+        },
+        {
+          "run": "e_backup"
+        },
+        {
+          "back": true,
+          "run": "e_cf_run"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "backup"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "token"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "in": "relayCF",
+          "put": "token"
+        },
+        {
+          "pop": "same tunnel ✓ — the same addresses"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Restore from the backup, the same tunnel"
+    },
+    {
+      "caption": "Nothing to make beforehand: no account, no domain, no key. In the installer you choose Cloudflare ▸ free *.trycloudflare.com, and it builds SelfPrivacy with a placeholder name (selfprivacy.box): the public name doesn't exist yet.",
+      "id": "tc0",
+      "label": "install",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "dur": 1.4,
+          "pop": "placeholder name: selfprivacy.box"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "texts": {
+        "domain": "pink-owl-sky.trycloudflare.com"
+      },
+      "title": "Install, with a placeholder name"
+    },
+    {
+      "caption": "At the end the installer installs cloudflared on the server and starts a quick tunnel, which dials out to Cloudflare. Cloudflare hands out a random name, pink-owl-sky.trycloudflare.com; the server writes it in its log, and the installer reads it from there and prints it. One name only: it points at the app's API.",
+      "id": "tc1",
+      "label": "tunnel",
+      "play": [
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "pop": "quick tunnel ✓"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "A quick tunnel, a random name"
+    },
+    {
+      "caption": "Cloudflare writes the random name in its own phonebook: trycloudflare.com is Cloudflare's domain, and the entry points to Cloudflare's relay.",
+      "id": "tc2",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayCF",
+          "who": "yoshi"
+        },
+        {
+          "get": "domain",
+          "who": "yoshi"
+        },
+        {
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "trybook"
+        },
+        {
+          "back": true,
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "trybook",
+        "e2"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Cloudflare writes the random name"
+    },
+    {
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "tc3",
+      "label": "share",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_sharecf",
+            "e_sharevmcf"
+          ]
+        },
+        {
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_sharecf",
+            "e_sharevmcf"
+          ]
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_sharecf",
+        "e_sharevmcf"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone gets a Cloudflare address from Cloudflare's phonebook. Cloudflare ends the encryption with its own *.trycloudflare.com certificate, so it can read the traffic, and passes the request through the connection your server keeps open. Limits: 200 requests at once, no live updates, no uptime guarantee. Gap today: every restart of the tunnel (a reboot, a crash) means a new random name, and after a reboot no tunnel until the finish step runs again.",
+      "id": "tc4",
+      "label": "friend",
+      "play": [
+        {
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_try_friend",
+          "who": "jazz"
+        },
+        {
+          "lookup": "trybook",
+          "who": "jazz"
+        },
+        {
+          "run": "e_try_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_cf_run",
+          "who": "jazz"
+        },
+        {
+          "bad": true,
+          "dur": 2,
+          "pop": "Cloudflare ends the encryption here: it can read everything",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up",
+          "who": "jazz"
+        },
+        {
+          "in": "server",
+          "put": "answer",
+          "who": "jazz"
+        },
+        {
+          "at": "server",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "from": "server",
+          "get": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "run": "e_cf_up",
+          "who": "jazz"
+        },
+        {
+          "run": "e_cf_run",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "at": "friend",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_try_friend"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "first"
+        ]
+      },
+      "title": "A friend opens the link",
+      "visitors": true
+    },
+    {
+      "caption": "You install again, with the placeholder name as before. A new quick tunnel means a new name, as with any restart.",
+      "id": "tcr0",
+      "label": "install again",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "dur": 1.2,
+          "pop": "placeholder name again"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "texts": {
+        "domain": "quiet-river-fog.trycloudflare.com"
+      },
+      "title": "Install again"
+    },
+    {
+      "caption": "Cloudflare hands out a new random name, quiet-river-fog.trycloudflare.com. Your friends' old links stop working, and the app has to be pointed at the new name.",
+      "id": "tcr1",
+      "label": "tunnel",
+      "play": [
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "bad": true,
+          "dur": 1.8,
+          "pop": "a NEW random name — old links stop working"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "A new quick tunnel, a new name"
+    },
+    {
+      "caption": "Cloudflare writes the new name in its phonebook; the old one is simply gone.",
+      "id": "tcr2",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayCF",
+          "who": "yoshi"
+        },
+        {
+          "get": "domain",
+          "who": "yoshi"
+        },
+        {
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "trybook"
+        },
+        {
+          "back": true,
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "trybook",
+        "e2"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "reinstall"
+        ]
+      },
+      "title": "Cloudflare writes the new name"
+    },
+    {
+      "caption": "Your server makes a backup. It goes through the quick tunnel and Cloudflare over the internet to your SelfPrivacy backup device. (There is no token to keep: a quick tunnel has none.)",
+      "id": "tcs0",
+      "label": "backup",
+      "play": [
+        {
+          "appear": "you",
+          "foot": true
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "from": "server",
+          "get": "backup"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "run": "e_cf_run"
+        },
+        {
+          "back": true,
+          "run": "e_backup"
+        },
+        {
+          "in": "backupdev",
+          "put": "backup",
+          "screen": true
+        },
+        {
+          "wait": 0.8
+        }
+      ],
+      "show": [
+        "you",
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable",
+        "relayCF",
+        "e_cf_up",
+        "inet",
+        "e_cf_run",
+        "backupdev",
+        "e_backup"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "texts": {
+        "domain": "quiet-river-fog.trycloudflare.com"
+      },
+      "title": "Back up to your backup device"
+    },
+    {
+      "caption": "Then disaster: your server burns down (or it is stolen, or it breaks). What it held is now only on your backup device.",
+      "id": "tcs1",
+      "label": "fire",
+      "play": [
+        {
+          "burn": "server"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Your server is lost"
+    },
+    {
+      "caption": "You install again from the backup device: the install light and the backup come back the same way, the server is built up again and gets its data back. The new quick tunnel gets a new random name.",
+      "id": "tcs2",
+      "label": "restore",
+      "play": [
+        {
+          "from": "backupdev",
+          "get": "light"
+        },
+        {
+          "from": "backupdev",
+          "get": "backup"
+        },
+        {
+          "run": "e_backup"
+        },
+        {
+          "back": true,
+          "run": "e_cf_run"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "backup"
+        },
+        {
+          "run": "e_cf_up"
+        },
+        {
+          "bad": true,
+          "dur": 1.4,
+          "pop": "a NEW random name"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "back": true,
+          "run": "e_cf_up"
+        },
+        {
+          "copy": true,
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Restore from the backup, a new name"
+    },
+    {
+      "caption": "Cloudflare writes the new name in its phonebook; your friends need the new link.",
+      "id": "tcs3",
+      "label": "phonebook",
+      "play": [
+        {
+          "appear": "relayCF",
+          "who": "yoshi"
+        },
+        {
+          "get": "domain",
+          "who": "yoshi"
+        },
+        {
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "who": "yoshi",
+          "write": "trybook"
+        },
+        {
+          "back": true,
+          "run": "e2",
+          "who": "yoshi"
+        },
+        {
+          "vanish": true,
+          "who": "yoshi"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "trybook",
+        "e2"
+      ],
+      "showWhen": {
+        "name": [
+          "trycf"
+        ],
+        "reach": [
+          "cloudflare"
+        ],
+        "scenario": [
+          "restore"
+        ]
+      },
+      "title": "Cloudflare writes the new name"
     }
   ]
 }

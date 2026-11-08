@@ -35,7 +35,7 @@
   "setup_map": {
     "diagram": "setup-map",
     "url": "flow.html#setup-map",
-    "doc": "The matrix axes ARE the setup diagram's toggles (docs/diagrams/setup-map.json meta.toggles): setup (--on) = Install+Network, reach row (--reach/--name) = Reach+Name. `./dash setups` checks they still match the diagram.",
+    "doc": "The matrix axes ARE the setup diagram's toggles (docs/diagrams/setup-map.json meta.toggles): setup (--on) = Install+Network, reach row (--reach/--name) = Reach+Name, scenarios = the Scenario toggle (reaches[].scenarios = the stories each Reach tells; the first entry of every list is the diagram's default = the matrix's default selection). scenario_arg = the dash flag that files a run under a scenario — null until dash takes one (req 187): a run that recorded no scenario is a first install (req 159). `./dash setups` checks they still match the diagram.",
     "methods": [
       {
         "id": "cable",
@@ -94,6 +94,11 @@
         "label": "Tailscale",
         "net": "https",
         "names": [],
+        "scenarios": [
+          "first",
+          "reinstall",
+          "restore"
+        ],
         "desc": "Tailscale Funnel: the box dials OUT to Tailscale (a company); free https://selfprivacy.<tailnet>.ts.net, one hostname, CGNAT-proof."
       },
       {
@@ -103,6 +108,11 @@
         "names": [
           "buy",
           "trycf"
+        ],
+        "scenarios": [
+          "first",
+          "reinstall",
+          "restore"
         ],
         "desc": "Cloudflare Tunnel: the box dials OUT to Cloudflare (a company); a bought domain (named tunnel, all 5 subdomains) or a free random *.trycloudflare.com (one hostname)."
       },
@@ -114,6 +124,11 @@
           "buy",
           "duckdns"
         ],
+        "scenarios": [
+          "first",
+          "reinstall",
+          "restore"
+        ],
         "desc": "Direct IPv6: friends connect straight to the box's public IPv6 (AAAA record) — no relay, no port-forward; IPv4-only friends can't reach it."
       },
       {
@@ -124,6 +139,7 @@
           "buy",
           "duckdns"
         ],
+        "scenarios": [],
         "desc": "Port-forward: open TCP 443 on your router to the box by hand + A records to your public IPv4 (needs router admin; dead behind CGNAT)."
       },
       {
@@ -131,6 +147,7 @@
         "label": ".onion",
         "net": "tor",
         "names": [],
+        "scenarios": [],
         "desc": "Tor onion service: always on, no company, no domain; friends need a Tor-capable client."
       }
     ],
@@ -151,6 +168,24 @@
         "desc": "a free random *.trycloudflare.com name from a Cloudflare quick tunnel (testing only, changes on restart)"
       }
     ],
+    "scenarios": [
+      {
+        "id": "first",
+        "label": "First install",
+        "desc": "the first install on a fresh account — every recorded run so far (a valid run is always from scratch, req 159)"
+      },
+      {
+        "id": "reinstall",
+        "label": "Reinstall",
+        "desc": "install again while the previous machine is still registered: Tailscale deletes the old node first, DuckDNS keeps the name and gets the new address, Cloudflare reuses the tunnel token"
+      },
+      {
+        "id": "restore",
+        "label": "Restore a backup",
+        "desc": "the server is lost (burnt, stolen, broken); install again from the backup device, with the backup and the KeePass vault"
+      }
+    ],
+    "scenario_arg": null,
     "box_args": " --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
   },
   "setups": [
@@ -452,56 +487,6 @@
         "vm"
       ],
       "desc": "Harness-only, no diagram view: https on THIS computer only (VM: theory7 name in /etc/hosts + Caddy + mkcert CA + SSH tunnel; L2: self-signed cert inside the test VM). A friend cannot use it."
-    },
-    {
-      "id": "ngrok",
-      "reach": "ngrok",
-      "name": null,
-      "net": "https",
-      "greyed": "tools/add-cloudflare.sh --method ngrok sets it up on a box, but the setup diagram has no ngrok option, so the matrix has no view to file a result under; no automated L3 either",
-      "label": "ngrok · https (greyed out)",
-      "l3_wired": [],
-      "desc": "ngrok tunnel: the box dials OUT to ngrok (a company); free random *.ngrok-free.app, one hostname (a custom domain is paid)."
-    },
-    {
-      "id": "pinggy",
-      "reach": "pinggy",
-      "name": null,
-      "net": "https",
-      "greyed": "tools/add-cloudflare.sh --method pinggy sets it up on a box, but the setup diagram has no pinggy option, so the matrix has no view to file a result under; no automated L3 either",
-      "label": "Pinggy · https (greyed out)",
-      "l3_wired": [],
-      "desc": "Pinggy tunnel: the box dials OUT over SSH (ssh -R to a.pinggy.io, nothing to install); free random *.pinggy.link with ~60-min sessions."
-    },
-    {
-      "id": "localtunnel",
-      "reach": "localtunnel",
-      "name": null,
-      "net": "https",
-      "greyed": "tools/add-cloudflare.sh --method localtunnel sets it up on a box, but the setup diagram has no localtunnel option, so the matrix has no view to file a result under; no automated L3 either",
-      "label": "LocalTunnel · https (greyed out)",
-      "l3_wired": [],
-      "desc": "LocalTunnel: the box runs lt (nodePackages.localtunnel) → https://<prefix>.loca.lt; free, one hostname."
-    },
-    {
-      "id": "yggdrasil",
-      "reach": "yggdrasil",
-      "name": null,
-      "net": "yggdrasil",
-      "future": true,
-      "label": "Yggdrasil (future)",
-      "l3_wired": [],
-      "desc": "Roadmap transport — not wired yet, no diagram view yet."
-    },
-    {
-      "id": "hyphanet",
-      "reach": "hyphanet",
-      "name": null,
-      "net": "hyphanet",
-      "future": true,
-      "label": "Hyphanet (future)",
-      "l3_wired": [],
-      "desc": "Roadmap transport — not wired yet, no diagram view yet."
     }
   ],
   "flows": [

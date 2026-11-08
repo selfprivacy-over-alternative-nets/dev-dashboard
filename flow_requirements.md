@@ -1363,6 +1363,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   ⏸ / ⏪ / ⏩ as before, ☐ in step from the caption, the double-click edit with Esc / Enter and Backspace not reaching the
   editor, ✕ to the whole view, no Steps group), `parity_steps.py`, all views open; screenshots of the top bar, the
   whole view's button, the caption box and the caption being edited looked at.
+  *Changed since:* a link without a step opens a story at its last step; ✕ goes to the whole view, now `;step=all` (FR148).
 - **FR138. The vault stays on Your computer's screen; Mario goes home after handing over the address.** (User: *when
   Mario returns the vault to "your computer", ensure the vault is stored on the screen of "your computer", so that it
   doesn't disappear. Ensure Mario returns from your friend's phone to your computer once he dropped off the hostname —
@@ -1377,6 +1378,7 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   true}`); then Jazz makes the call; Mario fades out at Your computer at the story's end. Verified: `parity_steps.py`
   (steps 3–5 in the box, USB, wifi and VM views), `ui_steps.py`, line + book parity, overlap scan, all views open;
   frames of the vault landing on the screen, still there in steps 4–5, and of Mario running home looked at.
+  *Changed since:* the hand-over to Jazz and Mario's way home are in the share step, so the friend's step starts with Jazz on his way (FR148).
 - **FR139. A Scenario toggle for the Tailscale story; scenario "Reinstall": the old machine goes out of the closet first.**
   (User, on branch `reinstall-and-backup-restore`: *add the scenario: you install again even though Tailscale already has
   the previous machine registered, so it first should clean out the old machine (data) from the closet at Tailscale.*)
@@ -1454,7 +1456,9 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   the editor and the SVG; the Tailscale views unchanged), `parity_lines.py`, `parity_phonebook.py`, `ui_scenarios.py`,
   `ui_steps.py`, overlap scan, `./dash setups --check`, all views open; editor frames of every step looked at (the vault
   filling, the token out of the screen, the hammering, the update light and the pencil, the wall sliding open, the hand-over,
-  the lookup, Jazz through the opening, the call, the knock, the refusal).
+  the lookup, Jazz through the opening, the call, the knock, the refusal). *Changed since:* Jazz is bounced at the IPv4
+  pipe's entry before he takes the IPv6 way, and step 6 is the caption alone (FR147).
+  *Changed since:* the gaps step is gone; the gaps close the friend's caption, the story's last step (FR148).
 - **FR142. The IPv4 way is drawn too, and it is blocked at the router.** (User: *with portforwarding, and show a separate
   ipv4 tunnel and an ipv6 tunnel and show how the ipv4 is blocked.*) A yellow pipe **`e_v4`** *IPv4 · blocked: no
   port-forward* comes out of the internet's bottom, right of the blue IPv6 pipe, runs below it and ends at the router's
@@ -1464,7 +1468,8 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   off (`blockedLoop` / `blocked_svg`); in a story step the script says when — `{"knock": "e_v4"}` (2.6 s; the friend step,
   after the call). `labelMid: true` puts a plain pipe's label on its longest level stretch. Box views only (the VM views
   have no router). Verified: `parity_lines.py` compares the loop's five animations in both IPv6 names (and finds none
-  elsewhere); the knock is part of the step parity; frames of the whole view and of the knock looked at.
+  elsewhere); the knock is part of the step parity; frames of the whole view and of the knock looked at. *Changed since:*
+  the `knock` action is retired — in the story Jazz himself is bounced (`bounce`, FR147); the whole-view loop stays.
 - **FR143. The Scenario toggle in the IPv6 views: Reinstall and Restore a backup — a new address, the fire wall again.**
   (User: *build it for First install, reinstall and restore a backup.*) The toggle is offered for `reach=ipv6` too (same
   layout: an IPv6 view's key ends in `;scenario=first`; `hideIn` keys migrated — none existed). The book's entry follows the
@@ -1493,6 +1498,153 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   Reinstall: the domain stays yours, a new address, the five records edited by hand again, the fire wall again. Restore:
   the backup only (no token), then the records by hand and the fire wall again. Verified as FR141 (both names in every
   check); frames of the purchase, the writing by hand, Jazz at the registrar's book looked at.
+- **FR145. The Cloudflare Tunnel route with a bought domain told in steps, in three scenarios.** (User: *now do the same for
+  cloudflare.*) **The story** (`checks/fr145_cloudflare_steps_apply.py`, run fourth, after the Tailscale and IPv6 scripts; view
+  `setup-map;method=cable;net=0a;reach=cloudflare;name=buy`): **0 domain** — Mario runs your line to *Buy a domain* (*bought ✓
+  (€/yr)*), then the line from there to Cloudflare's book (*nameservers → Cloudflare ✓*): a copy of the domain goes into the
+  book — once, by hand, the domain is pointed at Cloudflare's phonebook. **1 token** — along *account + tunnel → copy its
+  token* to the token box (*tunnel made ✓*): a KeePass vault appears, a copy of the **tunnel token** comes out of the box into
+  it (the `token` thing with the step's own tag — a tag is overridden like a text, but only where a tag would show, not on a
+  thing lying in a vault), and home the vault goes onto your computer's screen. **2 install** — the token comes out of KeePass,
+  the light and the domain go down the cable, the laptop is hammered up, the domain and the token go in, and Mario takes a copy
+  of the token out through the router's lane to Cloudflare: it goes into the company (the token identifies the tunnel),
+  *tunnel connected ✓ (4 connections out)*; the internet and Cloudflare's way on to it are shown from here. **3 names** — at
+  Cloudflare, *×5 names, by hand: api · cloud · git · matrix · meet*; Mario hands the domain to **Yoshi** (Cloudflare's helper),
+  who takes it up *Cloudflare writes your name* and writes the book (spine-left, FR133), comes back and vanishes; Mario runs
+  home down the tunnel. **4 share** — home along the cable, the name again, and the share line **`e_sharecf`** (box views;
+  `e_sharevmcf` in the VM views): it runs *above* the *Buy a domain* box, since the Tailscale / IPv6 one would thread between
+  that box and the token box and hide under your line to the registrar. **5 friend** (`visitors`: the stranger bounces off the
+  fire wall) — Jazz gets the name, looks it up (the answer is Cloudflare's relay address) and goes to Cloudflare's relay, where a
+  red sign says *Cloudflare ends the encryption here: it can read everything*; then down the tunnel to the server, the call,
+  and back. **6 gaps** — Jazz comes again and finds *✕ no tunnel after a reboot: the connector's service is gone* (the
+  installer writes the service to `/run`); the caption adds the 100 MB request limit and the video terms. **Reinstall** —
+  0 *token*: the token, the tunnel and the five names are still yours (*same token, same tunnel, same names*; the token out of
+  KeePass); 1 *install again*: the same token up the tunnel, *same tunnel ✓ — the same addresses*, old links keep working (and
+  a leaked token is refreshed on the tunnel's page). **Restore** — 0 *backup*: a copy of the vault and the backup through the
+  tunnel and Cloudflare to the backup device (FR140's `backupdev` / `e_backup`, now in the Cloudflare restore views too; the
+  Scenario toggle is offered for `reach=cloudflare`, `e12`'s hidden-in key migrated); 1 *fire*; 2 *restore*: the light, the
+  backup and the token come back, the server is built up and joins the same tunnel. **Engine:** a step's `texts` are handed on
+  even where no runner moves (a wifi view's first step: nothing runs the cable, but the name must not fall back to Tailscale's).
+  Verified: `parity_steps.py` (every step of both Cloudflare names in all three scenarios, plus wifi / USB / VM steps, 0
+  problems), `parity_lines.py` (the share lines, the restore views), `parity_phonebook.py`, `ui_scenarios.py` (the Cloudflare
+  views switched through the three scenarios; the route without a story, port-forward, still has no choices), `ui_steps.py`,
+  overlap scan, `./dash setups --check`, all views open; editor frames of every step looked at.
+  *Changed since:* the hand-over is in the share step and the gaps step is gone; the gaps close the friend's caption (FR148).
+- **FR146. The free quick tunnel told in steps: nothing beforehand, a random name, a new name at every restart.** (User: *now
+  do the same for cloudflare* — the `name=trycf` views.) **0 install** — no account, no domain, no key: the light down the cable,
+  the laptop hammered up, *placeholder name: selfprivacy.box*. **1 tunnel** — Mario runs the tunnel to Cloudflare (*quick
+  tunnel ✓*) and gets the random name *pink-owl-sky.trycloudflare.com* (the book's entry), carries it back and a copy goes
+  into the server (its log, where the installer reads it). **2 phonebook** — Yoshi comes out of Cloudflare with the name and
+  writes *Cloudflare (free)*. **3 share**, **4 friend** (as FR145; the caption names the limits: 200 requests at once, no live
+  updates, no uptime guarantee), **5 gaps** — *✕ no tunnel after a reboot, and a new name after the next finish step*.
+  **Reinstall** — 0 *install again*, 1 *tunnel*: *a NEW random name — old links stop working* (red) and the new name
+  *quiet-river-fog.trycloudflare.com* (the book's entry per scenario, nested `entryWhen` on `trybook`), 2 *phonebook*: the
+  old name is simply gone. **Restore** — 0 *backup* (no token to keep), 1 *fire*, 2 *restore* with a new random name,
+  3 *phonebook*. Verified as FR145.
+  *Changed since:* the gaps step is gone; the restart and reboot gap closes the friend's caption (FR148).
+- **FR147. At the internet, Jazz first tries the IPv4 way and is bounced; the book says ipV6.** (User, on
+  `setup-map;method=cable;net=0a;reach=ipv6;name=buy;scenario=first;step=5`: *when it opens the phonebook and finds
+  yourdomain.org it says "ip 2001:db8::1" — make that "ipV6 2001:db8::1". Then when Jazz goes to the internet, first make it
+  try to enter the yellow IPv4 tunnel (being bounced back), highlight the IPv4-blocked message belonging to that tunnel, then
+  let it go through the direct IPv6 blue tunnel. Do not show the extra IPv4 walk saying "refused: the server listens …" — show
+  that message directly when it is bounced at the entry of the yellow tunnel, and put the circular forbidden icon over the
+  tunnel.*) **ipV6:** wherever a book shows or hands out an address, an IPv6 one is labelled *ipV6* — the entry line on the
+  page, the *✓ … matches …* and *✎ … written* captions, the update and answer lights, the address Jazz carries; an IPv4 one
+  stays *ip* (`ipTag` / `ip_tag`, both renderers). **The bounce:** a new script action `{"bounce": line, "at": px, "say":
+  text, "dur": s}` — the runner runs `at` px (40) into the line from its start, is bounced back to the start (0.5 s) and
+  waits there, still facing in, while the forbidden sign (`ic-block`, 0.8 × the pipe's width, on a dark disc) pops onto the
+  pipe where it was stopped and **stays**; the line's label lights up in a red frame (both renderers now record where every
+  label is drawn, `LABELS` / `labels`) and the reason (*✕ refused over IPv4*) shows under the sign, ending at the sign's
+  right edge so it stays clear of the internet's label, for `dur` s (2.4). **Step 5** of both IPv6 names: Jazz looks the
+  name up, comes back down to the internet, is bounced at the yellow pipe's entry, then goes through the blue IPv6 pipe to
+  the server as before; the knock at the end is gone (`knock` is retired; FR142's whole-view loop stays). **Step 6** *gaps*
+  is the caption alone now (12 s, nobody walks): the server's refusal is no longer acted out. The friend captions tell it in
+  that order. **Keeping your layout:** re-running the step scripts had overwritten the route you gave the IPv4 pipe in the
+  editor; the scripts now go through `checks/keep_layout.py` (`put`): an item they write that already exists keeps its
+  position, size, route offsets, hidden-in keys and look, and one-time moves (`e4`, `e9`) are made only once — a re-run of
+  all four scripts leaves an edited diagram byte-for-byte unchanged. Verified: `parity_steps.py` (Jazz's run-in and
+  spring-back, the sign, the label frame and the text the same in the editor and the SVG; the *ipV6* answer; every story),
+  `parity_lines.py`, `parity_phonebook.py`, `ui_steps.py`, `ui_scenarios.py`, overlap scan, `./dash setups --check`, all
+  views open; frames of the lookup (*ipV6 2001:db8::1* on the page and in the caption), the bounce with the lit label and
+  the sign, Jazz on the blue pipe, the DuckDNS, wifi and USB views looked at; the four scripts run twice on the edited
+  diagram leave it unchanged.
+- **FR148. A story's link opens at its last step; the share step ends with Mario home; each story ends with the friend's call.**
+  (User, on `setup-map;method=cable;net=0a;reach=ipv6;name=buy;scenario=first`: *what is shown at first sight should only be
+  the last step (…;step=5). The last step should not start with Mario walking back from the friend's phone — that should be
+  finished the step before; it starts with the friend going with the URL to the DNS phonebook. For all diagrams, if you open the
+  URL it should be the visualisation of the last step.*) **First sight:** a link without `;step=` to a view with a story opens
+  at its last step (playing, as `;step=<last>` does; the hash gets the step); the whole view is `;step=all` — ✕ in the caption
+  goes there, and `▶ step by step` comes back. From a story's last step, changing a toggle (another scenario, route or install)
+  opens the new view at its last step; from any other step the step number is kept, as before. Views without a story and the
+  other diagrams are unchanged. The static renderer mirrors it: a state without `"step"` renders the last step (so
+  `docs/diagrams/setup-map.svg` is now the Tailscale story's last step with its caption), `"step": "all"` the whole view.
+  **The hand-over:** in every story Jazz now comes out of the phone, takes the address from Mario and Mario runs home in the
+  **share** step; the friend's step starts with Jazz on his way to the internet and the phonebook (Tailscale, both IPv6 names,
+  both Cloudflare names). **The friend's call is the last step:** the separate *gaps* steps (IPv6 step 6, Cloudflare buy
+  step 6, quick tunnel step 5) are gone; their gaps close the friend's caption (*Gaps today: …*). Checks: the whole-view
+  comparisons (`parity_lines.py`, `parity_phonebook.py`, `overlap_scan.py`) ask for `;step=all`; `smoke_all_views.py` opens
+  every view as first seen and every setup-map whole view (491 views); `ui_steps.py` checks the first sight (the last step,
+  playing; Mario standing at home and Jazz there from the start) and the hand-over in step 4; `ui_scenarios.py` checks the first
+  sight of the IPv6 and Cloudflare stories and the move from one scenario's last step to another's. Verified: all of these and
+  `parity_steps.py`, `./dash setups --check`; frames of the first sight, the start and end of the friend's step, the hand-over in
+  the share step, the whole view and the static SVG looked at.
+
+- **FR149. DuckDNS: two friends, one on IPv6 and one on IPv4 only, set off together; the IPv4 one is bounced, the other goes on.**
+  (User, on `setup-map;method=cable;net=0a;reach=ipv6;name=duckdns;scenario=first;step=5`: *instead of 1 phone that sends Jazz out,
+  have 2 friends' phones, one IPv6 and one IPv4, and show the IPv4 phone gets bounced. Make Mario bring the domain to both — not walking
+  up and down 4 times: visit the one phone, then the other, then go back. Don't let Jazz walk twice: take Jazz and his/her cousin (or
+  its parrot), let them go together, and show the one from IPv4 being blocked while the other one continues.*) **The view (DuckDNS,
+  the box views):** the phone you had is now *A friend's phone · IPv6* (a box's label can change per view: `labelWhen`, resolved like
+  `entryWhen`, both renderers); a second phone, *A friend's phone · IPv4 only* (`friend4`), stands under the internet, clear of the
+  step's caption panel, with a short grey pipe straight up into the internet (`e_friend4`); a dotted line runs from under the first
+  phone to the second (`e_share2`). **Step 4, Send two friends the link:** Mario takes the link along the share line to the first
+  phone, Jazz comes out and gets a copy (a hand-over can give a copy: `give` … `copy: true`), Mario goes on along the new line to the
+  second phone, where Jazz's cousin comes out (a new runner, `cousin`: Jazz in yellow, like the IPv4 pipe, with a purple bandana,
+  `ic-cousin`) and takes the link, and Mario goes back home. **Step 5, Two friends open the link:** Jazz and his cousin leave their
+  phones at the same moment and meet at the internet; they go up to DuckDNS together, the cousin a little behind, and it waits its turn
+  in the queue (`near`: it stops 140 px before the line's end); both look the name up — Jazz gets *ipV6 2001:db8::1*, the cousin an
+  IPv4 card, *ip 203.0.113.7* (a documentation address; `lookup` … `as: "answer4"`, its text from the step's `texts`). Going down,
+  the cousin leads (`from: "here"`: it goes on from where it stands on the line); at the internet it tries the yellow IPv4 pipe and is
+  bounced (FR147: the forbidden sign, the lit label, *✕ refused over IPv4*), goes home, puts the address into its phone and shows
+  *✕ no call*; meanwhile Jazz goes on through the blue IPv6 pipe to your server and back with the call, as before. Why the IPv4 phone
+  gets refused at your router: DuckDNS's update address has no IPv6, but the server's updater sends `ipv6=` only, and then DuckDNS
+  skips its IPv4 detection (DuckDNS spec), so the name's IPv4 entry is at most what was noted when you claimed it, your router's address
+  if you did that at home. The caption says so. **Engine (both renderers):** `{"together": [branch, …]}` — each branch (an action or a
+  list of actions) starts at the same moment and the script goes on when the last one is done (a branch moves only its own runner);
+  `{"when": id}` on an action — it happens only where that box or line is drawn. **Not changed:** the VM views of DuckDNS (no router and
+  no IPv4 pipe drawn) keep the one friend in their own copies of steps 4 and 5 (`v6d4vm`, `v6d5vm`); the bought-domain story keeps one
+  friend. Verified: `parity_steps.py` (the DuckDNS share and friends steps in the cable, wifi and VM views: every runner animation, 36 in the friends step, the same in the editor and the SVG), `ui_steps.py`, `ui_scenarios.py`, `parity_lines.py`, `parity_phonebook.py`, overlap scan (180 states), `smoke_all_views.py` (0 errors), `./dash setups --check`; frames of Mario's trip, the two runners setting off, the queue at DuckDNS, the bounce while Jazz goes on, the cousin's way home, the whole view and the wifi / VM / bought-domain views looked at; the four apply scripts run twice leave the diagram unchanged.
+  *Changed since:* the user moved the second phone under the first in the editor and coloured the first phone's pipe blue (IPv6) and the
+  second's yellow (IPv4); the bought-domain story has the two friends too (FR150).
+- **FR150. A bought domain: the same two friends as DuckDNS.** (User: *apply the tunnel structure of
+  `setup-map;method=cable;net=0a;reach=ipv6;name=duckdns;scenario=first;step=5`, with the 2 phones, to
+  `…;name=buy;scenario=first;step=5`.*) The second phone, its pipe and Mario's line to it (`friend4`, `e_friend4`, `e_share2`) and the
+  first phone's *· IPv6* label are drawn in the bought-domain box views too, as the user laid them out (the second phone under the
+  first; blue pipe for the IPv6 phone, yellow for the IPv4-only one). Step 4 is FR149's: Mario takes the link to both phones in one
+  trip. Step 5 is FR149's, with what the registrar's phonebook really gives the IPv4-only phone: it holds only the IPv6 (AAAA) records
+  you wrote by hand in step 2, so the cousin's card reads *no IPv4 address* and at the yellow IPv4 pipe it is bounced with *✕ no IPv4
+  address*. The caption adds that an IPv4 record for your router wouldn't help: no port-forward. Jazz goes on over IPv6 and back with
+  the call, as with DuckDNS. The VM views keep the one friend in their own steps (`v6b4vm`, `v6b5vm`), with the old caption. The
+  scripts now write whole numbers the way the editor saves them (`2`, not `2.0`), so re-running them after an editor save leaves the
+  file byte-for-byte unchanged. Verified: `parity_steps.py` (the bought-domain share and friends steps in the cable, wifi, usb and VM
+  views: every runner animation, 35 in the friends step, the same in the editor and the SVG), `ui_steps.py`, `ui_scenarios.py`,
+  `parity_lines.py`, `parity_phonebook.py`, overlap scan (180 states), `smoke_all_views.py` (0 errors), `./dash setups --check`;
+  frames of Mario's trip, the cousin's *no IPv4 address* card, the bounce while Jazz goes on, the cousin's way home and the VM view
+  looked at; the four apply scripts run twice leave the diagram unchanged.
+- **FR151. The runners are open-source mascots, and they walk.** (User: *replace the Mario with the Tux penguin, Jazz with Big Buck
+  Bunny and the 2nd Jazz with another open source icon. Show them walking, not as a static picture.*) The sprites in
+  `docs/icons.svg`, drawn for this diagram: `ic-mario` is now **Tux** (Linux's penguin, after Larry Ewing's drawing; a light outline
+  so the black shows on the dark background), `ic-jazz` **Big Buck Bunny** (Blender Foundation, CC BY 3.0) and `ic-cousin`, the
+  friend on the IPv4-only phone (FR149), **Ferris**, Rust's crab (CC0). Yoshi is unchanged. The ids stay `mario` / `jazz` / `cousin`,
+  so the stories' scripts (`"who"`) and the apply scripts are untouched. **Walking:** each of the three has two walk frames besides
+  its standing picture (`ic-<who>-w1`, `ic-<who>-w2`): Tux waddles (leans over the planted foot, the other foot forward), the bunny
+  steps with its ears flopping and its arm swinging, Ferris scuttles sideways (its legs in two sets, a claw up in turn). While it
+  moves, a runner in `WALKERS` (flow.js, mirrored in docs/gen_flow_svg.py) shows frame 1 at a low of its hop, standing at the high,
+  frame 2 at the next low, and so on (a step every `HOP / 2` = 0.16 s); standing still, it shows its standing picture. The frames are
+  three `<use>`s, switched by discrete opacity animations on the step's timeline, so pause, seek and fast-forward hold them like
+  everything else. Verified: `parity_steps.py` (every runner animation, the frames included, the same in the editor and the SVG),
+  `ui_steps.py`, `ui_scenarios.py`, `smoke_all_views.py` (0 errors); frames 0.08 s apart of Tux (Tailscale step 1), the bunny and
+  Ferris (DuckDNS step 5) looked at, in the static SVG and in the editor; the static SVGs re-rendered (only the sprites changed).
 
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 

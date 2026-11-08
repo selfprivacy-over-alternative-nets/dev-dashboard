@@ -22,6 +22,7 @@ for f in sorted(glob.glob(f"{D}/*.json")):
         if h is None: continue
         v = name + ";" + ";".join(h)
         if v not in seen: seen.add(v); views.append(v)
+        if name == "setup-map" and v + ";step=all" not in seen: seen.add(v + ";step=all"); views.append(v + ";step=all")   # FR148: the whole view too
 print(len(views), "views", flush=True)
 errs = []; t0 = time.time()
 with sync_playwright() as p:

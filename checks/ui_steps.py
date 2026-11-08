@@ -32,8 +32,18 @@ with sync_playwright() as p:
     click = lambda label: (pg.locator("#stepcap button", has_text=label).click(), pg.wait_for_timeout(150))
     # FR137: the steps are run from the caption bottom-right only — no Steps group in the top bar any more
     check(pg.locator("#togglebar .tg", has_text="Steps").count() == 0, "no Steps group in the toggle bar")
-    check(pg.locator("#stepcap").is_hidden() and pg.locator("#stepenter").is_visible(), "the whole view: no caption, a '▶ step by step' button")
     stepno = lambda: (lambda m: int(m.group(1)) if m else None)(re.search(r";step=(\d+)", hsh()))
+    # FR148: a link without a step opens the story at its last step (playing); the friend's step starts with Jazz on his way, Mario home
+    # already (the hand-over and Mario's way home are in the share step)
+    t0 = pg.locator("#stepcap b").text_content() if pg.locator("#stepcap b").count() else None
+    check(stepno() == 5 and t0 == "A friend opens the link" and not clock()[0], f"first sight = the last step, playing ({hsh()}, '{t0}')")
+    mario_still = pg.evaluate("() => { const u = document.querySelector('.actor use[href=\"#ic-mario\"]'), R = u && u.closest('.actor > g'); return !!R && !R.querySelector(':scope > animateMotion'); }")
+    jazz_in = pg.evaluate("() => !!document.querySelector('.actor use[href=\"#ic-jazz\"]')")
+    check(mario_still and jazz_in, f"step 5: Mario stands at home from the start (no walk), Jazz is there from the start (Mario still {mario_still}, Jazz {jazz_in})")
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=tailscale;step=4;play=0", wait_until="networkidle"); pg.wait_for_timeout(300)
+    check(pg.evaluate("() => !!document.querySelector('.actor use[href=\"#ic-jazz\"]')"), "step 4 (share): Jazz comes out of the phone and takes the address there")
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=tailscale;step=all", wait_until="networkidle"); pg.wait_for_timeout(400)
+    check(pg.locator("#stepcap").is_hidden() and pg.locator("#stepenter").is_visible() and hsh().endswith(";step=all"), f"…;step=all: the whole view, no caption, a '▶ step by step' button ({hsh()})")
     playbtn = lambda: pg.locator("#stepcap .sc-head button").nth(2)   # ⏮ ⏪ ▶/⏸ ⏩ ⏭ ✕
     def go(i):   # to step i: into the steps from the whole view, then ⏭ / ⏮ (round and round)
         if pg.locator("#stepcap").is_hidden():
@@ -114,7 +124,7 @@ with sync_playwright() as p:
     pg.keyboard.type(cap0); pg.keyboard.press("Enter"); pg.wait_for_timeout(200)
     check(pg.locator("#stepcap .sc-body").text_content() == cap0, "…and the old caption back the same way")
     click("✕")
-    check(";step=" not in hsh() and cnt() == full and pg.locator("#stepcap").is_hidden() and pg.locator("#stepenter").is_visible(), f"✕ = the whole view again ({cnt()} vs {full})")
+    check(hsh().endswith(";step=all") and cnt() == full and pg.locator("#stepcap").is_hidden() and pg.locator("#stepenter").is_visible(), f"✕ = the whole view again, ;step=all ({hsh()}, {cnt()} vs {full})")
     check(pg.locator(".gatehouse .gh-anim").count() == 2 and pg.locator(".pb-anim animate[begin]").count() == 0 and not clock()[0], "the whole view keeps its gate lights, its own clock, and runs")
     # FR136: the book opens only to be written (step 2) or read (step 5) — shut and still in steps 3 and 4
     for lbl in ("3 backup", "4 share"):
@@ -141,7 +151,7 @@ with sync_playwright() as p:
     pg.wait_for_timeout(int((T5 + 0.6) * 1000))
     check(hsh().endswith(";step=0"), f"…and {T5 + 0.6:.1f} s later it is step 0 ({hsh()})")
     playbtn().click(); pg.wait_for_timeout(200)
-    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=cloudflare;name=buy;step=1", wait_until="networkidle")   # a new load (a fragment change alone does not reload)
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=portfwd;name=buy;step=1", wait_until="networkidle")   # a new load (a fragment change alone does not reload); FR145: port-forward is the route without a story now
     pg.wait_for_timeout(300)
     check(pg.locator("#stepenter").is_hidden() and pg.locator("#stepcap").is_hidden() and ";step=" not in hsh(), "a view without steps: no step-by-step button, no caption, step dropped from the hash")
     print("page errors:", errs, "| total problems:", bad + len(errs)); b.close()

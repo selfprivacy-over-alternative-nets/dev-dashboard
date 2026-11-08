@@ -1,11 +1,16 @@
 # Setups (`--on`) and reach rows (`--reach` / `--name`) — the setup diagram's views
 
 The test matrix uses the **same axes as the setup diagram** — [`flow.html#setup-map`](flow.html#setup-map), data
-`docs/diagrams/setup-map.json`, toggles **Install · Network · Reach · Name** (one diagram view = one combination):
+`docs/diagrams/setup-map.json`, toggles **Install · Network · Reach · Name · Scenario** (one diagram view = one combination):
 
 - a **setup** — `./dash run … --on <setup>` — is one **Install × Network** view → a matrix **column**;
 - a **reach row** — `--reach <reach> [--name <name>]` plus the transport the app speaks, `--net` — is one
-  **Reach × Name** view → a matrix **row group**.
+  **Reach × Name** view → a matrix **row group**;
+- a **scenario** — the diagram's Scenario toggle (*First install · Reinstall · Restore a backup*, told for Tailscale,
+  Cloudflare and Direct IPv6) — is the story a run belongs to. The matrix shows **one Reach × Name × Scenario view at a
+  time** (its toolbar = the diagram's toggles, the URL = the diagram's `#method=…;net=…;reach=…;name=…;scenario=…`;
+  reqs 185–187). A run that recorded no scenario is a first install (req 159); filing a Reinstall / Restore run needs
+  `dash` to take `--scenario` first (req 187) — until then those cells read ○ not wired.
 
 `./dash setups` lists both and checks they still match the diagram (`./dash setups --check` exits 1 when they
 don't; the dashboard shows the same check as a banner). Every matrix column/row header has a ▦ link to its diagram
@@ -77,14 +82,14 @@ over SSH); the L3 flows then drive the app over it.
 | `portfwd-buy` | `portfwd` | `buy` | `https` | `reach.portfwd-buy` | box | [reach=portfwd;name=buy](flow.html#setup-map;reach=portfwd;name=buy) |
 | `portfwd-duckdns` | `portfwd` | `duckdns` | `https` | `reach.portfwd-duckdns` | box | [reach=portfwd;name=duckdns](flow.html#setup-map;reach=portfwd;name=duckdns) |
 | `onion-chutney` *(harness)* | `onion` | – | `chutney` | — | vm only | (simulates [reach=onion](flow.html#setup-map;method=vm;reach=onion)) |
-| `local` *(harness)* | `local` | – | `https` | — | vm only (+ L2's test-vm) | none — https on this computer only |
+| `local` *(harness, greyed chip)* | `local` | – | `https` | — | vm only (+ L2's test-vm) | none — https on this computer only |
 | `onion-https`, `onion-chutney-https` *(greyed out)* | `onion` | – | `tor+https`, `chutney+https` | — | can't run | none — placeholders from the old matrix, no test |
-| `ngrok`, `pinggy`, `localtunnel` *(greyed out)* | same as the id | – | `https` | — (`add-cloudflare.sh --method …` exists) | can't run | none — no diagram option |
-| `yggdrasil`, `hyphanet` | — | – | (future) | — | roadmap | none yet |
 
 - **Harness-only rows** exist for testing, not as a way to reach a box: `onion-chutney` = the onion route on a
   private Tor test network on this computer (SOCKS 9009); `local` = https to the VM through a trusted local name
   (theory7 in `/etc/hosts` + Caddy + mkcert CA + SSH tunnel), and L2's self-signed https inside its test VM.
+  `local https` is the only Reach chip the diagram doesn't have, so the matrix shows it greyed — but it is selectable
+  and its tests run: it is the only https test that needs no box.
 - **One-hostname tunnels** (tailscale, cloudflare trycf) serve the API at the apex only, so there is no automated L3
   over them yet. Drive the app by hand and log the result in that row:
   `./dash app --domain <HOST> --token <API_TOKEN> --apex`, then
@@ -94,9 +99,10 @@ over SSH); the L3 flows then drive the app over it.
   harness yet (○ in the matrix); `reach.*` apply steps drive a box over SSH.
 - **Greyed-out rows** stay in the matrix for reference but can't run (`dash` refuses them, the matrix shows them
   greyed): Tor + https and chutney + https (`onion-https`, `onion-chutney-https`) were placeholders in the old
-  matrix with no test and no diagram view; ngrok / pinggy / localtunnel are supported by
-  `add-cloudflare.sh --method …` but have no diagram option, so a result would have no view to be filed under.
-  Giving one a diagram option (and a test) is what turns it into a normal row.
+  matrix with no test and no diagram view. Giving one a diagram view (and a test) turns it into a normal row.
+- **Not in the matrix:** ngrok / pinggy / localtunnel (`add-cloudflare.sh --method …` sets them up, but the diagram
+  has no option for them) and the roadmap transports Yggdrasil / Hyphanet. A route gets a matrix row once the
+  diagram has an option for it.
 
 Fully explicit commands per setup family: [`test_matrix.md`](test_matrix.md); the exact command of any single cell: click it in the matrix (`index.html`).
 
@@ -119,7 +125,7 @@ reboots+IP-changes / **C** free / **D** non-centralised / **E** human-readable n
 | port-forward IPv4 + dynamic DNS | + | + A auto-updates | + | + | + | -- router admin; CGNAT-dead |
 | onion (tor) | ++ | ++ | + | ++ | -- 56-char | ~ Tor-only |
 
-Matrix reach rows for these routes: Cloudflare tunnel + custom domain = `cloudflare-buy`; quick tunnel = `cloudflare-trycf` (ngrok / pinggy / localtunnel: greyed-out rows, no diagram view); direct IPv6 = `ipv6-buy` / `ipv6-duckdns`; port-forward = `portfwd-buy` / `portfwd-duckdns`; onion = `onion`; Tailscale Funnel (below) = `tailscale`.
+Matrix reach rows for these routes: Cloudflare tunnel + custom domain = `cloudflare-buy`; quick tunnel = `cloudflare-trycf` (ngrok / pinggy / localtunnel: no matrix row, no diagram option); direct IPv6 = `ipv6-buy` / `ipv6-duckdns`; port-forward = `portfwd-buy` / `portfwd-duckdns`; onion = `onion`; Tailscale Funnel (below) = `tailscale`.
 
 **No single route wins A–E, is grandma-proof, AND reaches every visitor.** Decentralised + reliable
 + no-port-forward is only physically possible **over IPv6** (no NAT to cross). So:
