@@ -4,51 +4,60 @@
 #   prepare a bootable installer USB on THIS device  ->  you boot+install it on the TARGET
 #   ->  stamp the box with its build identity  ->  verify.  No separate steps; one chain.
 #
-# All user-facing args are REQUIRED (no implicit defaults): the written command is the whole
-# truth on any device. Omitting one fails fast telling you what to set.
+# What the user gives (req 190): the stick, the domain and the transport — `./dash run install --to-usb <path> --domain <name>`
+# derives the rest, prints every value and records the whole line. Nothing is guessed, nothing comes from this computer's checkouts:
+#   USB_DEV    the stick's block device (dash shows it with the other removable drives and has it confirmed by name; ERASED)
+#   DOMAIN     the server's public name (checked: syntax, and a DuckDNS name must exist)     TRANSPORT  https | onion | none
+#   KEY        this install's FRESH key pair (dash makes it); its public half goes INTO the installer image (/sp/authorized_keys),
+#              so the live installer and the installed server trust that key and nothing else over SSH
+#   ISO_FLAKE  the installer image, built/fetched from the PUBLIC repo (reproducible from any device)
+#   FLAKE      what the box is stamped with: that flake's lock, read from git (nix flake metadata) — no deployer checkout needed
+#   IP / MAC   discovered after you boot the box: it is the one host on the LAN that accepts this install's key (IP may be given)
+# A required value that is missing fails fast telling you what to set. Runs directly too (same env, no dash).
 set -euo pipefail
-
-FLAKE=${FLAKE:?required: deploy flake (for the stamp pins), e.g. FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer}
-IP=${IP:?required: target IP once installed + on the network, e.g. IP=192.168.1.167}
-MAC=${MAC:?required: target NIC MAC for LAN discovery, e.g. MAC=d8:cb:8a:7c:0a:f4}
-KEY=${KEY:?required: ssh deploy key path, e.g. KEY=$HOME/.ssh/pcname_ed25519}
-DOMAIN=${DOMAIN:?required: public domain, e.g. DOMAIN=example.com}
-TRANSPORT=${TRANSPORT:?required: https | onion | none (install-only)}
-ISO=${ISO:-}                                            # prebuilt installer .iso; else built from ISO_FLAKE
-ISO_FLAKE=${ISO_FLAKE:-../Manager-Ubuntu-SelfPrivacy-Over-Tor/backend#packages.x86_64-linux.default}
-USB_DEV=${USB_DEV:-}                                    # USB block device to WRITE (e.g. /dev/sdX) — ERASED
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
+. "$HERE/install_lib.sh"
+. "$HERE/prompt_lib.sh"
+
+DOMAIN=${DOMAIN:?required: the public domain of the server, e.g. DOMAIN=yourname.duckdns.org (dash: --domain)}
+TRANSPORT=${TRANSPORT:?required: https | onion | none (install-only); dash derives https from --domain}
+KEY=${KEY:?required: the ssh key of THIS install, e.g. KEY=~/.ssh/selfprivacy-<domain>-<date>_ed25519 (dash makes a fresh one)}
+USB_DEV=${USB_DEV:?required: the block device of the stick to WRITE (ERASED), e.g. USB_DEV=/dev/sdb (dash: --to-usb <path> shows + confirms it)}
+KEY=${KEY/#\~/$HOME}
+PUBKEY=${PUBKEY:-$KEY.pub}
+ISO_FLAKE=${ISO_FLAKE:-github:selfprivacy-over-tor/Manager-Ubuntu-SelfPrivacy-Over-Tor?dir=backend#packages.x86_64-linux.default}
+FLAKE=${FLAKE:-${ISO_FLAKE%%#*}}                       # the stamp's pins: the image's own flake, from git
+ISO=${ISO:-}                                           # a prebuilt installer .iso; else built/fetched from ISO_FLAKE
+IP=${IP:-}; MAC=${MAC:-}                               # optional: IP is tried first; else the box is discovered by the key
+USB_CONFIRMED=${USB_CONFIRMED:-}                       # = USB_DEV when dash already showed the drive and had it confirmed
+CACHE=${SP_CACHE:-$HOME/.cache/selfprivacy-usb}        # images live on disk, not in /tmp (RAM)
+SSHO="-i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"   # IdentitiesOnly: the box trusts THIS key only; an agent offering other keys first gets cut off (MaxAuthTries)
 export NIX_CONFIG='experimental-features = nix-command flakes'
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ssh_ok(){ ssh $SSHO -o BatchMode=yes "root@$1" true 2>/dev/null; }
 
-# Box build-identity JSON — prefers dash's full $DEV_TEST_STAMP, else reads $FLAKE/flake.lock.
+echo "ran as (every value written out):"
+echo "  DOMAIN=$DOMAIN TRANSPORT=$TRANSPORT KEY=$KEY USB_DEV=$USB_DEV ISO_FLAKE=$ISO_FLAKE FLAKE=$FLAKE${IP:+ IP=$IP}${MAC:+ MAC=$MAC}${WIFI_SSID:+ WIFI_SSID=$WIFI_SSID} bash tools/e2e_install_usb.sh"
+[ -f "$KEY" ] && [ -f "$PUBKEY" ] || { echo "KEY=$KEY needs its public half at $PUBKEY (dash makes both: ./dash run install --to-usb … --domain …)"; exit 1; }
+is_domain "$DOMAIN" || { echo "DOMAIN='$DOMAIN' is not a domain name (like yourname.duckdns.org or example.org)"; exit 1; }
+if getent hosts "$DOMAIN" >/dev/null 2>&1; then echo "   $DOMAIN exists in DNS ✓"
+elif [[ "${DOMAIN,,}" == *.duckdns.org ]]; then echo "   $DOMAIN is unknown to DNS — claim the name at duckdns.org first, or check the spelling"; exit 1
+else echo "   warning: $DOMAIN does not resolve yet — fine before its records are written, wrong if it is a typo"; fi
+
+# Box build-identity JSON: dash's full $DEV_TEST_STAMP (repos, pins, state) when it runs the chain, else the flake's pins from git;
+# always with the flake, its revision and the moment.
 stamp_json(){
-  if [ -n "${DEV_TEST_STAMP:-}" ]; then
-    DEV_TEST_STAMP="$DEV_TEST_STAMP" FLAKE="$FLAKE" python3 - <<'PY'
+  local base; base=$(sp_pins_from_flake "$FLAKE")
+  DEV_TEST_STAMP="${DEV_TEST_STAMP:-}" BASE="$base" python3 - <<'PY'
 import os, json, datetime
-d = json.loads(os.environ["DEV_TEST_STAMP"])
-d["flake"] = os.environ.get("FLAKE", "")
+b = json.loads(os.environ["BASE"])
+d = json.loads(os.environ["DEV_TEST_STAMP"]) if os.environ.get("DEV_TEST_STAMP") else {"pins": b["pins"]}
+d["flake"] = b["flake"]; d["flake_revision"] = b.get("revision", ""); d.setdefault("pins", b["pins"])
 d["deployed_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 for k, v in (d.get("pins") or {}).items():
     d.setdefault(k, v)
 print(json.dumps(d))
 PY
-  else
-    FLAKE="$FLAKE" python3 - <<'PY'
-import os, json, datetime
-f = os.environ["FLAKE"]
-try:
-    nodes = json.load(open(f + "/flake.lock")).get("nodes", {})
-    pins = {k: (nodes.get(k, {}).get("locked", {}) or {}).get("rev", "unknown") for k in ("selfprivacy-api", "nixpkgs")}
-except Exception:
-    pins = {}
-d = {"flake": f, "pins": pins, "deployed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-d.update(pins)
-print(json.dumps(d))
-PY
-  fi
 }
 
 # wifi setups (usb-0d/0c) need a wifi spec; confirm the SSID is in range without disturbing the
@@ -68,59 +77,69 @@ wifi_preflight(){
 
 say "0. preflight — setup availability (USB + wifi spec)"
 wifi_preflight || exit 1
+[ -b "$USB_DEV" ] || { echo "USB_DEV '$USB_DEV' is not a block device — is the stick plugged in? aborting."; exit 1; }
 
-say "1. prepare the bootable installer USB on THIS device"
-echo ">>> Insert a USB stick into THIS laptop now (its contents will be ERASED)."
-read -r -p "Press ENTER when the USB is inserted (Ctrl-C to abort) ... " _ || true
-
+say "1. the installer image, from the public repo, with this install's key"
+mkdir -p "$CACHE"
 if [ -z "$ISO" ]; then
-  say "   building the installer ISO from $ISO_FLAKE (nix build) ..."
-  nix build -L "$ISO_FLAKE" --out-link /tmp/sp-usb-iso
-  ISO=$(find -L /tmp/sp-usb-iso -name '*.iso' 2>/dev/null | head -1)
+  echo "   building/fetching the installer image from $ISO_FLAKE (nix build) ..."
+  nix build -L "$ISO_FLAKE" --out-link "$CACHE/iso"
+  ISO=$(find -L "$CACHE/iso" -name '*.iso' 2>/dev/null | head -1)
 fi
 [ -n "$ISO" ] && [ -f "$ISO" ] || { echo "no ISO found ('$ISO') — set ISO=<path> or ISO_FLAKE=<flake#attr>"; exit 1; }
-echo "   ISO: $ISO"
+echo "   image: $ISO"
+ISO_KEYED="$CACHE/installer-with-key.iso"
+sp_remaster_iso "$ISO" "$PUBKEY" "$ISO_KEYED" || exit 1
 
-echo "Block devices (pick the USB — NOT your system disk):"
-lsblk -dpno NAME,SIZE,MODEL,TRAN 2>/dev/null | sed 's/^/   /'
-: "${USB_DEV:?set USB_DEV=/dev/sdX — the USB device to WRITE (this ERASES it); then re-run.}"
-[ -b "$USB_DEV" ] || { echo "USB_DEV '$USB_DEV' is not a block device — is the USB inserted? aborting."; exit 1; }
-if [ "$(lsblk -no NAME "$USB_DEV" 2>/dev/null | tail -n +2 | wc -l)" -gt 0 ]; then
-  echo "   note: $USB_DEV already has partitions (they will be erased)."
-  [ "${EMPTY_REQUIRED:-0}" = 1 ] && { echo "   EMPTY_REQUIRED=1 and the USB is not empty — aborting."; exit 1; }
+say "2. write the stick (ERASED): $USB_DEV"
+if [ "$USB_CONFIRMED" = "$USB_DEV" ]; then
+  echo "   (confirmed by name on the command line: dash showed this drive with the other removable drives)"
+else
+  echo "Block devices (the stick — NOT your system disk):"
+  lsblk -dpno NAME,SIZE,MODEL,TRAN 2>/dev/null | sed 's/^/   /'
+  echo "About to ERASE ${USB_DEV} and write ${ISO_KEYED}."
+  # Rule (req 142): a mismatched device path RE-ASKS (a typo shouldn't drop the whole flow); empty = abort
+  # (this is a destructive erase, so proceeding still requires an EXACT match to $USB_DEV).
+  while :; do
+    read -r -p "Re-type the device path to confirm (empty = abort): " _c || _c=""
+    [ -z "${_c:-}" ] && { echo "aborted — nothing erased."; exit 1; }
+    [ "${_c}" = "$USB_DEV" ] && break
+    echo "  that doesn't match ${USB_DEV} — try again, or press Enter to abort."
+  done
 fi
-echo "About to ERASE ${USB_DEV} and write ${ISO}."
-# Rule (req 142): a mismatched device path RE-ASKS (a typo shouldn't drop the whole flow); empty = abort
-# (this is a destructive erase, so proceeding still requires an EXACT match to $USB_DEV).
-while :; do
-  read -r -p "Re-type the device path to confirm (empty = abort): " _c || _c=""
-  [ -z "${_c:-}" ] && { echo "aborted — nothing erased."; exit 1; }
-  [ "${_c}" = "$USB_DEV" ] && break
-  echo "  that doesn't match ${USB_DEV} — try again, or press Enter to abort."
-done
-sudo dd if="$ISO" of="$USB_DEV" bs=4M status=progress conv=fsync
+sp_unmount_all "$USB_DEV" || exit 1
+${SP_SUDO-sudo} dd if="$ISO_KEYED" of="$USB_DEV" bs=4M status=progress conv=fsync
 sync
+sp_verify_written "$ISO_KEYED" "$USB_DEV" || exit 1
 say "   done — you may REMOVE the USB from this device."
 
-say "2. install on the TARGET"
-echo ">>> Put the USB into the TARGET, boot from it, install SelfPrivacy, and connect it to the network."
+say "3. install on the TARGET"
+cat <<EOT
+>>> Put the USB into the TARGET and boot from it. The installer trusts only this install's key over SSH (no password login).
+    On the target's screen, install SelfPrivacy; when you copy the config, copy the key next to it so the INSTALLED server
+    trusts it too:
+      cp -r /selfprivacy-config/* /mnt/etc/nixos/  &&  cp /iso/sp/authorized_keys /mnt/etc/nixos/authorized_keys
+    Then reboot it with its cable into your router${WIFI_SSID:+ (or on wifi '$WIFI_SSID')}.
+EOT
 read -r -p "Did you install it on the target and is it on the network? Press ENTER to continue (Ctrl-C to abort) ... " _ || true
 
-say "3. locate the installed target"
+say "4. find the installed server on your network"
 up=""
-for i in $(seq 1 60); do ssh_ok "$IP" && { up=1; echo "up at root@$IP"; break; }; sleep 5; done
-if [ -z "$up" ]; then
-  echo "   not at $IP — scanning the LAN by MAC $MAC ..."
-  for p in $(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | awk -F/ '{print $1}' \
-             | awk -F. '/^10\.|^192\.168\.|^172\./{print $1"."$2"."$3}' | sort -u); do
-    for n in $(seq 1 254); do ping -c1 -W1 "$p.$n" >/dev/null 2>&1 & done
-  done; wait 2>/dev/null || true
-  DIP=$(ip neigh | awk -v m="$MAC" 'tolower($0) ~ tolower(m){print $1; exit}')
-  if [ -n "$DIP" ] && ssh_ok "$DIP"; then IP="$DIP"; up=1; echo "   found at root@$IP"; fi
+if [ -n "$IP" ]; then
+  for i in $(seq 1 24); do ssh_ok "$IP" && { up=1; echo "   up at root@$IP"; break; }; sleep 5; done
 fi
-[ -n "$up" ] || { echo "target not reachable — is it installed and on the network?"; exit 1; }
+if [ -z "$up" ]; then
+  echo "   looking for the one host that accepts this install's key (up to 15 min) ..."
+  if hit=$(sp_discover_by_key "$KEY" 900); then
+    IP=${hit%% *}; MAC=${hit##* }; up=1
+    echo "   found your server at root@$IP (MAC $MAC)"
+  fi
+fi
+[ -n "$up" ] || { echo "target not reachable — is it installed, booted and on the network? (its SSH accepts only $KEY)"; exit 1; }
+[ -n "$MAC" ] || MAC=$(ip neigh 2>/dev/null | awk -v i="$IP" '$1==i && $4=="lladdr"{print $5; exit}')
+echo "[dash-found] IP=$IP MAC=${MAC:-?}"
 
-say "4. stamp the box with its build identity"
+say "5. stamp the box with its build identity"
 printf '%s' "$(stamp_json)" | ssh $SSHO "root@$IP" "cat > /etc/dev-test-build.json"
 # Record the running-system BASELINE so a later run can detect a box rebuilt/edited since install.
 ssh $SSHO "root@$IP" 'python3 - <<PY
@@ -133,7 +152,7 @@ json.dump(d, open("/etc/dev-test-build.json","w"))
 PY' || echo "   (warning: could not record running-system baseline)"
 echo "   stamped."
 
-say "5. VERIFY over transport=$TRANSPORT"
+say "6. VERIFY over transport=$TRANSPORT"
 if [ "$TRANSPORT" = none ]; then
   echo "   TRANSPORT=none — install-only; skipping the live service verify."
   exit 0

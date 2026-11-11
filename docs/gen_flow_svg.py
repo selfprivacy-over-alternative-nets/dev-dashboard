@@ -100,18 +100,30 @@ IP_RE = re.compile(r"\d{1,3}(\.\d{1,3}){3}|[0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7}", 
 ip_tag = lambda ip: ("ipV6 " if ":" in ip else "ip ") + ip   # FR147: an address as the book shows it — mirrors flow.js ipTag
 
 
-def _pick_when(w, fb, state):   # {toggle: {value: text}}; FR141: a value may itself be {toggle: {value: text}, fb: fallback} — mirrors flow.js pickWhen
+_is_str = lambda v: isinstance(v, str)
+
+
+def _pick_when(w, fb, state, ok=_is_str):   # {toggle: {value: text}}; FR141: a value may itself be {toggle: {value: text}, fb: fallback}; FR152: `ok` says what counts as a value — mirrors flow.js pickWhen
     for t, by_v in w.items():
         if t == fb:
             continue
         v = by_v.get(state.get(t)) if isinstance(by_v, dict) else None
-        if isinstance(v, str):
+        if ok(v):
             return v
         if isinstance(v, dict):
-            r = _pick_when(v, fb, state)
+            r = _pick_when(v, fb, state, ok)
             if r is not None:
                 return r
-    return w.get(fb) if isinstance(w.get(fb), str) else None
+    return w.get(fb) if ok(w.get(fb)) else None
+
+
+_is_cmd = lambda v: isinstance(v, (str, list))
+
+
+def cmds_of(s, state):   # FR152: a step's commands per view (s.cmdWhen, like labelWhen), else s.cmd — one string or a list, one line each — mirrors flow.js cmdsOf
+    r = _pick_when(s.get("cmdWhen") or {}, "cmd", state, _is_cmd)
+    v = r if r is not None else s.get("cmd")
+    return [] if v is None else [str(x) for x in (v if isinstance(v, list) else [v])]
 
 
 def entry_of(n, state):   # FR122: the entry text, per view (n.entryWhen = {toggle: {value: entry}}), else n.entry — mirrors flow.js entryOf
@@ -2111,20 +2123,29 @@ def caption_lines(s):   # FR124: the caption wrapped at 58 characters
     return lines
 
 
-def caption_height(s):
-    return 30 + 16 * len(caption_lines(s))
+CMD_CHARS = 60   # FR152: a command line is cut here (monospace 10 px in the 400 px box); the whole command is in its title
 
 
-def caption_svg(s, i, x1, y1):   # FR124: the step's caption, a box bottom-right of the drawing (the editor shows the same text in #stepcap)
-    lines = caption_lines(s)
+def caption_height(s, state=None):
+    m = len(cmds_of(s, state or {}))
+    return 30 + 16 * len(caption_lines(s)) + (15 * m + 6 if m else 0)
+
+
+def caption_svg(s, i, x1, y1, state=None):   # FR124: the step's caption, a box bottom-right of the drawing (the editor shows the same text in #stepcap)
+    lines, cmds = caption_lines(s), cmds_of(s, state or {})
     W, lh = 400, 16
-    H = caption_height(s)
+    H = caption_height(s, state)
     x, y = x1 - W - 8, y1 - H - 8
     o = [f'<g class="stepcap"><rect x="{x:.0f}" y="{y:.0f}" width="{W}" height="{H}" rx="6" fill="#14181f" fill-opacity="0.92" stroke="{DIM}"/>',
          f'<text x="{x + 12:.0f}" y="{y + 17:.0f}" font-size="10" fill="{DIM}" letter-spacing="0.6">STEP {i}</text>',
          f'<text x="{x + 58:.0f}" y="{y + 17:.0f}" font-size="12" fill="{FG}" font-weight="700">{html.escape(s.get("title") or s.get("id", ""))}</text>']
     for k, ln in enumerate(lines):
         o.append(f'<text x="{x + 12:.0f}" y="{y + 36 + k * lh:.0f}" font-size="12" fill="{FG}">{html.escape(ln)}</text>')
+    for k, c in enumerate(cmds):   # FR152: one monospace line per command, cut with an ellipsis, the whole command in its title (the editor: a <pre> with a copy button)
+        by = y + 38 + len(lines) * lh + k * 15
+        cut = c if len(c) <= CMD_CHARS else c[:CMD_CHARS - 1] + "…"
+        o.append(f'<g class="stepcmd"><title>{html.escape(c)}</title><rect x="{x + 12:.0f}" y="{by - 11:.0f}" width="{W - 24}" height="14" rx="3" fill="#0b0e14" stroke="{DIM}"/>'
+                 f'<text x="{x + 16:.0f}" y="{by:.0f}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="{FG}">{html.escape(cut)}</text></g>')
     o.append("</g>")
     return "".join(o)
 
@@ -2162,7 +2183,7 @@ def render(d):
     else:
         x0, y0, x1, y1 = 0, 0, 400, 200
     if step is not None:
-        y1 += caption_height(steps_now[step]) + 16   # FR124: the caption gets its own room below the drawing
+        y1 += caption_height(steps_now[step], state) + 16   # FR124: the caption gets its own room below the drawing (FR152: and its command lines)
     used_types = [t for t in NODE_TYPES if any(n.get("nodeType") == t for n in nodes)]
     used_roles = any(role_of(e) for e in edges)
     used_costs = any(e.get("cost") in COST for e in edges)
@@ -2430,7 +2451,7 @@ def render(d):
         s = steps_now[step]   # FR125: this step's runners follow on from the previous steps' (the end of one is the start of the next)
         if SP and SP["P"]:
             o.append(actor_svg(SP["P"], lambda nid: anc(nid) if nid in box else None, bg, images, labels))
-        o.append(caption_svg(s, step, x1, y1))
+        o.append(caption_svg(s, step, x1, y1, state))
     if used_types or used_roles or used_costs:
         o.append(legend_svg(x1 - LEGEND_W - 8, y0 + 8, used_types, used_roles, used_costs))
     o.append("</svg>")

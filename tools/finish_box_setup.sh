@@ -37,7 +37,7 @@ SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$SELF/net_lib.sh"   # box_global_ipv6 (routable-IPv6 autodetect on the box's final network)
 
 G=$'\e[32m'; C=$'\e[36m'; B=$'\e[1m'; R=$'\e[31m'; Y=$'\e[33m'; GR=$'\e[90m'; X=$'\e[0m'
-SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o BatchMode=yes"
+SSHO="-i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6 -o BatchMode=yes"
 say(){ printf '\n%s== %s ==%s\n' "$B" "$*" "$X"; }
 ask(){ local p="$1" v=""; printf '%s' "$p" >&2; { read -r v </dev/tty; } 2>/dev/null || v=""; printf '%s' "$v"; }
 can_ask(){ { : </dev/tty; } 2>/dev/null; }   # true only if there's a terminal to prompt at (not CI)

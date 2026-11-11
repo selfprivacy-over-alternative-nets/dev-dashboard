@@ -134,7 +134,7 @@ def check_https(domain, token, ssh_key, api_sub):
 
     if ssh_key and target:
         sec("7. optional SSH cross-check")
-        base=["ssh","-i",ssh_key,"-o","BatchMode=yes","-o","StrictHostKeyChecking=no",
+        base=["ssh","-i",ssh_key,"-o","IdentitiesOnly=yes","-o","BatchMode=yes","-o","StrictHostKeyChecking=no",
               "-o","UserKnownHostsFile=/dev/null","-o","ConnectTimeout=6",f"root@{target}"]
         hn=sh(base+["hostname"],15).stdout.strip()
         (ok if hn else warn)(f"ssh hostname={hn or '(unreachable — fine if SSH not exposed publicly)'}")

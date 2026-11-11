@@ -1,7 +1,7 @@
 # parity_steps.py — FR124: per step of a view, the editor (localhost:8099) and the static renderer show the same boxes +
 # lines, animate the runner alike (every animateMotion / animate / animateTransform in the .actor group: path, key
 # points, key times, values, dur) and carry the same caption. Run from dev-dashboard. Never saves (aborts **/save**).
-import glob, sys, json, re
+import glob, sys, json, re, html
 sys.path.insert(0, "docs"); import gen_flow_svg as G
 from playwright.sync_api import sync_playwright
 c = sorted(glob.glob("/nix/store/*playwright-chromium/chrome-linux64/chrome"))
@@ -18,6 +18,8 @@ VIEWS += [("wifi", "0d", "ipv6", "buy", 4), ("vm", None, "ipv6", "buy", 4), ("vm
 VIEWS += [("cable", "0a", "cloudflare", "buy", i) for i in range(6)] + [("cable", "0a", "cloudflare", "buy", i, sc) for sc, n in (("reinstall", 2), ("restore", 3)) for i in range(n)] \
        + [("cable", "0a", "cloudflare", "trycf", i) for i in range(5)] + [("cable", "0a", "cloudflare", "trycf", i, sc) for sc, n in (("reinstall", 3), ("restore", 4)) for i in range(n)] \
        + [("vm", None, "cloudflare", "buy", 5), ("wifi", "0d", "cloudflare", "trycf", 1), ("usb", "0c", "cloudflare", "buy", 2), ("vm", None, "cloudflare", "trycf", 0, "restore")]   # FR145–FR146: the Cloudflare stories
+VIEWS += [("usb", "0a", "portfwd", "duckdns", i) for i in range(6)] + [("cable", "0a", "portfwd", "buy", i) for i in range(6)] \
+       + [("wifi", "0d", "portfwd", "duckdns", 1), ("vm", None, "portfwd", "duckdns", 5), ("usb", "0c", "portfwd", "buy", 2), ("vm", None, "portfwd", "buy", 1)]   # FR152: the port-forward stories, with their commands
 nums = lambda s: [float(v) for v in re.findall(r"-?\d+(?:\.\d+)?(?:e-?\d+)?", s or "")]
 def close(a, b, tol): return len(a) == len(b) and all(abs(x - y) <= tol for x, y in zip(a, b))
 ATTRS = ("attributeName", "path", "keyPoints", "keyTimes", "values", "dur", "type", "repeatCount", "fill", "begin")   # FR131: begin compared from the step's start
@@ -54,6 +56,7 @@ with sync_playwright() as p:
                    edges: [...document.querySelectorAll('.edge[data-edge]:not(.gatehouse)')].map(g => g.getAttribute('data-edge')).sort(),
                    anims: A ? [...A.querySelectorAll('animateMotion, animate, animateTransform')].map(a => [a.tagName, ...['attributeName','path','keyPoints','keyTimes','values','dur','type','repeatCount','fill','begin'].map(k => a.getAttribute(k) || '')]) : [],
                    cap: cap && !cap.hidden ? cap.querySelector('.sc-body').textContent : null, hash: location.hash,
+                   cmds: cap && !cap.hidden ? [...cap.querySelectorAll('.sc-cmd pre')].map(p => p.textContent) : [],   // FR152: the step's commands, one line each
                    gh: document.querySelectorAll('.gatehouse .gh-anim').length, ghm: document.querySelectorAll('.gatehouse animateTransform').length,
                    t0: (() => { const a = document.querySelector('.actor animateMotion, .actor animate'); return a ? parseFloat(a.getAttribute('begin')) : null; })(),
                    book: [...document.querySelectorAll('.node')].filter(g => g.querySelector('.pb-still')).flatMap(g => [...g.querySelectorAll('animate, animateTransform, animateMotion')])
@@ -61,7 +64,11 @@ with sync_playwright() as p:
         G.default_state = lambda t, st=st: dict(st); svg = G.render(d)
         tog = {k: v for k, v in st.items() if k != "step"}
         pn = sorted(x["id"] for x in d["nodes"] if G.shown(x, tog)); pset = set(pn)
-        pe = sorted(e["id"] for e in d["edges"] if G.shown(e, tog) and e["from"] in pset and e["to"] in pset)
+        E_ = {e["id"]: e for e in d["edges"]}
+        def end_ok(on):   # FR118: a line ending ON a route's gate ("<pipe>:gate" / ":firewall") is drawn only where that route's gatehouse router is (flow.js gateOf → null, the SVG's pipe_spot_box → None)
+            if not on or not on.endswith((":gate", ":firewall")): return True
+            pe_ = E_.get(on.split(":")[0]); return bool(pe_) and pe_.get("gate") in pset
+        pe = sorted(e["id"] for e in d["edges"] if G.shown(e, tog) and e["from"] in pset and e["to"] in pset and end_ok(e.get("fromOn")) and end_ok(e.get("toOn")))
         pa = py_anims(svg)
         s_ = [s for s in d["steps"] if G.when_ok(s.get("showWhen"), tog)][step]
         ok_vis = js["nodes"] == pn and js["edges"] == pe
@@ -74,6 +81,10 @@ with sync_playwright() as p:
                 mism.append((i, a[:2], q[:2]))
         ok_cap = (js["cap"] or "") == (s_.get("caption") or "") and (" ".join(G.caption_lines(s_)) == (s_.get("caption") or ""))
         ok_hash = js["hash"].endswith(f";step={step}")
+        pc = [html.unescape(t) for t in re.findall(r'<g class="stepcmd"><title>(.*?)</title>', svg)]   # FR152: the SVG's command lines carry the full command in a title
+        want_c = G.cmds_of(s_, tog)
+        ok_cmd = js["cmds"] == pc == want_c and all("\n" not in x for x in want_c)
+        bad += not ok_cmd
         py_gh = svg.count('class="gh-anim"'); py_ghm = sum(b_.count("<animateTransform") for b_ in gate_blocks(svg))
         want = bool(s_.get("visitors")) and 'class="gatehouse"' in svg   # FR126: lights at the gates only in a step with visitors (FR136: and gates — the VM view has none)
         # FR129: the phonebook's own animations (once, from when the runner writes it, in a step where one does)
@@ -95,5 +106,5 @@ with sync_playwright() as p:
         print(f"{h}: items {'match' if ok_vis else 'MISMATCH js=' + str((js['nodes'], js['edges'])) + ' py=' + str((pn, pe))} ({len(pn)} boxes, {len(pe)} lines)"
               f" | gate lights {js['gh']}/{py_gh} moves {js['ghm']}/{py_ghm} {'ok' if ok_gh else 'MISMATCH'}"
               f" | book anims {len(jb)}/{len(pa_b)} {'ok' if ok_book else 'MISMATCH'}"
-              f" | runner anims {len(js['anims'])}/{len(pa)} {'match' if ok_cnt and not mism else 'MISMATCH ' + str(mism[:3])} | caption {'match' if ok_cap else 'MISMATCH'} | hash {'ok' if ok_hash else js['hash']}")
+              f" | runner anims {len(js['anims'])}/{len(pa)} {'match' if ok_cnt and not mism else 'MISMATCH ' + str(mism[:3])} | caption {'match' if ok_cap else 'MISMATCH'} | cmds {len(js['cmds'])}/{len(pc)}/{len(want_c)} {'ok' if ok_cmd else 'MISMATCH ' + str((js['cmds'], pc, want_c))} | hash {'ok' if ok_hash else js['hash']}")
     print("page errors:", errs, "| total problems:", bad); b.close()

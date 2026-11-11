@@ -149,15 +149,21 @@ check for that, so its preflight always refuses (printing the router setup). The
   --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>
 ```
 
-USB stick (one chain: write the stick → boot + install on the target → stamp + verify). usb-0d / usb-0c leave the
-server on wifi: add `--env WIFI_SSID=<SSID>` (checked in range) — the USB chain writes no wifi config, so set the
-server's wifi up by hand during the USB install:
+USB stick (one chain, req 190: the installer image from the public repo, with a FRESH key for this install, written to the stick
+you point at — shown with the other removable drives and confirmed by name — → boot + install on the target → the server is found
+on your network by that key → stamp + verify). You give the stick's path (as opened on this computer) and your domain; everything
+else is derived and printed in full before anything runs, and recorded with the run:
 ```sh
-./dash run install.usb-0a --on usb-0a \
-  --ip 192.168.1.167 --key /home/a/.ssh/pcname_ed25519 \
-  --env USB_DEV=/dev/sdX --env TRANSPORT=https \
-  --env FLAKE=/home/a/git/personal/selfprivacy/selfprivacy-altnet-deployer \
-  --env MAC=d8:cb:8a:7c:0a:f4 --env DOMAIN=weersurf.nl
+./dash run install --to-usb /run/media/<you>/<id> --domain <YOUR_DOMAIN>
+```
+usb-0d (the server on wifi afterwards): add `--wifi <SSID>` (checked in range); usb-0c (cable + another wifi): `--on usb-0c
+--wifi <SSID>`. The USB chain writes no wifi config, so set the server's wifi up by hand during the install. The same line with
+every value written out (what dash prints and records; pass any of them to skip its question):
+```sh
+./dash run install.usb-0a --on usb-0a --to-usb /run/media/<you>/<id> --domain <YOUR_DOMAIN> --key <SSH_KEY> \
+  --env USB_DEV=/dev/sdX --env USB_CONFIRMED=/dev/sdX --env TRANSPORT=https \
+  --env ISO_FLAKE=github:selfprivacy-over-tor/Manager-Ubuntu-SelfPrivacy-Over-Tor?dir=backend#packages.x86_64-linux.default \
+  --env FLAKE=github:selfprivacy-over-tor/Manager-Ubuntu-SelfPrivacy-Over-Tor?dir=backend
 ```
 
 ### Reach — make the installed box reachable (one route; `--on` = the setup you installed)

@@ -837,7 +837,8 @@
         ],
         "reach": [
           "tailscale",
-          "ipv6"
+          "ipv6",
+          "portfwd"
         ]
       },
       "so": -275,
@@ -862,7 +863,8 @@
         ],
         "reach": [
           "tailscale",
-          "ipv6"
+          "ipv6",
+          "portfwd"
         ]
       },
       "so": -322.5,
@@ -6695,6 +6697,886 @@
         ]
       },
       "title": "Cloudflare writes the new name"
+    },
+    {
+      "caption": "First you sign in at duckdns.org (with a GitHub, Google, … account) and claim a free name: yourname.duckdns.org. You also copy your account's token: the server will need it to keep your entry up to date. It is not used up, so you keep it in KeePass on your computer.",
+      "id": "pfd0",
+      "label": "account",
+      "play": [
+        {
+          "run": "e9"
+        },
+        {
+          "pop": "name claimed ✓"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "get": "vault"
+        },
+        {
+          "open": "vault"
+        },
+        {
+          "copy": "token",
+          "from": "duck",
+          "in": "vault"
+        },
+        {
+          "close": "vault"
+        },
+        {
+          "back": true,
+          "run": "e9"
+        },
+        {
+          "in": "you",
+          "put": "vault",
+          "screen": true
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "you",
+        "duck",
+        "e9"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "texts": {
+        "domain": "yourname.duckdns.org",
+        "ip": "Your server's LAN address:\n192.0.2.10"
+      },
+      "title": "Claim a DuckDNS name, keep the token"
+    },
+    {
+      "caption": "The installer bakes the name into the install and builds SelfPrivacy on your server, with https as the transport. At the end it prints the server's address on your home network (its LAN address): the router will need it.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": "./dash run install.cable-0a --on cable-0a --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org",
+              "0b": "./dash run install.cable-0b --on cable-0b --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+              "0c": "./dash run install.cable-0c --on cable-0c --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+              "0d": "./dash run install.cable-0d --on cable-0d --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": "./dash run install --to-usb <USB_STICK_PATH> --domain <NAME>.duckdns.org",
+              "0c": "./dash run install --to-usb <USB_STICK_PATH> --domain <NAME>.duckdns.org --wifi <SSID>",
+              "0d": "./dash run install --to-usb <USB_STICK_PATH> --domain <NAME>.duckdns.org --wifi <SSID>"
+            }
+          },
+          "vm": "./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up",
+          "wifi": {
+            "net": {
+              "0a": "./dash run install.wifi-0a --on wifi-0a --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env NETBOOT=off --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org",
+              "0d": "./dash run install.wifi-0d --on wifi-0d --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env NETBOOT=off --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <NAME>.duckdns.org --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
+            }
+          }
+        }
+      },
+      "id": "pfd1",
+      "label": "install",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "from": "server",
+          "get": "ip"
+        },
+        {
+          "pop": "LAN address found ✓"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Install, with the name baked in"
+    },
+    {
+      "caption": "The make-reachable command checks the install and prints what to set up: the port-forward, and a timer on the server that sends your public IPv4 address to DuckDNS every 5 minutes with your token (gap today: you add that timer yourself). DuckDNS writes the address in its phonebook under your name. It is your router's address, which anyone can look up.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": "./dash run reach.portfwd-duckdns --on cable-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0b": "./dash run reach.portfwd-duckdns --on cable-0b --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0c": "./dash run reach.portfwd-duckdns --on cable-0c --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0d": "./dash run reach.portfwd-duckdns --on cable-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org"
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": "./dash run reach.portfwd-duckdns --on usb-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0c": "./dash run reach.portfwd-duckdns --on usb-0c --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0d": "./dash run reach.portfwd-duckdns --on usb-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org"
+            }
+          },
+          "vm": "# not wired for the VM: tools/add-cloudflare.sh drives an installed BOX over SSH",
+          "wifi": {
+            "net": {
+              "0a": "./dash run reach.portfwd-duckdns --on wifi-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org",
+              "0d": "./dash run reach.portfwd-duckdns --on wifi-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<NAME>.duckdns.org"
+            }
+          }
+        }
+      },
+      "id": "pfd2",
+      "label": "phonebook",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "from": "you",
+          "get": "token"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "in": "server",
+          "put": "token"
+        },
+        {
+          "update": "duck"
+        },
+        {
+          "pop": "again every 5 minutes"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "e_duck_srv"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "The server keeps its own entry up to date"
+    },
+    {
+      "caption": "Your router has two gates shut: the fire wall and port 443. You open both by hand in the router's settings, as the make-reachable command printed: forward TCP 443 to the server's LAN address (and TCP 80 too if the certificate comes from Let's Encrypt over HTTP-01). That works only when your router has a public IPv4 address of its own: behind CGNAT (an address shared with other customers) there is no way in.",
+      "id": "pfd3",
+      "label": "router",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "get": "ip"
+        },
+        {
+          "run": "e5"
+        },
+        {
+          "run": "e6"
+        },
+        {
+          "of": "router",
+          "open": "firewall"
+        },
+        {
+          "of": "router",
+          "open": "port"
+        },
+        {
+          "in": "router",
+          "put": "ip"
+        },
+        {
+          "pop": "TCP 443 → 192.0.2.10 ✓"
+        },
+        {
+          "back": true,
+          "run": "e6"
+        },
+        {
+          "back": true,
+          "run": "e5"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "inet",
+        "e_pf_b",
+        "pfwarn",
+        "e5",
+        "e6"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Open the fire wall and port 443 by hand"
+    },
+    {
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "pfd4",
+      "label": "share",
+      "play": [
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_share",
+        "e_sharevm"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone asks DuckDNS and gets your router's public IPv4 address, so the call arrives at your router, which passes TCP 443 on to your server through both open gates: no company in between, and IPv4-only friends get in too. Gaps today: the DuckDNS timer is yours to add; a certificate needs TCP 80 forwarded too (Let's Encrypt HTTP-01); nothing works behind CGNAT.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0b": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0b --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0b --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0c": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0c --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0c --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0c": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0c --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0c --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          },
+          "vm": [
+            "# not wired: L3 over Port-forward + DuckDNS · https on the VM has no automated test yet (the VM is not reachable over a public route)"
+          ],
+          "wifi": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on wifi-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on wifi-0a --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on wifi-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on wifi-0d --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          }
+        }
+      },
+      "id": "pfd5",
+      "label": "friend",
+      "play": [
+        {
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_duck",
+          "who": "jazz"
+        },
+        {
+          "lookup": "duck",
+          "who": "jazz"
+        },
+        {
+          "run": "e_duck",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_pf_b",
+          "who": "jazz"
+        },
+        {
+          "in": "server",
+          "put": "answer",
+          "who": "jazz"
+        },
+        {
+          "at": "server",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "from": "server",
+          "get": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "run": "e_pf_b",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "at": "friend",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_duck"
+      ],
+      "showWhen": {
+        "name": [
+          "duckdns"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "A friend opens the link"
+    },
+    {
+      "caption": "First you buy a domain at a registrar (a shop for domain names, €/yr). The registrar's phonebook will hold your records, and you edit them by hand on its website.",
+      "id": "pfb0",
+      "label": "domain",
+      "play": [
+        {
+          "run": "e_pb_you"
+        },
+        {
+          "pop": "bought ✓ (€/yr)"
+        },
+        {
+          "get": "domain"
+        },
+        {
+          "back": true,
+          "run": "e_pb_you"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "you",
+        "pbook",
+        "e_pb_you"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "texts": {
+        "domain": "yourdomain.org",
+        "ip": "Your server's LAN address:\n192.0.2.10"
+      },
+      "title": "Buy a domain"
+    },
+    {
+      "caption": "The installer bakes the domain into the install and builds SelfPrivacy on your server, with https as the transport. At the end it prints the server's address on your home network (its LAN address): the router will need it. On this route nothing on the server updates the phonebook.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": "./dash run install.cable-0a --on cable-0a --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN>",
+              "0b": "./dash run install.cable-0b --on cable-0b --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+              "0c": "./dash run install.cable-0c --on cable-0c --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>",
+              "0d": "./dash run install.cable-0d --on cable-0d --ip <TARGET_IP_ON_CABLE> --key <SSH_KEY> --env NETBOOT=auto --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": "./dash run install --to-usb <USB_STICK_PATH> --domain <YOUR_DOMAIN>",
+              "0c": "./dash run install --to-usb <USB_STICK_PATH> --domain <YOUR_DOMAIN> --wifi <SSID>",
+              "0d": "./dash run install --to-usb <USB_STICK_PATH> --domain <YOUR_DOMAIN> --wifi <SSID>"
+            }
+          },
+          "vm": "./dash vm-reset && ./dash run install.vm --on vm && ./dash vm-up",
+          "wifi": {
+            "net": {
+              "0a": "./dash run install.wifi-0a --on wifi-0a --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env NETBOOT=off --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN>",
+              "0d": "./dash run install.wifi-0d --on wifi-0d --ip <TARGET_IP_ON_R> --key <SSH_KEY> --env NETBOOT=off --env TRANSPORT=https --env FLAKE=<PATH_TO_DEPLOY_FLAKE> --env MAC=<TARGET_NIC_MAC> --domain <YOUR_DOMAIN> --env WIFI_SSID=<SSID> --env WIFI_PSK=<PASSWORD>"
+            }
+          }
+        }
+      },
+      "id": "pfb1",
+      "label": "install",
+      "play": [
+        {
+          "get": "light"
+        },
+        {
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "at": "server",
+          "hammer": 3
+        },
+        {
+          "in": "server",
+          "put": "domain"
+        },
+        {
+          "from": "server",
+          "get": "ip"
+        },
+        {
+          "pop": "LAN address found ✓"
+        },
+        {
+          "wait": 0.6
+        }
+      ],
+      "show": [
+        "server",
+        "router",
+        "e_cable",
+        "e_usb",
+        "e_wifi",
+        "e_scable"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Install, with the domain baked in"
+    },
+    {
+      "caption": "The make-reachable command checks the install and prints what to set up: the port-forward, and five A records pointing at your router's public IPv4 address: api, cloud, git, matrix and meet of yourdomain.org. You write them in the registrar's phonebook yourself. They point at your router, not at your server.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": "./dash run reach.portfwd-buy --on cable-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0b": "./dash run reach.portfwd-buy --on cable-0b --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0c": "./dash run reach.portfwd-buy --on cable-0c --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0d": "./dash run reach.portfwd-buy --on cable-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>"
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": "./dash run reach.portfwd-buy --on usb-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0c": "./dash run reach.portfwd-buy --on usb-0c --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0d": "./dash run reach.portfwd-buy --on usb-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>"
+            }
+          },
+          "vm": "# not wired for the VM: tools/add-cloudflare.sh drives an installed BOX over SSH",
+          "wifi": {
+            "net": {
+              "0a": "./dash run reach.portfwd-buy --on wifi-0a --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>",
+              "0d": "./dash run reach.portfwd-buy --on wifi-0d --ip <BOX_LAN_IP> --key <SSH_KEY> --env DOMAIN=<YOUR_DOMAIN>"
+            }
+          }
+        }
+      },
+      "id": "pfb2",
+      "label": "phonebook",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "run": "e_pb_you"
+        },
+        {
+          "write": "pbook"
+        },
+        {
+          "pop": "×5 A records → your public IPv4"
+        },
+        {
+          "back": true,
+          "run": "e_pb_you"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Write your public address in the phonebook, by hand"
+    },
+    {
+      "caption": "Your router has two gates shut: the fire wall and port 443. You open both by hand in the router's settings, as the make-reachable command printed: forward TCP 443 to the server's LAN address (and TCP 80 too if the certificate comes from Let's Encrypt over HTTP-01). That works only when your router has a public IPv4 address of its own: behind CGNAT (an address shared with other customers) there is no way in.",
+      "id": "pfb3",
+      "label": "router",
+      "play": [
+        {
+          "back": true,
+          "run": [
+            "e_cable",
+            "e_usb"
+          ]
+        },
+        {
+          "get": "ip"
+        },
+        {
+          "run": "e5"
+        },
+        {
+          "run": "e6"
+        },
+        {
+          "of": "router",
+          "open": "firewall"
+        },
+        {
+          "of": "router",
+          "open": "port"
+        },
+        {
+          "in": "router",
+          "put": "ip"
+        },
+        {
+          "pop": "TCP 443 → 192.0.2.10 ✓"
+        },
+        {
+          "back": true,
+          "run": "e6"
+        },
+        {
+          "back": true,
+          "run": "e5"
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "inet",
+        "e_pf_b",
+        "pfwarn",
+        "e5",
+        "e6"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Open the fire wall and port 443 by hand"
+    },
+    {
+      "caption": "You send your friend the link, for example in a chat message.",
+      "id": "pfb4",
+      "label": "share",
+      "play": [
+        {
+          "get": "domain"
+        },
+        {
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "appear": "friend",
+          "who": "jazz"
+        },
+        {
+          "give": "domain",
+          "to": "jazz"
+        },
+        {
+          "back": true,
+          "run": [
+            "e_share",
+            "e_sharevm"
+          ]
+        },
+        {
+          "wait": 0.4
+        }
+      ],
+      "show": [
+        "friend",
+        "e_share",
+        "e_sharevm"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "Send your friend the link"
+    },
+    {
+      "caption": "Your friend opens the link to call you on Jitsi Meet. The phone asks the registrar's phonebook and gets your router's public IPv4 address (the A record you wrote), so the call arrives at your router, which passes TCP 443 on to your server through both open gates: no company in between, and IPv4-only friends get in too. Gaps today: a new public address (home connections get one now and then) means editing the five records again by hand; a certificate needs TCP 80 forwarded too (Let's Encrypt HTTP-01); nothing works behind CGNAT.",
+      "cmdWhen": {
+        "method": {
+          "cable": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0b": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0b --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0b --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0c": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0c --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0c --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on cable-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on cable-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          },
+          "usb": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0c": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0c --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0c --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on usb-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on usb-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          },
+          "vm": [
+            "# not wired: L3 over Port-forward + bought domain · https on the VM has no automated test yet (the VM is not reachable over a public route)"
+          ],
+          "wifi": {
+            "net": {
+              "0a": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on wifi-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on wifi-0a --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ],
+              "0d": [
+                "./dash run L3.connect.desktop L3.login.desktop L3.services.desktop L3.providers.desktop L3.nextcloud.desktop L3.users.desktop L3.menus.desktop --on wifi-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>",
+                "./dash run L3.addremove.desktop --on wifi-0d --reach portfwd --name buy --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>"
+              ]
+            }
+          }
+        }
+      },
+      "id": "pfb5",
+      "label": "friend",
+      "play": [
+        {
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_pb_friend",
+          "who": "jazz"
+        },
+        {
+          "lookup": "pbook",
+          "who": "jazz"
+        },
+        {
+          "run": "e_pb_friend",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_pf_b",
+          "who": "jazz"
+        },
+        {
+          "in": "server",
+          "put": "answer",
+          "who": "jazz"
+        },
+        {
+          "at": "server",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "from": "server",
+          "get": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "run": "e_pf_b",
+          "who": "jazz"
+        },
+        {
+          "back": true,
+          "run": "e_friend",
+          "who": "jazz"
+        },
+        {
+          "at": "friend",
+          "show": "jitsi",
+          "who": "jazz"
+        },
+        {
+          "wait": 1
+        }
+      ],
+      "show": [
+        "e_friend",
+        "e_pb_friend"
+      ],
+      "showWhen": {
+        "name": [
+          "buy"
+        ],
+        "reach": [
+          "portfwd"
+        ]
+      },
+      "title": "A friend opens the link"
     }
   ]
 }

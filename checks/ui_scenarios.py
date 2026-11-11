@@ -66,7 +66,7 @@ with sync_playwright() as p:
             t = pg.locator("#stepcap b").first.text_content() if pg.locator("#stepcap b").count() else None
             check(t == cap and ";step=0" in pg.evaluate("location.hash"), f"cloudflare/{nm} {label}: step by step starts with '{t}'")
             pg.locator("#stepcap button", has_text="✕").click(); pg.wait_for_timeout(200)
-    go("setup-map;method=cable;net=0a;reach=portfwd;name=buy")
+    go("setup-map;method=cable;net=0a;reach=onion")   # FR152: .onion is the route without a story now
     g2 = pg.locator("#togglebar .tg", has_text="Scenario")   # (like Name in a Tailscale view: the group says "— n/a")
     check(g2.count() == 1 and g2.locator("button").count() == 0 and "n/a" in g2.text_content() and "scenario=" not in pg.evaluate("location.hash"),
           f"on a route without a story the Scenario group has no choices ('{g2.text_content() if g2.count() else None}') and the hash none")

@@ -613,6 +613,9 @@ function runDetail(r) {
     `${row ? " · " + esc(row) : ""}${r.transport && r.transport !== "-" ? " · " + esc(r.transport) : ""}</span>` +
     (r.forced ? `<div class="err">FORCED past: ${esc((r.forced_reasons || []).join(", "))} (--allow-dirty) — not a clean pass</div>` : "") +
     provenanceHtml(r) +
+    // req 190: the dash command this run was started with, every derived value written out (repeat it anywhere from this line)
+    (r.cmd_full ? `<div class="runlabel">ran as — every value written out:</div><pre class="runcmd">${esc(r.cmd_full)}</pre>` : "") +
+    (r.found && Object.keys(r.found).length ? `<div class="meta">found on the LAN during the run: <code>${esc(Object.entries(r.found).map(([k, v]) => k + "=" + v).join(" "))}</code></div>` : "") +
     (r.error ? `<div class="err">${esc(r.error)}</div>` : "") + arts +
     (r.demo ? `<div class="demoflag">— illustrative DEMO record —</div>` : "") + `</div>`;
 }

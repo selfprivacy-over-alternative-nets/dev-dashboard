@@ -1646,6 +1646,49 @@ LIVE, editable view** at e.g. `http://localhost:8099/flow.html#setup-map;method=
   `ui_steps.py`, `ui_scenarios.py`, `smoke_all_views.py` (0 errors); frames 0.08 s apart of Tux (Tailscale step 1), the bunny and
   Ferris (DuckDNS step 5) looked at, in the static SVG and in the editor; the static SVGs re-rendered (only the sprites changed).
 
+- **FR152. Each story step shows the dash command that does it; the port-forward route told in steps.** (User: *add each story
+  step's dash command to the setup-map diagram, starting with the view `setup-map;method=usb;net=0a;reach=portfwd;name=duckdns` (its
+  matrix twin: `index.html#method=usb;net=0a;reach=portfwd;name=duckdns`); every command written out in full, every argument explicit,
+  placeholders in <…>, never a real domain, IP or token in the diagram.*) **Data:** a step may carry **`cmd`** — one command, or a
+  list of them — or **`cmdWhen`** = `{toggle: {value: cmd}}`, resolved per view like `labelWhen` / `entryWhen` (nested by Install and
+  Network: `{"method": {"usb": {"net": {"0a": …}}, "vm": …}}`, `cmd` the fallback); both renderers resolve it alike (`cmdsOf` /
+  `cmds_of`; `pickWhen` / `_pick_when` now take what counts as a value). **Shown** under the caption: one monospace line per command,
+  written in full. The editor: a `<pre>` that scrolls sideways (its text selectable) with a **⧉** button that copies the whole command;
+  the static SVG: a monospace line cut at 60 characters with an ellipsis and the whole command in its `<title>` (the tooltip in a
+  browser); the caption box grows 15 px per line. A step done by hand (the account, the router's gates, sharing the link) shows no
+  command. **Where the commands come from:** `catalog.json` — the matrix twin builds its cell commands from it (`app.js cellCmd`), and
+  the step script builds them the same way (`matrix_cmds`, mirroring `cellCmd0`) with the view's values filled in (`TRANSPORT=https`,
+  the name: `<NAME>.duckdns.org` / `<YOUR_DOMAIN>`) and never an address (`install.cable`'s literal `--ip` becomes
+  `<TARGET_IP_ON_CABLE>`), and writes them into the diagram as **literal strings**: the diagram shows exactly what you run, nothing is
+  resolved at render time, and drift is caught by a check (below). *Decided by Claude with the user away* — the alternative, a reference
+  resolved at render time against catalog.json, would make both renderers read the catalog; to switch, `cmdsOf` / `cmds_of` would do
+  that and the twin check stays as it is. **The port-forward stories** (`checks/fr152_portfwd_steps_apply.py`, run FIFTH; `pfd0…pfd5`
+  DuckDNS, `pfb0…pfb5` a bought domain; first install only — the Scenario toggle is n/a for this route; the share line `e_share` /
+  `e_sharevm` is drawn in the port-forward views too): **0 account / domain** as in the IPv6 story (DuckDNS: the token into KeePass —
+  the server's timer needs it). **1 install** — the setup's install command; the server is built up and its **LAN address** comes out
+  (*192.0.2.10*, a documentation address: the router will need it). **2 phonebook** — `./dash run reach.portfwd-<name> …`, which
+  prints the port-forward to make and (DuckDNS) the timer that keeps the name on your public IPv4 (gap today: you add that timer
+  yourself) — the token goes to the server and the server's own light writes the book; a bought domain: you write the five A records
+  by hand, they point at your router. **3 router** — both gates by hand: Mario takes the LAN address along the note's lines (`e5`,
+  `e6`, which ends ON the port) to the router, the fire wall slides down and the barrier lifts (`{"open": "port", "of": "router"}`
+  works like `firewall`), *TCP 443 → 192.0.2.10 ✓*; the caption: TCP 80 too for a Let's Encrypt certificate, nothing behind CGNAT.
+  **4 share.** **5 friend** — Jazz looks the name up, gets the router's public IPv4 and goes in over IPv4 (`e_pf_b` back) through both
+  open gates to the server, and back with the call; the step's commands are the L3 proof: one line with the seven flows and
+  `L3.addremove.desktop` on its own; the gaps close the caption. On the VM the lines are the matrix's own words (`./dash vm-reset &&
+  …`, *# not wired for the VM …*, *# not wired: L3 over … on the VM …*). **Checks:** `checks/parity_cmds.py` — every command of every
+  port-forward view (10 setups × 2 names) equals its matrix twin's cell command (`cellCmd` evaluated in the live matrix page) with the
+  view's fixes applied the same way, by-hand steps show none, no line holds an address; `parity_steps.py` compares each step's command
+  lines in the editor, the SVG's titles and the data (and now knows a line ending ON a gate is drawn only where that router is);
+  `ui_steps.py` reads the install line, clicks ⧉ and reads the clipboard, counts the friend step's two lines and step 0's none;
+  `python3 checks/fr152_portfwd_steps_apply.py --check docs/diagrams/setup-map.json` writes nothing and exits 1 when the diagram's
+  port-forward steps are not what catalog.json gives — **`./dash setups --check` runs it too**. The views without a story are now the
+  `.onion` ones (`ui_steps.py`, `ui_scenarios.py`). Verified: all of these, `ui_scenarios.py`, `parity_lines.py`, `parity_phonebook.py`,
+  overlap scan, `smoke_all_views.py`, the five apply scripts run twice leave the diagram unchanged, the docs SVGs re-rendered unchanged;
+  screenshots of the editor's caption with its command lines (steps 1, 2, 3 and 5; the VM view) and the static SVG's, frames of the
+  gates opening and of Jazz through them looked at.
+  *Changed since:* the USB views' install line is the new user's `./dash run install --to-usb <USB_STICK_PATH> --domain …` (req 190):
+  the diagram shows that short form, the matrix's run detail the filled-in one; `--domain` replaced `--env DOMAIN=` in every install template.
+
 ## Nested-tunnel scope (built on branch `nested-tunnels`, merged into main)
 
 The physical links and the tunnels used to be drawn as separate lines: e.g. on

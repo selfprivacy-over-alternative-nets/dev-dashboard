@@ -62,7 +62,7 @@ if [ "$TARGET_IP" = auto ]; then
   echo "auto-selected newest netboot lease: $TARGET_IP"
 fi
 
-SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o BatchMode=yes "root@$TARGET_IP")
+SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o BatchMode=yes "root@$TARGET_IP")
 "${SSH[@]}" true 2>/dev/null || die "cannot SSH root@$TARGET_IP with $KEY — is the installer up and is this the right key? (the netboot installer authorizes the deploy key)"
 
 # ── Discover MAC + disks from the live installer ─────────────────────────────

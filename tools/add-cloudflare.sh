@@ -87,7 +87,7 @@ ask_choice(){ local prompt="$1" err="$2"; shift 2; local a v
     for v in "$@"; do [ "$a" = "$v" ] && { printf '%s' "$a"; return; }; done
     msg "$err"
   done; }
-SSHO="-i ${KEY:-/dev/null} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o BatchMode=yes"
+SSHO="-i ${KEY:-/dev/null} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 -o BatchMode=yes"
 box(){ ssh $SSHO "root@$IP" "$@"; }
 box_tty(){ ssh -t $SSHO "root@$IP" "$@"; }
 putfile(){ ssh $SSHO "root@$IP" "cat > '$1'"; }

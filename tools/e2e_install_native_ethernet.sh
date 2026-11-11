@@ -30,7 +30,7 @@ NETBOOT_SCRIPT=${NETBOOT_SCRIPT:-$HOME/netboot/start-netboot-server.sh}  # inter
 WAIT_TARGET_S=${WAIT_TARGET_S:-}               # internal timeout (default set below per NETBOOT)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/net_lib.sh"   # reach_args: the setup diagram's --reach/--name for the printed L3 commands
-SSHO="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
+SSHO="-i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=6"
 export NIX_CONFIG='experimental-features = nix-command flakes'
 say(){ printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ssh_ok(){ ssh $SSHO -o BatchMode=yes "root@$1" true 2>/dev/null; }

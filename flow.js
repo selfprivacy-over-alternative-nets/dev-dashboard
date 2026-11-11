@@ -598,9 +598,13 @@
   const ipTag = (ip) => (ip.includes(":") ? "ipV6 " : "ip ") + ip;   // FR147: an address as the book shows it — "ipV6 2001:db8::1", "ip 98.76.54.32"
   // FR122: the entry text, per view: n.entryWhen = { toggle: { value: "entry" } } (like optionsWhen), else n.entry
   // FR141: a value may itself be { toggle: { value: entry }, entry: fallback } — the entry by one more toggle (the scenario)
-  const pickWhen = (w, fb) => { for (const t in w) { if (t === fb) continue; const v = (w[t] || {})[S.toggle[t]];   // {toggle: {value: text}} (FR141: nested; `fb` = the fallback key)
-      if (typeof v === "string") return v; if (v && typeof v === "object") { const r = pickWhen(v, fb); if (r != null) return r; } }
-    return typeof w[fb] === "string" ? w[fb] : null; };
+  const isStr = (v) => typeof v === "string";
+  const pickWhen = (w, fb, ok = isStr) => { for (const t in w) { if (t === fb) continue; const v = (w[t] || {})[S.toggle[t]];   // {toggle: {value: text}} (FR141: nested; `fb` = the fallback key; FR152: `ok` says what counts as a value)
+      if (ok(v)) return v; if (v && typeof v === "object" && !Array.isArray(v)) { const r = pickWhen(v, fb, ok); if (r != null) return r; } }
+    return ok(w[fb]) ? w[fb] : null; };
+  // FR152: a step's commands per view: s.cmdWhen = {toggle: {value: cmd}} (like labelWhen), else s.cmd — one string or a list, one line each
+  const isCmd = (v) => typeof v === "string" || Array.isArray(v);
+  const cmdsOf = (s) => { const r = s.cmdWhen ? pickWhen(s.cmdWhen, "cmd", isCmd) : null, v = r != null ? r : s.cmd; return v == null ? [] : (Array.isArray(v) ? v : [v]).map(String); };
   const entryOf = (n) => { const r = n.entryWhen ? pickWhen(n.entryWhen, "entry") : null; return r != null ? r : String(n.entry || ""); };
   const labelOf = (n) => { const r = n.labelWhen ? pickWhen(n.labelWhen, "label") : null; return r != null ? r : String(n.label || ""); };   // FR149: a box's label per view (n.labelWhen, like entryWhen)
   function bookGeom(n, b) {   // the CLOSED book, centred above the label (lines attach to it)
@@ -1592,6 +1596,11 @@
       const body = document.createElement("div"); body.className = "sc-body"; body.textContent = s.caption || ""; cap.appendChild(body);
       if (S.backend) { body.classList.add("editable"); body.title = "double-click to edit · Enter keeps it, Esc drops it";   // FR137: the caption is edited in place
         body.ondblclick = (ev) => { ev.stopPropagation(); editCaption(body, s); }; }
+      for (const c of cmdsOf(s)) {   // FR152: the step's commands, one monospace line each (written in full, scrolls sideways), with a copy button
+        const row = document.createElement("div"); row.className = "sc-cmd";
+        const pre = document.createElement("pre"); pre.textContent = c; pre.title = c;
+        const cp = btn("⧉", "copy this command"); cp.onclick = async () => { try { await navigator.clipboard.writeText(c); status("command copied"); } catch (_) { status("could not copy — select the line and copy it"); } };
+        row.append(pre, cp); cap.appendChild(row); }
       const o = S.backend && selObj();   // editing the story: the selected box or line in this step or not
       if (o) { const inS = (s.show || []).includes(o.id), foot = document.createElement("div"); foot.className = "sc-foot";
         const m = btn(inS ? "☑ in step" : "☐ in step", `${o.id}: ${inS ? "take out of" : "show from"} step ${S.step} on`); m.id = "stepmember";

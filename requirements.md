@@ -786,3 +786,37 @@
    running / listening but not bootstrapped (the network blocks Tor) / hidden-service descriptor not published / the
    chutney backend not up — and, like the mkcert-CA and pub-get refusals, injects and records nothing. The test
    assertions are unchanged. Test without a VM: `python3 tools/test_l3_transport_gate.py ./dash`.
+
+190. **An install asks a new user only for what is theirs; everything else is derived, offered or discovered — and printed and
+   recorded in full.** (User, on the port-forward DuckDNS story's install line: *how can grandma have an ssh key … think again
+   about what is really required and what can be a default … fill them in as default for transparency, but don't let the user
+   guess; `--domain`, not `--env DOMAIN=`; `--to-usb <path>` with a simple overview — and the other USB sticks too, against
+   confirmation bias; the logging stores the full command; fresh credentials every fresh install; reproducible from any device:
+   never local resources, the flake from the public repo.*) The USB-stick install line is
+   `./dash run install --to-usb <path> --domain <domain>` (`--wifi <SSID>` → usb-0d; `--on usb-0c --wifi <SSID>` for the
+   two-router case). `--domain` replaces `--env DOMAIN=` for every install: checked (syntax; a DuckDNS name must exist in DNS —
+   it is claimed on duckdns.org first; a bought domain that does not resolve yet is a warning), and the transport is then https
+   unless `--env TRANSPORT=` says otherwise. `--to-usb` takes the path the stick is opened at (or its /dev path), resolves it to
+   the drive, refuses one that holds this computer's system or is not removable, shows an overview — make, total size, free space,
+   path — of that drive AND of every other removable drive (marked NOT chosen), and asks for the drive's name (a wrong name
+   re-asks, blank aborts, req 142; without a terminal `--env USB_CONFIRMED=/dev/sdX` stands in for the answer). The setup is
+   derived (usb-0a; usb-0d with `--wifi`; `--on` may agree, never contradict). Every install gets a FRESH key pair
+   (`~/.ssh/selfprivacy-<domain>-<YYYYMMDD-HHMM>_ed25519`, unless `--key` names one); its public half is put INTO the installer
+   image (xorriso, `/sp/authorized_keys`), and the backend's `nixos/sp-install-key.nix` makes the live installer and the installed
+   server trust that key only — no password or empty-password login over SSH any more (the plain ISO's root-without-password
+   stays for the console). The image and the pins the box is stamped with come from the PUBLIC repo (`ISO_FLAKE` =
+   `github:selfprivacy-over-tor/Manager-Ubuntu-SelfPrivacy-Over-Tor?dir=backend#packages.x86_64-linux.default`; the lock is read
+   with `nix flake metadata`), never from a checkout on this computer. The box's IP and MAC are no longer typed: after the boot
+   the chain finds the one host on the LAN that accepts this install's key and reports `[dash-found] IP=… MAC=…`, which dash
+   records (`found`). Before anything runs, dash prints the command with every value written out (`ran as …`) and stores it with
+   the run (`cmd_full`, secrets redacted; the matrix shows it in the run's detail), so the written command stays the whole truth
+   (reqs 1, 2, 6): what is derived is visible, never guessed. Tests without a stick or a box: `python3 tools/test_install_args.py
+   ./dash` (lsblk, DNS, ssh-keygen and the terminal stood in for) and `bash tools/test_install_lib.sh <iso>` (the re-mastered image
+   keeps its boot images; the read-back verify; discovery by key; the pins from a lock and from git). Verified in VirtualBox
+   (2026-11-12): the rebuilt installer image, re-mastered with a throwaway key, boots and 31 s later accepts that key and refuses
+   the password-less root login the plain image still allows (same image without the key: the service is skipped, nothing
+   changes); the installed-system half by `nix eval` with and without the key file. Found on the way: an ssh agent offering its
+   other keys first got cut off by the key-only server (MaxAuthTries), so every SSH call that names a key now passes
+   `IdentitiesOnly=yes` (dash `_ssh_base`, the chains, add-cloudflare.sh, finish_box_setup.sh, retarget_device.sh, the verify).
+   Not verified on hardware: a complete fresh USB install (the cardinal rule). The backend's key module lives on this checkout
+   until it is pushed; the public-repo image carries it only from then on.

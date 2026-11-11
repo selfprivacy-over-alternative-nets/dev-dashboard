@@ -151,7 +151,20 @@ with sync_playwright() as p:
     pg.wait_for_timeout(int((T5 + 0.6) * 1000))
     check(hsh().endswith(";step=0"), f"…and {T5 + 0.6:.1f} s later it is step 0 ({hsh()})")
     playbtn().click(); pg.wait_for_timeout(200)
-    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=portfwd;name=buy;step=1", wait_until="networkidle")   # a new load (a fragment change alone does not reload); FR145: port-forward is the route without a story now
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=cable;net=0a;reach=onion;step=1", wait_until="networkidle")   # a new load (a fragment change alone does not reload); FR152: .onion is the route without a story now
     pg.wait_for_timeout(300)
     check(pg.locator("#stepenter").is_hidden() and pg.locator("#stepcap").is_hidden() and ";step=" not in hsh(), "a view without steps: no step-by-step button, no caption, step dropped from the hash")
+    # FR152: a step's commands under its caption — one monospace line each, with a copy button; by-hand steps show none
+    pg.context.grant_permissions(["clipboard-read", "clipboard-write"], origin="http://localhost:8099")
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=usb;net=0a;reach=portfwd;name=duckdns;step=1;play=0", wait_until="networkidle"); pg.wait_for_timeout(300)
+    cmds = pg.locator("#stepcap .sc-cmd pre").all_text_contents()
+    check(cmds == ["./dash run install --to-usb <USB_STICK_PATH> --domain <NAME>.duckdns.org"], f"usb-0a port-forward step 1: the new user's install line (req 190) ({cmds})")
+    pg.locator("#stepcap .sc-cmd button").first.click(); pg.wait_for_timeout(200)
+    check(pg.evaluate("() => navigator.clipboard.readText()") == cmds[0], "its copy button puts the whole command on the clipboard")
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=usb;net=0a;reach=portfwd;name=duckdns;play=0", wait_until="networkidle"); pg.wait_for_timeout(300)
+    cmds = pg.locator("#stepcap .sc-cmd pre").all_text_contents()
+    check(";step=5" in hsh() and len(cmds) == 2 and cmds[0].startswith("./dash run L3.connect.desktop L3.login.desktop ") and cmds[1].startswith("./dash run L3.addremove.desktop --on usb-0a ")
+          and all(" --reach portfwd --name duckdns --net https --ip <BOX_LAN_IP> --key <SSH_KEY> --token <API_TOKEN>" in x for x in cmds), f"the last step (the friend's call): the two L3 lines ({cmds})")
+    pg.goto("about:blank"); pg.goto("http://localhost:8099/flow.html#setup-map;method=usb;net=0a;reach=portfwd;name=duckdns;step=0;play=0", wait_until="networkidle"); pg.wait_for_timeout(300)
+    check(pg.locator("#stepcap .sc-cmd").count() == 0, "step 0 (the account, by hand): no command line")
     print("page errors:", errs, "| total problems:", bad + len(errs)); b.close()

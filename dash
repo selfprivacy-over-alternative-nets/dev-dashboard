@@ -270,6 +270,268 @@ def setup_preflight(method):
     return True, ""
 
 
+# ── Install arguments for a new user (req 190): `--to-usb <path>`, `--domain`, `--wifi`. Only what the user really has is asked
+#    for; the rest is derived (the setup, the transport), offered (which drive, shown with the other removable drives and confirmed
+#    by name), made fresh (a key pair per install) or fetched from the public repo (the installer image) — and every value is
+#    printed and recorded (cmd_full), so the written command stays the whole truth (reqs 1, 2, 6). ─────────────────────────────
+ISO_FLAKE_URL = "github:selfprivacy-over-tor/Manager-Ubuntu-SelfPrivacy-Over-Tor?dir=backend"   # the installer image: the public repo, never a checkout on this computer
+ISO_FLAKE_ATTR = "#packages.x86_64-linux.default"
+USB_PROTECTED_MOUNTS = ("/", "/boot", "/boot/efi", "/efi", "/home", "/nix", "/var", "/usr")
+_DOMAIN_RE = re.compile(r"^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")   # the same rule as tools/prompt_lib.sh is_domain
+
+
+def human_size(n):
+    """Bytes the way a person says them: 477.5 GB, 1.4 GB, 512 MB."""
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            s = str(int(n)) if unit == "B" else f"{n:.1f}".rstrip("0").rstrip(".")
+            return f"{s} {unit}"
+        n /= 1024
+
+
+def lsblk_json():
+    """Every block device as lsblk sees it (sizes in bytes)."""
+    out = subprocess.run(["lsblk", "-J", "-b", "-o", "NAME,PATH,TYPE,RM,HOTPLUG,TRAN,SIZE,FSAVAIL,FSSIZE,FSTYPE,LABEL,VENDOR,MODEL,MOUNTPOINTS,PKNAME"],
+                         capture_output=True, text=True, timeout=20).stdout
+    return json.loads(out or '{"blockdevices": []}')
+
+
+def _walk_blk(n):
+    yield n
+    for c in n.get("children") or []:
+        yield from _walk_blk(c)
+
+
+def _num(v):
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def usb_disks(tree):
+    """The disks lsblk shows (no loops): removable (rm / hotplug / over usb or mmc), protected (one of its partitions — through
+    LUKS or LVM too — holds this computer's system), and its partitions with their mount points and free space."""
+    out = []
+    for n in tree.get("blockdevices") or []:
+        if n.get("type") != "disk":
+            continue
+        parts = [x for x in _walk_blk(n) if x is not n]
+        mounts = [m for x in parts for m in (x.get("mountpoints") or []) if m]
+        out.append({"name": n["name"], "path": n["path"], "size": _num(n.get("size")), "tran": n.get("tran") or "",
+                    "vendor": (n.get("vendor") or "").strip(), "model": (n.get("model") or "").strip(),
+                    "removable": bool(n.get("rm") or n.get("hotplug") or (n.get("tran") in ("usb", "mmc"))),
+                    "protected": any(m in USB_PROTECTED_MOUNTS or m.startswith("/nix/") for m in mounts),
+                    "parts": [{"name": x["name"], "path": x["path"], "label": x.get("label") or "", "fsavail": x.get("fsavail"),
+                               "mountpoints": [m for m in (x.get("mountpoints") or []) if m]} for x in parts]})
+    return out
+
+
+def usb_resolve(to_usb, tree):
+    """The removable drive behind --to-usb: the path the stick is opened at (or a folder inside it), or its /dev path (the disk or
+    a partition). Refuses a drive that holds this computer's system or is not removable. Returns (disk, the matched partition or None)."""
+    disks = usb_disks(tree)
+    hit, part = None, None
+    if to_usb.startswith("/dev/"):
+        for dsk in disks:
+            if dsk["path"] == to_usb:
+                hit = dsk
+            for p in dsk["parts"]:
+                if p["path"] == to_usb:
+                    hit, part = dsk, p
+            if hit:
+                break
+    else:
+        target, best = os.path.realpath(to_usb), -1
+        for dsk in disks:
+            for p in dsk["parts"]:
+                for m in p["mountpoints"]:
+                    mm = os.path.realpath(m)
+                    inside = mm != "/" and target.startswith(mm.rstrip("/") + "/")   # (a folder inside a mount; "/" only ever matches itself)
+                    if (target == mm or inside) and len(mm) > best:
+                        best, hit, part = len(mm), dsk, p
+    if not hit:
+        raise ValueError(f"--to-usb {to_usb}: not a mounted drive or a /dev path on this computer (is the stick plugged in and opened?)")
+    if hit["protected"]:
+        raise ValueError(f"--to-usb {to_usb}: {hit['path']} holds this computer's system — refused")
+    if not hit["removable"]:
+        raise ValueError(f"--to-usb {to_usb}: {hit['path']} is not a removable drive (not over USB or MMC, not hot-pluggable) — refused")
+    return hit, part
+
+
+def usb_overview(disk, others, chosen_path=None):
+    """The drive to write, named with its make, size, free space and path — and every OTHER removable drive on this computer,
+    marked not chosen, so nobody confirms the wrong one out of habit."""
+    def line(dsk, mark):
+        what = " ".join(x for x in (dsk["vendor"], dsk["model"]) if x) or ("SD/MMC card" if dsk["tran"] == "mmc" else "USB drive")
+        free = [(p["fsavail"], p["mountpoints"][0]) for p in dsk["parts"] if p["mountpoints"] and p["fsavail"] is not None]
+        fr = " · ".join(f"{human_size(a)} free on {m}" for a, m in free) if free else "nothing mounted"
+        return f"  {mark} {dsk['name']:<10} {what:<24} {human_size(dsk['size'])} total · {fr}   ({dsk['tran'] or 'removable'})"
+    o = [f"{BOLD}USB drive to write{OFF} — it will be {RED}ERASED{OFF}" + (f" (you gave: {chosen_path})" if chosen_path else "") + ":", line(disk, "▶")]
+    if others:
+        o.append(f"{GREY}Other removable drives on this computer, NOT chosen:{OFF}")
+        o += [line(x, "-") for x in others]
+    else:
+        o.append(f"{GREY}(no other removable drive is on this computer){OFF}")
+    return "\n".join(o)
+
+
+def derive_install_setup(to_usb, wifi, on, cat=None):
+    """The setup an install is filed under: --on as given; with --to-usb the Install is usb and the Network follows the flags —
+    no --wifi → usb-0a (the server's cable goes into your router), --wifi → usb-0d (wifi only); --on may agree (usb-0c with
+    --wifi: cable to your router and wifi to another) but never contradict. (canonical id, None) or (None, why)."""
+    cat = cat or load_catalog()
+    sid, err = canon_setup(on, cat)
+    if err:
+        return None, f"--on {on}: {err}"
+    if not to_usb:
+        return sid, None
+    if sid:
+        if (setup_entry(sid, cat) or {}).get("method") != "usb":
+            return None, f"--to-usb is a USB-stick install; --on {on} contradicts it (usb-0a | usb-0d | usb-0c, or leave --on out)"
+        if _wifi_required(sid) and not wifi:
+            return None, f"--on {sid} leaves the server on wifi: pass --wifi <SSID> (or leave --on out: usb-0a, the cable into your router)"
+        if wifi and not _wifi_required(sid):
+            return None, f"--wifi given, but --on {sid} keeps the server on its cable (no wifi): usb-0d (wifi only) or usb-0c"
+        return sid, None
+    return ("usb-0d" if wifi else "usb-0a"), None
+
+
+def derive_transport(domain, extra_env):
+    """An explicit --env TRANSPORT= wins; else a domain means https; else nothing is derived (the chain asks for it)."""
+    return _env_get(extra_env, "TRANSPORT") or ("https" if domain else None)
+
+
+def domain_check(domain, resolve=None):
+    """(ok, message): the syntax of a domain name, then whether DNS knows it. A DuckDNS name is claimed on duckdns.org before
+    anything else (step 0 of its story), so an unknown one is refused; a bought domain may not point anywhere yet (a warning)."""
+    resolve = resolve or socket.getaddrinfo
+    if not domain or not _DOMAIN_RE.match(domain):
+        return False, f"'{domain}' is not a domain name (like yourname.duckdns.org or example.org)"
+    try:
+        resolve(domain, None)
+        return True, f"{domain} exists in DNS ✓"
+    except (socket.gaierror, OSError) as ex:
+        if domain.lower().endswith(".duckdns.org"):
+            return False, f"{domain} is unknown to DNS ({ex}) — claim the name at duckdns.org first, or check the spelling"
+        return True, f"warning: {domain} does not resolve yet ({ex}) — fine before its records are written, wrong if it is a typo"
+
+
+def fresh_key_path(domain, when=None):
+    """~/.ssh/selfprivacy-<domain>-<YYYYMMDD-HHMM>_ed25519 — one key pair per install, named after the server and the moment."""
+    when = when or datetime.datetime.now()
+    label = re.sub(r"[^A-Za-z0-9.-]", "_", domain or "server")
+    return os.path.expanduser(f"~/.ssh/selfprivacy-{label}-{when.strftime('%Y%m%d-%H%M')}_ed25519")
+
+
+def ensure_fresh_key(path):
+    """A new ed25519 key pair for THIS install (fresh credentials every fresh install); the public half goes onto the stick."""
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    if not os.path.exists(path):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", f"selfprivacy {os.path.basename(path)}", "-f", path], check=True)
+    return path, path + ".pub"
+
+
+def redact_cmdline(s):
+    """A command line safe to print and store: no API token, no wifi password."""
+    s = re.sub(r"(--token)\s+\S+", r"\1 <redacted>", s)
+    return re.sub(r"((?:WIFI_PSK|PSK|PASSWORD|PASS|TOKEN)=)\S+", r"\1<redacted>", s)
+
+
+def found_marks(line):
+    """A chain reports what it discovered as '[dash-found] IP=… MAC=…' lines; {key: value} for such a line, else None."""
+    m = re.match(r"^\[dash-found\]\s+(.*)$", line.strip())
+    return dict(kv.split("=", 1) for kv in m.group(1).split() if "=" in kv) if m else None
+
+
+def full_install_cmd(ids, on, args, env):
+    """The command with every value written out — printed before the run and stored with it (cmd_full), so the run can be
+    repeated on any device from the record alone. Secrets are redacted."""
+    parts = ["./dash", "run"] + list(ids) + ["--on", on]
+    for flag, key in (("--to-usb", "to_usb"), ("--domain", "domain"), ("--wifi", "wifi"), ("--ip", "ip")):
+        if getattr(args, key, None):
+            parts += [flag, str(getattr(args, key))]
+    key = _env_get(env, "KEY")
+    if key:
+        parts += ["--key", key]
+    for kv in env:
+        if kv.split("=", 1)[0] not in ("KEY", "DOMAIN", "WIFI_SSID", "API_TOKEN"):   # those are on the line as their flag
+            parts += ["--env", kv]
+    return redact_cmdline(" ".join(parts))
+
+
+def install_run_prep(args, cat, tree=None, ask=None, keygen=None, resolve=None, when=None, isatty=None):
+    """Turn the new-user install flags into what the chain needs, or None after a printed reason. Returns {"ids", "on", "env",
+    "cmd_full"}: the entry (install.<setup>), the setup, the chain's env (USB_DEV + USB_CONFIRMED, DOMAIN, TRANSPORT, KEY,
+    WIFI_SSID, ISO_FLAKE + FLAKE from the public repo) and the fully written-out command. The parameters after `cat` exist so the
+    test can stand in for lsblk, the terminal, ssh-keygen, DNS and the clock."""
+    isatty = sys.stdin.isatty() if isatty is None else isatty
+    ask = ask if ask is not None else (input if isatty else None)
+    keygen = keygen or ensure_fresh_key
+    env = list(args.env or [])
+    on, err = derive_install_setup(getattr(args, "to_usb", None), getattr(args, "wifi", None), args.on, cat)
+    if err:
+        print(f"{RED}setup{OFF}  {err}")
+        return None
+    ids = list(args.ids or [])
+    if getattr(args, "to_usb", None):
+        if ids in ([], ["install"], ["install.usb"], [f"install.{on}"]):
+            ids = [f"install.{on}"]
+        else:
+            print(f"{RED}ids{OFF}  --to-usb runs install.{on}; it does not go with {' '.join(ids)}")
+            return None
+    if getattr(args, "domain", None):   # the domain, checked; it decides the transport
+        ok, msg = domain_check(args.domain, resolve=resolve)
+        print(("     " if ok else f"{RED}domain{OFF}  ") + msg)
+        if not ok:
+            return None
+        env = [kv for kv in env if not kv.startswith("DOMAIN=")] + [f"DOMAIN={args.domain}"]
+    tr = derive_transport(getattr(args, "domain", None), env)
+    if tr and not _env_get(env, "TRANSPORT"):
+        env.append(f"TRANSPORT={tr}")
+    if getattr(args, "to_usb", None):   # the drive: shown with the others, confirmed by name (req 142: a wrong name re-asks, blank aborts)
+        tree = tree if tree is not None else lsblk_json()
+        try:
+            disk, _part = usb_resolve(args.to_usb, tree)
+        except ValueError as ex:
+            print(f"{RED}usb{OFF}  {ex}")
+            return None
+        others = [x for x in usb_disks(tree) if x["removable"] and not x["protected"] and x["name"] != disk["name"]]
+        print(usb_overview(disk, others, chosen_path=args.to_usb))
+        usb_dev, confirmed = disk["path"], _env_get(env, "USB_CONFIRMED")
+        if confirmed and confirmed != usb_dev:
+            print(f"{RED}usb{OFF}  --env USB_CONFIRMED={confirmed} is not the drive behind --to-usb ({usb_dev})")
+            return None
+        if not confirmed:
+            if not ask:
+                print(f"{RED}usb{OFF}  no terminal to confirm the drive on — run this in a terminal, or pass --env USB_CONFIRMED={usb_dev} once you have read the overview above")
+                return None
+            while True:
+                a = ask(f"Type {BOLD}{disk['name']}{OFF} to confirm it is the drive to ERASE (blank = abort): ").strip()
+                if a == "":
+                    print("aborted — nothing written.")
+                    return None
+                if a in (disk["name"], disk["path"]):
+                    break
+                print(f"{AMBER}  that is not {disk['name']} — type its name exactly, or leave blank to abort{OFF}")
+        env = [kv for kv in env if kv.split("=", 1)[0] not in ("USB_DEV", "USB_CONFIRMED")] + [f"USB_DEV={usb_dev}", f"USB_CONFIRMED={usb_dev}"]
+        key = getattr(args, "key", None) or _env_get(env, "KEY")
+        if not key:   # fresh credentials for every fresh install: a key pair made now, its public half for the stick
+            key, _pub = keygen(fresh_key_path(getattr(args, "domain", None), when=when))
+            print(f"     new key for this install: {key} (its public half goes onto the stick; the server trusts only this key)")
+        env = [kv for kv in env if not kv.startswith("KEY=")] + [f"KEY={key}"]
+        if getattr(args, "wifi", None):
+            env = [kv for kv in env if not kv.startswith("WIFI_SSID=")] + [f"WIFI_SSID={args.wifi}"]
+        if not _env_get(env, "ISO_FLAKE"):   # the installer image and the pins it is stamped with: the public repo, never a checkout here
+            env.append(f"ISO_FLAKE={ISO_FLAKE_URL}{ISO_FLAKE_ATTR}")
+        if not _env_get(env, "FLAKE"):
+            env.append(f"FLAKE={ISO_FLAKE_URL}")
+    elif getattr(args, "key", None):
+        env = [kv for kv in env if not kv.startswith("KEY=")] + [f"KEY={args.key}"]
+    return {"ids": ids, "on": on, "env": env, "cmd_full": full_install_cmd(ids, on, args, env)}
+
+
 def diagram_alignment(cat=None):
     """Compare the catalog's matrix axes with the setup diagram's toggles (docs/diagrams/setup-map.json):
     Install/Network/Reach/Name/Scenario option values + labels, every toggle's default (= the catalog's first entry,
@@ -386,6 +648,11 @@ def cmd_setups(args):
             sys.exit(1)
     else:
         print(f"{GREEN}aligned{OFF} — every setup / reach row matches a view of {os.path.relpath(DIAGRAM_JSON, ROOT)}.")
+    if getattr(args, "check", False):   # FR152: the commands the setup diagram's steps show are this catalog's (the matrix twin's) commands
+        sys.stdout.flush()
+        rc = subprocess.call([sys.executable, os.path.join(ROOT, "checks", "fr152_portfwd_steps_apply.py"), "--check", DIAGRAM_JSON])
+        if rc:
+            sys.exit(1)
 
 
 def entry_by_id(cat, cid):
@@ -796,7 +1063,9 @@ def _ssh_base(key):
     o = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
          "-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
     if key:
-        o += ["-i", os.path.expanduser(key)]
+        # IdentitiesOnly: the box trusts the key named here (a USB-installed box trusts ONLY its install's key, req 190); an agent
+        # offering its other keys first gets cut off by the server after MaxAuthTries — seen in the VirtualBox test.
+        o += ["-i", os.path.expanduser(key), "-o", "IdentitiesOnly=yes"]
     return o
 
 
@@ -1166,7 +1435,7 @@ def missing_local_cmd(cmd, run_dir):
     return None
 
 
-def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None, allow_dirty=False, reach=None, reach_name=None):
+def run_entry(entry, config_label=None, net=None, method=None, record=False, server_log=None, shots=False, ip=None, extra_env=None, allow_dirty=False, reach=None, reach_name=None, cmd_full=None):
     # Every run — `run`, `wrap`, `here`, the VM bring-up, the inner L3 recorder — first checks the matrix still
     # matches the setup diagram (req 183), so no result is ever filed under drifted axes.
     _gate = alignment_gate()
@@ -1271,6 +1540,8 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
         "repos": _repos, "pins": _pins, "pin_mismatch": _mm or _mm_mgr, "state_hash": _state_hash,
         **{k: gs[k] for k in ("repo", "branch", "commit", "subject", "dirty", "diff_hash")},
         **extract_provenance(cmd),   # dial_domain (+ socks_port) for app runs → self-evident transport
+        # req 190: the dash command with every value written out (derived ones included), redacted — a run is repeatable from its record
+        "cmd_full": redact_cmdline(cmd_full or " ".join(["./dash"] + sys.argv[1:])),
     }
 
     # (@todo / @manual and the args-only @flutter preconditions already short-circuited above, before
@@ -1572,8 +1843,9 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
     start = datetime.datetime.now()
     out_lines = 0
     subst = False
+    found = {}   # what the chain discovered for this run ('[dash-found] IP=… MAC=…' lines; req 190)
     with open(log_path, "w") as log:
-        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {_redact(cmd)}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
+        log.write(f"# {entry['id']}  net={net_tag} on={method_tag}\n# {_redact(cmd)}\n# ran as: {base['cmd_full']}\n# cwd {run_dir}\n# started {now_iso()}\n\n")
         log.flush()
         try:
             proc = subprocess.Popen(cmd, shell=True, cwd=run_dir, stdout=subprocess.PIPE,
@@ -1585,6 +1857,9 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
                 out_lines += 1
                 if "copying path" in line or "substituting" in line or "will be fetched" in line:
                     subst = True
+                _fm = found_marks(line)
+                if _fm:
+                    found.update(_fm)
             proc.wait()
             code = proc.returncode
         except KeyboardInterrupt:
@@ -1620,10 +1895,13 @@ def run_entry(entry, config_label=None, net=None, method=None, record=False, ser
            "log_path": os.path.relpath(log_path, ROOT),
            "artifacts": {"client_log": os.path.relpath(log_path, ROOT),
                          "server_log": server_log_path, "video": video,
-                         "screenshots": screenshots}}
+                         "screenshots": screenshots},
+           **({"found": found} if found else {})}
     append_record(rec)
     col = {"pass": GREEN, "slow": AMBER, "fail": RED}.get(status, GREY)
     print(f"{col}{status}{OFF}  {entry['id']}  {fmt_dur(duration)}" + (f"  {RED}{err}{OFF}" if err else ""))
+    if found:
+        print(f"{GREY}  found on the LAN: {' '.join(f'{k}={v}' for k, v in found.items())} (recorded with the run){OFF}")
     if from_cache:
         print(f"{GREY}  (cached: nix reused a prior build of this exact derivation — no VM ran this time){OFF}")
     if substituted:
@@ -1735,6 +2013,13 @@ def cmd_run(args):
     _gate = alignment_gate()   # once up front (req 183); run_entry checks again for its other callers
     if _gate:
         sys.exit(_gate)
+    _prep = None
+    if getattr(args, "to_usb", None) or getattr(args, "domain", None) or getattr(args, "wifi", None):   # req 190: a new user's install line
+        _prep = install_run_prep(args, load_catalog())
+        if not _prep:
+            sys.exit(1)
+        args.ids, args.on, args.env, args.key = _prep["ids"], _prep["on"], list(_prep["env"]), None   # (KEY is in the env now)
+        print(f"{BOLD}ran as{OFF} — every value written out; recorded with the run:\n  {_prep['cmd_full']}\n")
     entries = select(args)
     # Fold the dedicated box args into the env channel the gates/dispatch already read (KEY for the
     # box-identity gate + server logs; API_TOKEN for the L3 app). Keeps run_entry's signature stable.
@@ -1748,7 +2033,7 @@ def cmd_run(args):
     results = [run_entry(e, args.config, net=args.net, method=args.on,
                          record=args.record, server_log=args.server_log,
                          ip=args.ip, extra_env=args.env, allow_dirty=args.allow_dirty,
-                         reach=args.reach, reach_name=args.name) for e in entries]
+                         reach=args.reach, reach_name=args.name, cmd_full=_prep["cmd_full"] if _prep else None) for e in entries]
     refused = sum(1 for r in results if not r)
     results = [r for r in results if r]
     ok = sum(1 for r in results if r["status"] == "pass")
@@ -3425,6 +3710,13 @@ def main():
     r.add_argument("--token", help="API token of the box backend (required for L3 on a box; per-box + secret, never defaulted; injected as env API_TOKEN=)")
     r.add_argument("--env", action="append", metavar="KEY=VAL",
                    help="set/override an env var for the run (repeatable): --env DOMAIN=example.com --env MAC=aa:bb:...")
+    r.add_argument("--domain", help="an install's public domain (yourname.duckdns.org / example.org): checked in DNS, baked into the install; "
+                                    "the transport is then https (req 190)")
+    r.add_argument("--to-usb", dest="to_usb", metavar="PATH",
+                   help="a USB-stick install: the path the stick is opened at on this computer (e.g. /run/media/<you>/<id>) or its /dev path. "
+                        "It is shown with the other removable drives and confirmed by name before it is erased; the run is filed under "
+                        "usb-0a (the server's cable into your router), or usb-0d with --wifi (req 190)")
+    r.add_argument("--wifi", metavar="SSID", help="the wifi the server uses after a USB-stick install (checked in range): setup usb-0d, or usb-0c with --on usb-0c")
     r.add_argument("--allow-dirty", action="store_true", help="run even if the target code repo has uncommitted changes (default: refuse)")
     r.set_defaults(fn=cmd_run)
 
